@@ -137,8 +137,100 @@ jobs:
           path: test-apps/native-smoke/build/evidence/**
           if-no-files-found: warn
 
-  # Added in Phase 2 (packaging follows in Phase 7): package-windows-x64
-  # Added in Phase 4: macos-arm64-native, package-macos-arm64
-  # Added in Phase 5: linux-x64-native (Xvfb) above; package-linux-x64 follows in Phase 7
+  package-linux-x64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      - name: Install WebKitGTK and Xvfb
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-0 xvfb
+      - name: Build install distribution
+        run: ./gradlew :test-apps:native-smoke:installDist "-PjdeskPlatform=linux" --stacktrace
+      - name: Build app image with jpackage (real target-OS packaging)
+        run: |
+          jpackage --type app-image --name JDeskSmoke \
+            --input test-apps/native-smoke/build/install/native-smoke/lib \
+            --main-jar native-smoke-0.1.0-SNAPSHOT.jar \
+            --main-class dev.jdesk.testapps.nativesmoke.Main \
+            --java-options "--enable-native-access=ALL-UNNAMED" \
+            --java-options "-Djdesk.evidence.dir=$GITHUB_WORKSPACE/package-evidence" \
+            --java-options "-Djdesk.evidence.category=package" \
+            --dest build/jpackage
+      - name: Launch packaged app (no Gradle) under Xvfb
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+        run: xvfb-run -a --server-args="-screen 0 1280x800x24" ./build/jpackage/JDeskSmoke/bin/JDeskSmoke
+      - name: Record package checksum
+        run: sha256sum build/jpackage/JDeskSmoke/bin/JDeskSmoke | tee package-evidence/launcher.sha256
+      - name: Verify evidence (anti-fake)
+        run: ./gradlew :test-apps:native-smoke:verifyEvidence "-PjdeskPlatform=linux" "-PjdeskEvidenceVerifyDir=$GITHUB_WORKSPACE/package-evidence"
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: package-linux-x64-evidence
+          path: package-evidence/**
+          if-no-files-found: warn
+
+  package-windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      - name: "Fetch WebView2 loader (SDK 1.0.2903.40)"
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.2903.40" -OutFile wv2.zip
+          Expand-Archive wv2.zip -DestinationPath wv2sdk
+          $loader = (Resolve-Path "wv2sdk/build/native/x64/WebView2Loader.dll").Path
+          echo "WEBVIEW2_LOADER=$loader" >> $env:GITHUB_ENV
+      - name: Build install distribution
+        shell: pwsh
+        run: ./gradlew :test-apps:native-smoke:installDist "-PjdeskPlatform=windows" --stacktrace
+      - name: Build app image with jpackage (real target-OS packaging)
+        shell: pwsh
+        run: |
+          $ws = $env:GITHUB_WORKSPACE -replace '\\','/'
+          jpackage --type app-image --name JDeskSmoke `
+            --input test-apps/native-smoke/build/install/native-smoke/lib `
+            --main-jar native-smoke-0.1.0-SNAPSHOT.jar `
+            --main-class dev.jdesk.testapps.nativesmoke.Main `
+            --java-options "--enable-native-access=ALL-UNNAMED" `
+            --java-options "-Djdesk.windows.webview2loader=$($env:WEBVIEW2_LOADER -replace '\\','/')" `
+            --java-options "-Djdesk.evidence.dir=$ws/package-evidence" `
+            --java-options "-Djdesk.evidence.category=package" `
+            --dest build/jpackage
+      - name: Launch packaged app (no Gradle)
+        shell: pwsh
+        run: |
+          & .\build\jpackage\JDeskSmoke\JDeskSmoke.exe | Out-Host
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record package checksum
+        shell: pwsh
+        run: Get-FileHash build\jpackage\JDeskSmoke\JDeskSmoke.exe -Algorithm SHA256 | Format-List | Out-File -Append package-evidence/launcher.sha256
+      - name: Verify evidence (anti-fake)
+        shell: pwsh
+        run: ./gradlew :test-apps:native-smoke:verifyEvidence "-PjdeskPlatform=windows" "-PjdeskEvidenceVerifyDir=$env:GITHUB_WORKSPACE/package-evidence"
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: package-windows-x64-evidence
+          path: package-evidence/**
+          if-no-files-found: warn
+
+  # Added in Phase 4: macos-arm64-native, package-macos-arm64 (Phase 7 consolidated pass; verified locally on real hardware meanwhile)
   # Added in Phase 6: security probes
   # Added in Phase 7: evidence verification and consolidated status
