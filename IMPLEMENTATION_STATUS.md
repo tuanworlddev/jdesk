@@ -23,7 +23,7 @@ Machine-generated evidence rules (Section 18) apply to every `VERIFIED-*` claim.
 | Platform | How it will be verified | Status |
 | --- | --- | --- |
 | macOS ARM64 | Locally on this machine (real WKWebView) | NOT STARTED |
-| Windows x64 | Real GitHub Actions `windows-latest` runner (WebView2 present); no local Windows hardware | NOT STARTED |
+| Windows x64 | Real GitHub Actions `windows-latest` runner (WebView2 present); no local Windows hardware | VERIFIED-CI (runs 29137796715, 29137919391) |
 | Linux x64 | Real GitHub Actions `ubuntu-latest` runner + Xvfb + WebKitGTK 4.1 | NOT STARTED |
 | Windows ARM64 / macOS Intel / Linux ARM64 | Only after primary gates pass; else `UNVERIFIED` | NOT STARTED |
 
@@ -65,9 +65,16 @@ Deferred to native phases (documented, not skipped silently): deadlock regressio
 Extra Phase-2 prep landed early: evidence writer/verifier (section 18) with 12 round-trip tests incl. tamper detection; native-smoke app + probe page (17.3); WebView2 vtable reference generated from SDK 1.0.2903.40.
 
 ### Phase 2 — Windows vertical slice
-Status: IN PROGRESS (adapter implemented; iterating on real windows-latest CI runner)
+Status: DONE (2026-07-11, verified on real GitHub Actions windows-latest runner)
 
-Implemented (compiles, awaiting real-runner verification — NOT claimed working yet):
+Verified with machine-generated evidence (spec 18):
+- CI run 29137796715 (functional) and 29137919391 (stress) — job `windows-x64-native`, artifact `windows-x64-native-evidence`, provider `windows-webview2`, WebView2 Runtime on Windows Server 2025 x64.
+- All 17.3 probes PASS through the real bridge: handshake, typed echo, Java->JS event, non-UI-thread handler, cancellation of a real sleeping command, unknown command, capability denial before handler, oversize payload, 100 concurrent invokes, remote navigation blocked, asset 200/404/traversal-rejected, secondary window create/close/recreate, clean shutdown with zero pending invocations.
+- Snapshot via real CapturePreview: PNG 984x661, 52+ distinct colors, validated.
+- Stress (17.5): 10,000 IPC round trips, 0 mismatches, 5152 ms; 25/25 window cycles; RSS baseline recorded (77,111,296 -> 181,665,792 bytes; baseline only, threshold ADR to follow per spec).
+- Evidence verifier (anti-fake checks incl. checksum recomputation) green in the same job.
+
+Implementation:
 - Win32 FFM layer (user32/kernel32/ole32/shlwapi), documented x64 struct layouts
 - STA UI dispatcher via hidden message-only window; nested pump for async COM
 - COM vtable invocation + Java-implemented COM objects (gated upcalls, tear-off QI)
@@ -78,9 +85,11 @@ Implemented (compiles, awaiting real-runner verification — NOT claimed working
 - windows-x64-native CI job with pinned WebView2 SDK 1.0.2903.40 loader + evidence upload
 
 Gates:
-- [ ] Win32 event loop/window via FFM; COM support; WebView2 bridge/scheme/snapshot/navigation/diagnostics
-- [ ] `windows-x64-native` green on real CI runner, no fake providers
-- [ ] Lifecycle + IPC stress evidence uploaded from CI
+- [x] Win32 event loop/window via FFM; COM support; WebView2 bridge/scheme/snapshot/navigation/diagnostics
+- [x] `windows-x64-native` green on real CI runner, no fake providers (run 29137796715)
+- [x] Lifecycle + IPC stress evidence uploaded from CI (run 29137919391)
+
+Bring-up findings (fixed): strict default CSP correctly blocked the smoke page's inline scripts (page externalized); nonce control envelope could arrive before page scripts attached listeners (now captured by the doc-created init script).
 
 ### Phase 3 — Codegen and Gradle developer workflow
 Status: NOT STARTED

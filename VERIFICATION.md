@@ -6,7 +6,7 @@ This file is updated **only from machine-generated reports** (spec sections 18, 
 
 | Platform | Status | Evidence | WebView version |
 | --- | --- | --- | --- |
-| Windows x64 | NOT STARTED | — | — |
+| Windows x64 | PASS | CI runs 29137796715 + 29137919391 (stress), artifact `windows-x64-native-evidence`, provider `windows-webview2`, evidence verifier green | WebView2 Evergreen on Windows Server 2025 |
 | macOS ARM64 | NOT STARTED | — | — |
 | Linux x64 | NOT STARTED | — | — |
 
@@ -30,7 +30,7 @@ This file is updated **only from machine-generated reports** (spec sections 18, 
 
 | Platform | Status | Evidence | RSS baseline |
 | --- | --- | --- | --- |
-| Windows x64 | NOT STARTED | — | — |
+| Windows x64 | PASS (10,000 IPC round trips 0 mismatch in 5152 ms; 25/25 window cycles; pending counters zero) | CI run 29137919391 | 77,111,296 -> 181,665,792 bytes (recorded, no threshold yet) |
 | macOS ARM64 | NOT STARTED | — | — |
 | Linux x64 | NOT STARTED | — | — |
 
