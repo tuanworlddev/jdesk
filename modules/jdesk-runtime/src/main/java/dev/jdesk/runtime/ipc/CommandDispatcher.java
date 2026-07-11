@@ -97,6 +97,11 @@ public final class CommandDispatcher implements AutoCloseable {
         return session.nonce();
     }
 
+    /** Serialized control envelope carrying the current nonce (posted after commit). */
+    public String currentNonceEnvelope() {
+        return envelopes.nonceEnvelope(session.nonce());
+    }
+
     public int pendingInvocations() {
         return tracker.pending();
     }

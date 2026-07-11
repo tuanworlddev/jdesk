@@ -121,14 +121,15 @@ public final class JDeskRuntime implements AutoCloseable {
 
         window.webView().onMessage(raw ->
                 dispatcher.onMessage(raw, windowRuntime.currentOrigin));
-        window.webView().onNavigation(request -> {
-            NavigationDecision decision = navigationPolicy.decide(request);
-            if (decision == NavigationDecision.ALLOW && request.mainFrame()) {
-                dispatcher.onNavigationCommitted();
-                windowRuntime.currentOrigin = originOf(request.uri().toString());
-            }
-            return decision;
+        window.webView().onNavigation(request -> navigationPolicy.decide(request));
+        window.webView().onNavigationCommitted(uri -> {
+            dispatcher.onNavigationCommitted();
+            windowRuntime.currentOrigin = originOf(uri.toString());
+            // The fresh document's init script is installed; hand it its session nonce.
+            window.webView().postJson(dispatcher.currentNonceEnvelope());
         });
+        window.onCloseRequested(() -> lifecycle.closeRequested(config.id()));
+        window.onClosed(() -> windowClosed(config.id()));
         window.webView().navigate(config.entry());
         window.show();
     }

@@ -84,10 +84,24 @@
     eventListeners.set(name, fn);
   }
 
+  var nonceWaiters = [];
+
+  function awaitNonce() {
+    return new Promise(function (resolve, reject) {
+      if (window.__jdesk.nonce) { resolve(window.__jdesk.nonce); return; }
+      var timer = setTimeout(function () { reject(new Error("nonce timeout")); }, 10000);
+      nonceWaiters.push(function (n) { clearTimeout(timer); resolve(n); });
+    });
+  }
+
   document.addEventListener("jdesk-message", function (ev) {
     var msg;
     try { msg = JSON.parse(ev.detail); } catch (e) { return; }
-    if (msg.kind === "helloAck" && helloWaiter) {
+    if (msg.kind === "nonce") {
+      window.__jdesk.nonce = msg.nonce;
+      var waiters = nonceWaiters.splice(0);
+      waiters.forEach(function (w) { w(msg.nonce); });
+    } else if (msg.kind === "helloAck" && helloWaiter) {
       helloWaiter(msg);
       helloWaiter = null;
     } else if (msg.kind === "result") {
@@ -125,6 +139,11 @@
   async function runProbes() {
     var runId = "unknown";
     try {
+      // 0. per-navigation nonce delivered by the runtime after commit
+      await awaitNonce();
+      record("nonce-received", typeof window.__jdesk.nonce === "string"
+             && window.__jdesk.nonce.length >= 16, "nonce present");
+
       // 1. handshake
       var ack = await hello();
       record("handshake", ack.ok === true && ack.v === 1, "helloAck received");

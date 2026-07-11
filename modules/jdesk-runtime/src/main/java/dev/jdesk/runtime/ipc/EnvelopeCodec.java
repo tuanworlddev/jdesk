@@ -93,6 +93,15 @@ public final class EnvelopeCodec {
 
     // ---- outgoing ----
 
+    /** Control envelope delivering the per-navigation nonce to the fresh document. */
+    public String nonceEnvelope(String nonce) {
+        ObjectNode node = mapper.createObjectNode();
+        node.put("v", PROTOCOL_VERSION);
+        node.put("kind", "nonce");
+        node.put("nonce", nonce);
+        return node.toString();
+    }
+
     public String helloAck(String nonce) {
         ObjectNode node = mapper.createObjectNode();
         node.put("v", PROTOCOL_VERSION);

@@ -24,6 +24,14 @@ public interface PlatformWebView extends AutoCloseable {
 
     Subscription onNavigation(NavigationListener listener);
 
+    /**
+     * Fires when a new main-frame document is created (WebView2 ContentLoading,
+     * WKWebView didCommitNavigation, WebKitGTK load-committed): the bridge init script
+     * exists, page scripts have not run. The runtime delivers the per-navigation nonce
+     * here. UI thread.
+     */
+    Subscription onNavigationCommitted(java.util.function.Consumer<java.net.URI> listener);
+
     /** Real engine capture API; never a synthetic image. */
     CompletionStage<WebViewSnapshot> snapshot();
 

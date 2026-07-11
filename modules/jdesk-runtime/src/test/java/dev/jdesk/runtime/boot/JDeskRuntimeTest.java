@@ -118,6 +118,7 @@ class JDeskRuntimeTest {
         final List<String> posted = new CopyOnWriteArrayList<>();
         volatile Consumer<String> messageListener;
         volatile NavigationListener navigationListener;
+        volatile Consumer<URI> committedListener;
         volatile boolean closed;
 
         @Override
@@ -145,6 +146,19 @@ class JDeskRuntimeTest {
         public Subscription onNavigation(NavigationListener listener) {
             this.navigationListener = listener;
             return () -> this.navigationListener = null;
+        }
+
+        @Override
+        public Subscription onNavigationCommitted(Consumer<URI> listener) {
+            this.committedListener = listener;
+            return () -> this.committedListener = null;
+        }
+
+        /** Simulates a committed main-frame document, as real engines report it. */
+        void simulateCommitted(URI uri) {
+            Consumer<URI> listener = committedListener;
+            assertThat(listener).as("runtime must register a committed listener").isNotNull();
+            listener.accept(uri);
         }
 
         @Override
@@ -182,6 +196,20 @@ class JDeskRuntimeTest {
         final FakeWebView webView = new FakeWebView();
         volatile boolean shown;
         volatile boolean closed;
+        volatile java.util.function.BooleanSupplier closeRequestedHandler;
+        volatile Runnable closedHandler;
+
+        @Override
+        public Subscription onCloseRequested(java.util.function.BooleanSupplier handler) {
+            this.closeRequestedHandler = handler;
+            return () -> this.closeRequestedHandler = null;
+        }
+
+        @Override
+        public Subscription onClosed(Runnable handler) {
+            this.closedHandler = handler;
+            return () -> this.closedHandler = null;
+        }
 
         FakeWindow(NativeWindowConfig config) {
             this.config = config;
