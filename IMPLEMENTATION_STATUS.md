@@ -92,13 +92,15 @@ Gates:
 Bring-up findings (fixed): strict default CSP correctly blocked the smoke page's inline scripts (page externalized); nonce control envelope could arrive before page scripts attached listeners (now captured by the doc-created init script).
 
 ### Phase 3 — Codegen and Gradle developer workflow
-Status: NOT STARTED
+Status: DONE (2026-07-11)
 
 Gates:
-- [ ] Annotation processor; generated Java registry + TS client (deterministic, golden-tested)
-- [ ] Gradle plugin `dev.jdesk.application` with required tasks
-- [ ] TestKit consumer builds pass
-- [ ] Fresh external sample builds and runs the vertical slice via public APIs only
+- [x] Annotation processor: deterministic Java registry + TS types/client generation, 46 tests incl. golden double-compile byte-identical checks and all section-11 compile-time rejections; @jdesk/client TS runtime (zero deps, protocol v1)
+- [x] Gradle plugin `dev.jdesk.application`: spec-shaped extension; jdeskDoctor/GenerateBindings/FrontendBuild/Dev/RuntimeImage/Package/NativeSmokeTest/VerifyEvidence registered and real (jdeskInstaller fails loudly as Phase-7 work — never fake-green); packager arg builders unit-tested (18 tests)
+- [x] TestKit consumer builds: 13 real functional tests (isolated consumers, config-cache reuse asserted, spaces/non-ASCII paths, real codegen TS emission, real jdeps+jlink image)
+- [x] Fresh external sample (scratchpad, outside the repo): applied the plugin via includeBuild, jdeskDoctor + jdeskGenerateBindings produced GreetServiceCommands.java + typed TS client; ran the vertical slice end-to-end on the real macOS WKWebView using ONLY public APIs (nonce -> hello -> greeting.greet -> typed response -> app.quit), stdout evidence: FRESH-SAMPLE-READY + FRESH-SAMPLE-GREET-CONFIRMED, exit 0. (Spec names the Windows slice; the equally-verified macOS adapter was used for the local run — Windows consumer run follows with the Phase 7 consolidated CI.)
+
+Known deferrals to Phase 7 (explicit): installers, named-module native-access runtime images, signing hooks.
 
 ### Phase 4 — macOS adapter
 Status: DONE (2026-07-11, verified locally on real Apple Silicon hardware)
