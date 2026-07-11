@@ -3,6 +3,7 @@ package dev.jdesk.runtime.boot;
 import dev.jdesk.api.ApplicationSpec;
 import dev.jdesk.api.ErrorCode;
 import dev.jdesk.api.EventEmitter;
+import dev.jdesk.api.UiDispatcher;
 import dev.jdesk.api.JDeskException;
 import dev.jdesk.api.WindowConfig;
 import dev.jdesk.api.WindowId;
@@ -19,6 +20,7 @@ import dev.jdesk.webview.spi.PlatformApplication;
 import dev.jdesk.webview.spi.PlatformApplicationConfig;
 import dev.jdesk.webview.spi.PlatformProvider;
 import dev.jdesk.webview.spi.PlatformWindow;
+import dev.jdesk.webview.spi.WebViewSnapshot;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.LinkedHashMap;
@@ -26,6 +28,8 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -90,7 +94,7 @@ public final class JDeskRuntime implements AutoCloseable {
                 spec.id(), options.devMode(), devOrigin, assetResolver));
         try {
             for (WindowConfig config : spec.windows()) {
-                openWindow(config);
+                createWindowOnUiThread(config);
             }
             lifecycle.ready();
             platformApp.runEventLoop();
@@ -100,7 +104,7 @@ public final class JDeskRuntime implements AutoCloseable {
         return 0;
     }
 
-    private void openWindow(WindowConfig config) {
+    private void createWindowOnUiThread(WindowConfig config) {
         PlatformWindow window = platformApp.createWindow(new NativeWindowConfig(
                 config.id(), config.title(), config.width(), config.height(),
                 config.resizable(), config.entry(), options.devMode()));
@@ -140,6 +144,56 @@ public final class JDeskRuntime implements AutoCloseable {
                     "Window entry must have an origin: " + uri);
         }
         return parsed.getScheme() + "://" + parsed.getAuthority();
+    }
+
+    /**
+     * Opens an additional window after startup. Safe from any thread; the native
+     * creation is marshalled onto the UI thread.
+     */
+    public CompletionStage<WindowId> openWindow(WindowConfig config) {
+        if (windows.containsKey(config.id())) {
+            return CompletableFuture.failedFuture(new JDeskException(
+                    ErrorCode.ILLEGAL_STATE, "Window id already in use: " + config.id()));
+        }
+        return platformApp.ui().submit(() -> {
+            createWindowOnUiThread(config);
+            return config.id();
+        });
+    }
+
+    /** Closes one window from any thread; the native close runs on the UI thread. */
+    public CompletionStage<Void> closeWindow(WindowId windowId) {
+        WindowRuntime windowRuntime = windows.get(windowId);
+        if (windowRuntime == null) {
+            return CompletableFuture.failedFuture(
+                    new JDeskException(ErrorCode.WINDOW_CLOSED, "Unknown or closed window"));
+        }
+        return platformApp.ui().submit(() -> {
+            windowRuntime.window.close();
+            windowClosed(windowId);
+            return null;
+        });
+    }
+
+    /** Captures the window's WebView through the engine's real snapshot API. */
+    public CompletionStage<WebViewSnapshot> snapshot(WindowId windowId) {
+        WindowRuntime windowRuntime = windows.get(windowId);
+        if (windowRuntime == null) {
+            return CompletableFuture.failedFuture(
+                    new JDeskException(ErrorCode.WINDOW_CLOSED, "Unknown or closed window"));
+        }
+        return platformApp.ui().submit(() -> windowRuntime.window.webView().snapshot())
+                .thenCompose(stage -> stage);
+    }
+
+    /** UI dispatcher of the running platform application; null before {@link #run()}. */
+    public UiDispatcher ui() {
+        return platformApp == null ? null : platformApp.ui();
+    }
+
+    /** Number of currently open windows (for leak checks). */
+    public int openWindowCount() {
+        return windows.size();
     }
 
     /** Emitter for events targeted at one window. */
