@@ -77,7 +77,7 @@ jpackage --type app-image ... && <launch app image without Gradle>   # package s
 | Artifact | How produced | Signed? | Tested? |
 | --- | --- | --- | --- |
 | jpackage app image (Win/mac/Linux) | `jpackage --type app-image` on the target OS | UNSIGNED | Yes — launched without Gradle, ran the native smoke, exit 0 |
-| Native installer (DMG/MSI/DEB) | `jdeskInstaller` → `jpackage --type <dmg/msi/deb>` on the target OS | UNSIGNED | Created (DMG verified locally through the plugin; MSI/DEB in CI package jobs) |
+| Native installer (DMG/MSI/DEB) | `jdeskInstaller` → `jpackage --type <dmg/msi/deb>` on the target OS | UNSIGNED | Created & checksummed: Windows `JDeskSmoke-1.0.0.msi` (sha256 1e651972…), Linux `jdesksmoke_1.0.0_amd64.deb` (sha256 2c12b580…) in CI run 29140603452; macOS `fresh-1.0.0.dmg` built locally through the plugin |
 | `checksums.sha256` | `ReleaseArtifacts.writeChecksums` in `jdeskPackage` | n/a | Yes — 282-file image verified, unit-tested |
 | `sbom.cyclonedx.json` | `ReleaseArtifacts.writeSbom` (CycloneDX 1.5) in `jdeskPackage` | n/a | Yes — deterministic, unit-tested |
 | Maven artifacts + sources/javadoc | `maven-publish` per module | UNSIGNED | Build-verified |

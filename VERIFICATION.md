@@ -16,7 +16,7 @@ This file is updated **only from machine-generated reports** (spec sections 18, 
 | --- | --- | --- | --- |
 | Windows x64 | see CI run 29139506086 (`package-windows-x64`) | jpackage app-image `JDeskSmoke.exe` launched without Gradle, category `package` | — |
 | macOS ARM64 | PASS | jpackage app-image `JDeskSmoke.app` executed directly; run 1783741694-0ba04a314ebd5e40, category `package`, 21/21, exit 0 | — |
-| Linux x64 | see CI run 29139506086 (`package-linux-x64`) | jpackage app-image launched without Gradle under Xvfb, category `package` | — |
+| Linux x64 | PASS | CI run 29140603452 `package-linux-x64`: app-image launched without Gradle under Xvfb (category `package`) + DEB installer built (`jdesksmoke_1.0.0_amd64.deb`, sha256 2c12b580…, UNSIGNED) | — |
 
 ## Security probes (section 17.6)
 
