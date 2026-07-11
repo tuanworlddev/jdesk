@@ -40,6 +40,12 @@ public interface PlatformWindow extends AutoCloseable {
     /** Current bounds in the same coordinate convention {@link #setBounds} accepts. */
     WindowBounds getBounds();
 
+    /** Opens the OS print dialog for this window's page content. Default: unsupported. */
+    default void print() {
+        throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                "Printing is not supported by this platform adapter");
+    }
+
     @Override
     void close();
 }

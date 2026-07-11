@@ -25,6 +25,15 @@ public interface ApplicationHandle {
     CompletionStage<Void> writeClipboardText(String text);
     CompletionStage<MessageDialogResult> showMessageDialog(MessageDialog dialog);
 
+    /** Shows a native, app-modal open dialog. Result paths are empty when cancelled. */
+    CompletionStage<FileDialogResult> showOpenDialog(FileDialog.OpenDialog dialog);
+
+    /** Shows a native, app-modal save dialog. Result path is empty when cancelled. */
+    CompletionStage<FileDialogResult> showSaveDialog(FileDialog.SaveDialog dialog);
+
+    /** Sends a document file (typically a PDF) straight to a printer via the OS print system. */
+    CompletionStage<Void> printFile(PrintJob job);
+
     /** Requests orderly application shutdown without blocking the caller. */
     void requestStop();
 }

@@ -79,7 +79,24 @@ class AutomationServerTest {
                             "{\"window\":\"main\",\"script\":\"1+1\"}"))
                     .build(), HttpResponse.BodyHandlers.ofString());
             assertThat(evaluated.statusCode()).isEqualTo(200);
+            // Both the raw string (value) and the parsed JSON tree (result) are present.
             assertThat(mapper.readTree(evaluated.body()).has("value")).isTrue();
+            assertThat(mapper.readTree(evaluated.body()).has("result")).isTrue();
+
+            // /input requires a selector and returns a structured ok/detail. The fake
+            // webview yields an empty evaluate result, so the dispatch reports not-ok.
+            HttpResponse<String> noSelector = client.send(authorized(base + "/input", token)
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                            "{\"window\":\"main\",\"action\":\"click\"}"))
+                    .build(), HttpResponse.BodyHandlers.ofString());
+            assertThat(noSelector.statusCode()).isEqualTo(400);
+
+            HttpResponse<String> input = client.send(authorized(base + "/input", token)
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                            "{\"window\":\"main\",\"action\":\"click\",\"selector\":\"#go\"}"))
+                    .build(), HttpResponse.BodyHandlers.ofString());
+            assertThat(input.statusCode()).isEqualTo(422); // fake webview: not dispatched
+            assertThat(mapper.readTree(input.body()).has("ok")).isTrue();
 
             // Console buffer starts empty and answers with a lines array.
             HttpResponse<String> console = client.send(

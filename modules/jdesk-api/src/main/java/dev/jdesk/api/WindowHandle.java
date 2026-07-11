@@ -18,5 +18,8 @@ public interface WindowHandle {
     CompletionStage<Void> setFullscreen(boolean fullscreen);
     CompletionStage<Void> setAlwaysOnTop(boolean alwaysOnTop);
 
+    /** Opens the OS print dialog for this window's current page content. */
+    CompletionStage<Void> print();
+
     CompletionStage<Void> close();
 }

@@ -97,6 +97,9 @@ Available from [`InvocationContext.application()`](#invocationcontext) and
 | `CompletionStage<String> readClipboardText()` | Reads the system clipboard as text. |
 | `CompletionStage<Void> writeClipboardText(String text)` | Writes clipboard text (max 1 MiB). |
 | `CompletionStage<MessageDialogResult> showMessageDialog(MessageDialog dialog)` | Shows a native message dialog. |
+| `CompletionStage<FileDialogResult> showOpenDialog(FileDialog.OpenDialog dialog)` | Shows a native, app-modal open dialog (see [Dialogs & printing](../guides/dialogs-and-printing.md)). |
+| `CompletionStage<FileDialogResult> showSaveDialog(FileDialog.SaveDialog dialog)` | Shows a native, app-modal save dialog. |
+| `CompletionStage<Void> printFile(PrintJob job)` | Sends a document file (typically a PDF) to a printer via the OS print system. |
 | `void requestStop()` | Requests orderly application shutdown without blocking the caller. |
 
 ### `WindowHandle`
@@ -117,6 +120,7 @@ mutating operations return a `CompletionStage<Void>` that completes on the UI th
 | `CompletionStage<Void> setMaximized(boolean maximized)` | Maximizes/restores. |
 | `CompletionStage<Void> setFullscreen(boolean fullscreen)` | Enters/leaves fullscreen. |
 | `CompletionStage<Void> setAlwaysOnTop(boolean alwaysOnTop)` | Toggles always-on-top. |
+| `CompletionStage<Void> print()` | Opens the OS print dialog for this window's current page. |
 | `CompletionStage<Void> close()` | Closes the window. |
 
 ### `JDeskBootstrap`
@@ -421,6 +425,34 @@ added, and Range requests get 206 automatically when `contentLength` is known. S
 | `record Response(String contentType, long contentLength, Supplier<InputStream> body, Map<String, String> headers)` | Content type, byte length (-1 unknown; Range needs it known), fresh-stream supplier, extra response headers (e.g. `Cache-Control`). |
 | `static Response of(byte[] bytes, String contentType)` | Buffered response from bytes (defensive copy). |
 | `static Response of(Path file, String contentType) throws IOException` | Streamed response from a file; derives the length. |
+
+### `FileDialog` / `FileDialogResult`
+
+`dev.jdesk.api.FileDialog` — requests for native, app-modal open/save dialogs, used with
+[`ApplicationHandle.showOpenDialog`/`showSaveDialog`](#applicationhandle). See
+[Dialogs & printing](../guides/dialogs-and-printing.md).
+
+| Member | Meaning |
+| --- | --- |
+| `record FileDialog.Filter(String label, List<String> extensions)` | A named type filter; extensions are lower-case, no dot. |
+| `record FileDialog.OpenDialog(String title, Optional<String> directory, List<Filter> filters, boolean allowMultiple, boolean chooseDirectories)` | Open request; `OpenDialog.ofType(title, filters...)` is a shortcut. |
+| `record FileDialog.SaveDialog(String title, Optional<String> directory, Optional<String> suggestedName, List<Filter> filters)` | Save request; `SaveDialog.withName(title, name, filters...)` is a shortcut. |
+
+`dev.jdesk.api.FileDialogResult` — `record(List<String> paths)`; `isCancelled()` (empty
+paths), `path()` (first path), `FileDialogResult.cancelled()`.
+
+### `PrintJob`
+
+`dev.jdesk.api.PrintJob` — a document file to send straight to a printer, used with
+[`ApplicationHandle.printFile`](#applicationhandle).
+
+```java
+record PrintJob(String filePath, Optional<String> printerName, int copies,
+    Optional<String> paperSize)
+```
+
+`PrintJob.of(filePath)` then `.toPrinter(name)` / `.withCopies(n)` /
+`.withPaperSize("A4")`. `copies` must be 1..99.
 
 ## Secrets
 

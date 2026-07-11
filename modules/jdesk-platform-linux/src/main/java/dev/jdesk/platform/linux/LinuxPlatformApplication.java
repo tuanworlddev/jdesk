@@ -347,6 +347,112 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
         } catch (Throwable t) { throw Gtk.rethrow(t); }
     }
 
+    private static final int GTK_FILE_CHOOSER_ACTION_OPEN = 0;
+    private static final int GTK_FILE_CHOOSER_ACTION_SAVE = 1;
+    private static final int GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER = 2;
+    private static final int GTK_RESPONSE_ACCEPT = -3;
+
+    @Override public dev.jdesk.api.FileDialogResult showOpenDialog(
+            dev.jdesk.api.FileDialog.OpenDialog dialog) {
+        requireOpen(); dispatcher.assertUiThread();
+        int action = dialog.chooseDirectories()
+                ? GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER : GTK_FILE_CHOOSER_ACTION_OPEN;
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment chooser = newChooser(arena, dialog.title(), action);
+            try {
+                if (dialog.allowMultiple()) {
+                    Gtk.GTK_FILE_CHOOSER_SET_SELECT_MULTIPLE.invokeExact(chooser, 1);
+                }
+                dialog.directory().ifPresent(dir -> setFolder(arena, chooser, dir));
+                if ((int) Gtk.GTK_DIALOG_RUN.invokeExact(chooser) != GTK_RESPONSE_ACCEPT) {
+                    return dev.jdesk.api.FileDialogResult.cancelled();
+                }
+                return new dev.jdesk.api.FileDialogResult(
+                        dialog.allowMultiple() ? readFilenames(chooser) : readFilename(chooser));
+            } finally {
+                Gtk.GTK_WIDGET_DESTROY.invokeExact(chooser);
+            }
+        } catch (Throwable t) { throw Gtk.rethrow(t); }
+    }
+
+    @Override public dev.jdesk.api.FileDialogResult showSaveDialog(
+            dev.jdesk.api.FileDialog.SaveDialog dialog) {
+        requireOpen(); dispatcher.assertUiThread();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment chooser = newChooser(arena, dialog.title(), GTK_FILE_CHOOSER_ACTION_SAVE);
+            try {
+                Gtk.GTK_FILE_CHOOSER_SET_DO_OVERWRITE_CONFIRMATION.invokeExact(chooser, 1);
+                dialog.directory().ifPresent(dir -> setFolder(arena, chooser, dir));
+                dialog.suggestedName().ifPresent(name -> {
+                    try {
+                        Gtk.GTK_FILE_CHOOSER_SET_CURRENT_NAME.invokeExact(chooser,
+                                arena.allocateFrom(name));
+                    } catch (Throwable t) { throw Gtk.rethrow(t); }
+                });
+                if ((int) Gtk.GTK_DIALOG_RUN.invokeExact(chooser) != GTK_RESPONSE_ACCEPT) {
+                    return dev.jdesk.api.FileDialogResult.cancelled();
+                }
+                java.util.List<String> paths = readFilename(chooser);
+                return paths.isEmpty()
+                        ? dev.jdesk.api.FileDialogResult.cancelled()
+                        : new dev.jdesk.api.FileDialogResult(paths);
+            } finally {
+                Gtk.GTK_WIDGET_DESTROY.invokeExact(chooser);
+            }
+        } catch (Throwable t) { throw Gtk.rethrow(t); }
+    }
+
+    @Override public void printFile(dev.jdesk.api.PrintJob job) {
+        dev.jdesk.webview.spi.CupsPrinting.printFile(job); // CUPS lp, off the UI thread
+    }
+
+    private MemorySegment newChooser(Arena arena, String title, int action) throws Throwable {
+        String accept = action == GTK_FILE_CHOOSER_ACTION_SAVE ? "_Save"
+                : action == GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER ? "_Select" : "_Open";
+        return (MemorySegment) Gtk.GTK_FILE_CHOOSER_DIALOG_NEW.invokeExact(
+                arena.allocateFrom(title.isEmpty() ? " " : title), MemorySegment.NULL, action,
+                arena.allocateFrom("_Cancel"), -6 /* GTK_RESPONSE_CANCEL */,
+                arena.allocateFrom(accept), GTK_RESPONSE_ACCEPT);
+    }
+
+    private void setFolder(Arena arena, MemorySegment chooser, String dir) {
+        try {
+            int ignored = (int) Gtk.GTK_FILE_CHOOSER_SET_CURRENT_FOLDER.invokeExact(
+                    chooser, arena.allocateFrom(dir));
+        } catch (Throwable t) { throw Gtk.rethrow(t); }
+    }
+
+    private java.util.List<String> readFilename(MemorySegment chooser) throws Throwable {
+        MemorySegment cstr = (MemorySegment) Gtk.GTK_FILE_CHOOSER_GET_FILENAME.invokeExact(chooser);
+        if (cstr.equals(MemorySegment.NULL)) {
+            return java.util.List.of();
+        }
+        String path = Gtk.javaString(cstr);
+        Gtk.G_FREE.invokeExact(cstr);
+        return path == null || path.isEmpty() ? java.util.List.of() : java.util.List.of(path);
+    }
+
+    private java.util.List<String> readFilenames(MemorySegment chooser) throws Throwable {
+        MemorySegment list = (MemorySegment) Gtk.GTK_FILE_CHOOSER_GET_FILENAMES.invokeExact(chooser);
+        if (list.equals(MemorySegment.NULL)) {
+            return java.util.List.of();
+        }
+        java.util.List<String> paths = new java.util.ArrayList<>();
+        int count = (int) Gtk.G_SLIST_LENGTH.invokeExact(list);
+        for (int i = 0; i < count; i++) {
+            MemorySegment data = (MemorySegment) Gtk.G_SLIST_NTH_DATA.invokeExact(list, i);
+            if (!data.equals(MemorySegment.NULL)) {
+                String path = Gtk.javaString(data);
+                if (path != null && !path.isEmpty()) {
+                    paths.add(path);
+                }
+                Gtk.G_FREE.invokeExact(data);
+            }
+        }
+        Gtk.G_SLIST_FREE.invokeExact(list);
+        return paths;
+    }
+
     @Override
     public void runEventLoop() {
         requireOpen();

@@ -37,6 +37,7 @@ Task-oriented how-tos for when you are building.
 - [Emit events to the frontend](guides/emitting-events.md)
 - [Stream binary data to the frontend](guides/streaming-binary-data.md)
 - [Store secrets in the OS credential store](guides/storing-secrets.md)
+- [Use native dialogs and printing](guides/dialogs-and-printing.md)
 - [Automate and E2E-test your app](guides/automation-and-e2e.md)
 - [Grant capabilities and permissions](guides/capabilities-and-permissions.md)
 - [Manage windows and the app lifecycle](guides/managing-windows.md)

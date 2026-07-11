@@ -226,6 +226,18 @@ final class ObjC {
         }
     }
 
+    private static final FunctionDescriptor D_ID_LONG =
+            FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, JAVA_LONG);
+
+    /** {@code id}-returning message with one NSInteger arg, e.g. {@code objectAtIndex:}. */
+    static MemorySegment sendIndexed(MemorySegment receiver, String selector, long index) {
+        try {
+            return (MemorySegment) msgSend(D_ID_LONG).invokeExact(receiver, sel(selector), index);
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
+    }
+
     static boolean sendBool(MemorySegment receiver, String selector) {
         try {
             return (byte) msgSend(D_BOOL).invokeExact(receiver, sel(selector)) != 0;

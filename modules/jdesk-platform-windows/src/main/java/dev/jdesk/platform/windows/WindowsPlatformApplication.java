@@ -74,6 +74,21 @@ final class WindowsPlatformApplication extends NativeHandle implements PlatformA
     @Override public MessageDialogResult showMessageDialog(MessageDialog dialog){
         requireOpen();dispatcher.assertUiThread();return Win32.showMessageDialog(dialog);
     }
+    @Override public dev.jdesk.api.FileDialogResult showOpenDialog(
+            dev.jdesk.api.FileDialog.OpenDialog dialog) {
+        requireOpen(); dispatcher.assertUiThread();
+        return WindowsFileDialog.open(dialog);
+    }
+    @Override public dev.jdesk.api.FileDialogResult showSaveDialog(
+            dev.jdesk.api.FileDialog.SaveDialog dialog) {
+        requireOpen(); dispatcher.assertUiThread();
+        return WindowsFileDialog.save(dialog);
+    }
+    @Override public void printFile(dev.jdesk.api.PrintJob job) {
+        // ShellExecute "print"/"printto" uses the file's registered handler; it does not
+        // honor copies/paperSize (that needs a full print API — a documented gap).
+        Win32.shellPrint(job.filePath(), job.printerName().orElse(null));
+    }
 
     @Override
     public void runEventLoop() {

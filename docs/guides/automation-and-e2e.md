@@ -27,9 +27,10 @@ system property, no server exists — production runs are unaffected.
 | Endpoint | Meaning |
 | --- | --- |
 | `GET /windows` | `{"windows":["main", ...]}` — open window ids |
-| `POST /evaluate` `{"window":"main","script":"..."}` | Evaluates JS in the page, returns `{"value":"<string result>"}` |
+| `POST /evaluate` `{"window":"main","script":"..."}` | Evaluates JS; returns `{"result":<parsed JSON>, "value":"<raw string>"}` — `result` is the JSON-decoded value (objects/arrays/numbers), `value` the raw string for back-compat |
+| `POST /input` `{"window":"main","action":"click|type|focus|hover|key","selector":"...","text":"...","key":"..."}` | Synthesizes DOM interaction on the matched element; returns `{"ok":true/false}` |
 | `GET /snapshot?window=main` | PNG screenshot of the real WebView |
-| `GET /console?window=main` | Captured page console lines (`console.*`, uncaught errors) |
+| `GET /console?window=main` | Captured page console lines (`console.*`, uncaught errors, **and the earliest module/parse-load failures**) |
 
 ## A minimal E2E check
 
@@ -40,16 +41,27 @@ TOKEN=$(python3 -c "import json;print(json.load(open('$DESC'))['token'])")
 AUTH="Authorization: Bearer $TOKEN"
 
 curl -s -H "$AUTH" "http://127.0.0.1:$PORT/windows"
+# /evaluate returns a real JSON value under `result`:
 curl -s -H "$AUTH" -X POST "http://127.0.0.1:$PORT/evaluate" \
-     -d '{"window":"main","script":"document.querySelector(\"h1\").textContent"}'
+     -d '{"window":"main","script":"({count: document.querySelectorAll(\"li\").length})"}'
+# → {"result":{"count":3},"value":"{\"count\":3}"}
+# /input clicks a button, then read the effect back:
+curl -s -H "$AUTH" -X POST "http://127.0.0.1:$PORT/input" \
+     -d '{"window":"main","action":"click","selector":"#submit"}'
 curl -s -H "$AUTH" "http://127.0.0.1:$PORT/snapshot?window=main" -o shot.png
 curl -s -H "$AUTH" "http://127.0.0.1:$PORT/console?window=main"
 ```
 
-Interactions (clicks, typing) go through `/evaluate` with DOM APIs —
-`document.querySelector("button").click()`, dispatching `InputEvent`s, or calling your
-app's own test hooks. Because the script runs inside the real page, everything flows
-through the real bridge, capability checks, and command handlers.
+`/input` synthesizes real DOM events (click/type/focus/hover/key) on the element matched
+by `selector` — enough to drive most flows. Note these are DOM events (`isTrusted=false`),
+so real OS-level hover-CSS and IME composition are **not** reproduced; for those, use
+`/evaluate` to call your app's own hooks. Because everything runs inside the real page, it
+flows through the real bridge, capability checks, and command handlers.
+
+Earliest failures too: if the page crashes in a module import or a parse error before any
+script runs, `/console` still shows it — the capture script installs its error listeners
+at document-start in the capture phase, so even a failed `<script type="module" src>` load
+is recorded (native-smoke case `java:early-error-capture`).
 
 Verified live on macOS (native-smoke case `java:automation-endpoint`): windows listing,
 401 on missing token, real WKWebView PNG snapshot, and console-marker retrieval over

@@ -128,6 +128,9 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
         @Override public CompletionStage<Void> setAlwaysOnTop(boolean value) {
             return controlWindow(id(), w -> w.setAlwaysOnTop(value));
         }
+        @Override public CompletionStage<Void> print() {
+            return controlWindow(id(), PlatformWindow::print);
+        }
 
         @Override
         public CompletionStage<Void> close() {
@@ -414,6 +417,31 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
                     "Message dialog text exceeds platform-safe limits"));
         }
         return platformApp.ui().submit(() -> platformApp.showMessageDialog(dialog));
+    }
+    @Override public CompletionStage<dev.jdesk.api.FileDialogResult> showOpenDialog(
+            dev.jdesk.api.FileDialog.OpenDialog dialog) {
+        java.util.Objects.requireNonNull(dialog, "dialog");
+        return platformApp.ui().submit(() -> platformApp.showOpenDialog(dialog));
+    }
+    @Override public CompletionStage<dev.jdesk.api.FileDialogResult> showSaveDialog(
+            dev.jdesk.api.FileDialog.SaveDialog dialog) {
+        java.util.Objects.requireNonNull(dialog, "dialog");
+        return platformApp.ui().submit(() -> platformApp.showSaveDialog(dialog));
+    }
+    @Override public CompletionStage<Void> printFile(dev.jdesk.api.PrintJob job) {
+        java.util.Objects.requireNonNull(job, "job");
+        // Printing shells out to the OS spooler (blocking) — run it on a virtual thread,
+        // never the common ForkJoinPool where a blocked lp would starve other work.
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        Thread.ofVirtual().name("jdesk-print").start(() -> {
+            try {
+                platformApp.printFile(job);
+                future.complete(null);
+            } catch (Throwable t) {
+                future.completeExceptionally(t);
+            }
+        });
+        return future;
     }
 
     /** Closes one window from any thread; the native close runs on the UI thread. */

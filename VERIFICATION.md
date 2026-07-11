@@ -78,6 +78,36 @@ suite without provisioning a keyring/HTTP endpoint.
 | Automation endpoint: token-gated loopback HTTP windows/evaluate/snapshot/console | PASS | `java:automation-endpoint` — 401 without token, real PNG snapshot (442 KB), console marker retrieved |
 | Window minSize clamp (user + programmatic) and remembered bounds restore | PASS | `java:window-minsize-remembered-bounds` — clamped to 400, reopened at saved 555 |
 
+**Cross-platform CI (2026-07-11, run 29162068874): all 8 jobs green.** Both feature
+batches now run on real Windows (WebView2) and Linux (WebKitGTK) CI, not macOS only:
+`windows-x64-native`, `linux-x64-native`, `security-{windows,linux}-x64`,
+`package-{windows,linux}-x64`, `core-unit-jdk25`, `gradle-plugin-functional` all pass.
+SecretStore exercises DPAPI on Windows and a provisioned gnome-keyring on Linux; the
+Range/206, min-size (WM_GETMINMAXINFO / gtk size hints), getBounds, and console-bridge
+paths are therefore verified on all three platforms — no longer compile-only.
+
+## Feature evidence — 2026-07-12 batch 3 (macOS ARM64, local real hardware)
+
+Runs 1783794278-2cd292914b96248c (45/45) and 1783794305-fa5b6399e5527fdd (stress+stream,
+47/47); verifier green; archived under `evidence/`. Interactive native panels were driven
+by a `System Events` driver against a packaged `.app` (guarded to only send keystrokes
+when JDeskSmoke is frontmost, so nothing leaks to other apps).
+
+| Capability | Status (macOS) | Evidence |
+| --- | --- | --- |
+| File save dialog (NSSavePanel) round trip | PASS | `java:file-save-dialog` — returned the typed path `/private/tmp/jdesk-live-saved.txt` (driver-typed name + Save) |
+| Window print dialog (NSPrintOperation) | PASS (behavioral) | print panel shown and dismissable, no exception; driver pressed Escape |
+| printFile → CUPS lp reaches the spooler | PASS | `java:print-file-plumbing` — missing file rejected; job to a bogus printer rejected by lp |
+| `/evaluate` returns parsed JSON under `result` | PASS | `java:automation-evaluate-json` — `{"result":{"a":1,"b":[2,3],"c":"x"}}` |
+| `/input` synthesizes a real DOM click | PASS | `java:automation-input` — page recorded `window.__inputProbeClicked` |
+| Earliest module/parse-load error reaches `/console` | PASS | `java:early-error-capture` — `Failed to load jdesk://app/does-not-exist-module.js (script)` from a window whose module never loaded |
+
+Platform status: file dialogs are live-verified on macOS; Windows (comdlg32) and Linux
+(GtkFileChooser) are implemented and compile-verified (a modal dialog can't be driven on
+headless CI). `WindowHandle.print()` is macOS (NSPrintOperation, live) + Linux
+(webkit_print_operation, compile); Windows WebView2 print UI is a documented gap.
+`printFile` is CUPS `lp` on macOS/Linux and ShellExecute print on Windows.
+
 ## Unit / functional gates
 
 | Gate | Status | Evidence |

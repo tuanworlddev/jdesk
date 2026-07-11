@@ -158,6 +158,36 @@ final class Gtk {
             Linker.Option.firstVariadicArg(5));
     static final MethodHandle GTK_DIALOG_RUN = dl("gtk_dialog_run",
             FunctionDescriptor.of(JAVA_INT, ADDRESS));
+    // gtk_file_chooser_dialog_new(title, parent, action, first_button_text, ...) variadic.
+    static final MethodHandle GTK_FILE_CHOOSER_DIALOG_NEW = LINKER.downcallHandle(
+            LOOKUP.findOrThrow("gtk_file_chooser_dialog_new"),
+            FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, JAVA_INT, ADDRESS, JAVA_INT,
+                    ADDRESS, JAVA_INT),
+            Linker.Option.firstVariadicArg(3));
+    static final MethodHandle GTK_FILE_CHOOSER_GET_FILENAME = dl("gtk_file_chooser_get_filename",
+            FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle GTK_FILE_CHOOSER_GET_FILENAMES = dl("gtk_file_chooser_get_filenames",
+            FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle GTK_FILE_CHOOSER_SET_SELECT_MULTIPLE = dl(
+            "gtk_file_chooser_set_select_multiple", FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT));
+    static final MethodHandle GTK_FILE_CHOOSER_SET_CURRENT_NAME = dl(
+            "gtk_file_chooser_set_current_name", FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
+    static final MethodHandle GTK_FILE_CHOOSER_SET_CURRENT_FOLDER = dl(
+            "gtk_file_chooser_set_current_folder", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
+    static final MethodHandle GTK_FILE_CHOOSER_SET_DO_OVERWRITE_CONFIRMATION = dl(
+            "gtk_file_chooser_set_do_overwrite_confirmation",
+            FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT));
+    static final MethodHandle G_SLIST_LENGTH = dl("g_slist_length",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS));
+    static final MethodHandle G_SLIST_NTH_DATA = dl("g_slist_nth_data",
+            FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT));
+    static final MethodHandle G_SLIST_FREE = dl("g_slist_free",
+            FunctionDescriptor.ofVoid(ADDRESS));
+    // WebKitGTK print operation.
+    static final MethodHandle WEBKIT_PRINT_OPERATION_NEW = dl("webkit_print_operation_new",
+            FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle WEBKIT_PRINT_OPERATION_RUN_DIALOG = dl(
+            "webkit_print_operation_run_dialog", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
     static final MethodHandle GTK_DIALOG_ADD_BUTTON = dl("gtk_dialog_add_button",
             FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, JAVA_INT));
     static final MethodHandle GTK_WINDOW_SET_TITLE_DIALOG = GTK_WINDOW_SET_TITLE;

@@ -5,6 +5,7 @@ import dev.jdesk.api.JDeskException;
 import dev.jdesk.api.UiDispatcher;
 import dev.jdesk.ffm.NativeCallbackRegistry;
 import dev.jdesk.ffm.NativeHandle;
+import dev.jdesk.webview.spi.CupsPrinting;
 import dev.jdesk.webview.spi.NativeWindowConfig;
 import dev.jdesk.webview.spi.PlatformApplication;
 import dev.jdesk.webview.spi.PlatformApplicationConfig;
@@ -141,6 +142,82 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
             if (index < 0 || index >= dialog.buttons().size()) index = 0;
             return new MessageDialogResult(index, dialog.buttons().get(index));
         } finally { ObjC.release(alert); }
+    }
+
+    private static final long NS_MODAL_RESPONSE_OK = 1L; // NSModalResponseOK
+
+    @Override
+    public dev.jdesk.api.FileDialogResult showOpenDialog(dev.jdesk.api.FileDialog.OpenDialog dialog) {
+        requireOpen(); dispatcher.assertUiThread();
+        MemorySegment panel = ObjC.send(ObjC.cls("NSOpenPanel"), "openPanel");
+        ObjC.sendVoidBool(panel, "setCanChooseFiles:", !dialog.chooseDirectories());
+        ObjC.sendVoidBool(panel, "setCanChooseDirectories:", dialog.chooseDirectories());
+        ObjC.sendVoidBool(panel, "setAllowsMultipleSelection:", dialog.allowMultiple());
+        if (!dialog.title().isEmpty()) {
+            ObjC.sendVoid(panel, "setMessage:", ObjC.nsString(dialog.title()));
+        }
+        dialog.directory().ifPresent(dir -> ObjC.sendVoid(panel, "setDirectoryURL:",
+                ObjC.send(ObjC.cls("NSURL"), "fileURLWithPath:", ObjC.nsString(dir))));
+        applyAllowedTypes(panel, dialog.filters());
+        if (ObjC.sendLong(panel, "runModal") != NS_MODAL_RESPONSE_OK) {
+            return dev.jdesk.api.FileDialogResult.cancelled();
+        }
+        MemorySegment urls = ObjC.send(panel, "URLs");
+        long count = ObjC.sendLong(urls, "count");
+        java.util.List<String> paths = new java.util.ArrayList<>();
+        for (long i = 0; i < count; i++) {
+            MemorySegment url = ObjC.sendIndexed(urls, "objectAtIndex:", i);
+            String path = ObjC.javaString(ObjC.send(url, "path"));
+            if (path != null && !path.isEmpty()) {
+                paths.add(path);
+            }
+        }
+        return new dev.jdesk.api.FileDialogResult(paths);
+    }
+
+    @Override
+    public dev.jdesk.api.FileDialogResult showSaveDialog(dev.jdesk.api.FileDialog.SaveDialog dialog) {
+        requireOpen(); dispatcher.assertUiThread();
+        MemorySegment panel = ObjC.send(ObjC.cls("NSSavePanel"), "savePanel");
+        if (!dialog.title().isEmpty()) {
+            ObjC.sendVoid(panel, "setMessage:", ObjC.nsString(dialog.title()));
+        }
+        dialog.directory().ifPresent(dir -> ObjC.sendVoid(panel, "setDirectoryURL:",
+                ObjC.send(ObjC.cls("NSURL"), "fileURLWithPath:", ObjC.nsString(dir))));
+        dialog.suggestedName().ifPresent(name ->
+                ObjC.sendVoid(panel, "setNameFieldStringValue:", ObjC.nsString(name)));
+        applyAllowedTypes(panel, dialog.filters());
+        if (ObjC.sendLong(panel, "runModal") != NS_MODAL_RESPONSE_OK) {
+            return dev.jdesk.api.FileDialogResult.cancelled();
+        }
+        String path = ObjC.javaString(ObjC.send(ObjC.send(panel, "URL"), "path"));
+        return path == null || path.isEmpty()
+                ? dev.jdesk.api.FileDialogResult.cancelled()
+                : new dev.jdesk.api.FileDialogResult(java.util.List.of(path));
+    }
+
+    /** Applies the union of filter extensions as the panel's allowed file types. */
+    private void applyAllowedTypes(MemorySegment panel, java.util.List<dev.jdesk.api.FileDialog.Filter> filters) {
+        java.util.List<String> extensions = filters.stream()
+                .flatMap(f -> f.extensions().stream())
+                .filter(ext -> !ext.isBlank())
+                .distinct()
+                .toList();
+        if (extensions.isEmpty()) {
+            return; // no filter: any file
+        }
+        MemorySegment array = ObjC.send(ObjC.cls("NSMutableArray"), "array");
+        for (String ext : extensions) {
+            ObjC.sendVoid(array, "addObject:", ObjC.nsString(ext));
+        }
+        // setAllowedFileTypes: is deprecated but still functional and avoids the
+        // UTType dependency; extensions without the leading dot are accepted.
+        ObjC.sendVoid(panel, "setAllowedFileTypes:", array);
+    }
+
+    @Override
+    public void printFile(dev.jdesk.api.PrintJob job) {
+        CupsPrinting.printFile(job); // CUPS lp; thread-safe, runs off the UI thread
     }
 
     @Override

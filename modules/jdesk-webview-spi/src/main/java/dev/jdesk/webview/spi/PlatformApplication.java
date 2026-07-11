@@ -33,6 +33,24 @@ public interface PlatformApplication extends AutoCloseable {
     void writeClipboardText(String text);
     MessageDialogResult showMessageDialog(MessageDialog dialog);
 
+    /** Shows a native app-modal open dialog (UI thread). Default: unsupported. */
+    default dev.jdesk.api.FileDialogResult showOpenDialog(dev.jdesk.api.FileDialog.OpenDialog dialog) {
+        throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                "Open dialog is not supported by this platform adapter");
+    }
+
+    /** Shows a native app-modal save dialog (UI thread). Default: unsupported. */
+    default dev.jdesk.api.FileDialogResult showSaveDialog(dev.jdesk.api.FileDialog.SaveDialog dialog) {
+        throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                "Save dialog is not supported by this platform adapter");
+    }
+
+    /** Sends a document file to a printer. May run off the UI thread. Default: unsupported. */
+    default void printFile(dev.jdesk.api.PrintJob job) {
+        throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                "File printing is not supported by this platform adapter");
+    }
+
     /** Blocks running the native event loop until {@link #requestStop()}. */
     void runEventLoop();
 

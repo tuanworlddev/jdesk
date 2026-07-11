@@ -351,6 +351,22 @@ final class MacWindow extends NativeHandle implements PlatformWindow {
     }
 
     @Override
+    public void print() {
+        requireOpen();
+        // WKWebView -printOperationWithPrintInfo: (macOS 11+) returns an NSPrintOperation
+        // for the current page; showing the panel makes it app-modal like NSAlert.
+        MemorySegment printInfo = ObjC.send(ObjC.cls("NSPrintInfo"), "sharedPrintInfo");
+        MemorySegment operation = ObjC.send(webView.nsView(),
+                "printOperationWithPrintInfo:", printInfo);
+        if (operation.equals(MemorySegment.NULL)) {
+            throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                    "WKWebView returned no print operation");
+        }
+        ObjC.sendVoidBool(operation, "setShowsPrintPanel:", true);
+        ObjC.sendBool(operation, "runOperation");
+    }
+
+    @Override
     protected void releaseNative() {
         if (!destroyed) {
             // Triggers windowShouldClose-less close: [NSWindow close] never consults the

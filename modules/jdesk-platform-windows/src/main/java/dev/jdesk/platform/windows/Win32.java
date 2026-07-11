@@ -33,6 +33,8 @@ final class Win32 {
             SymbolLookup.libraryLookup("shlwapi.dll", GLOBAL);
     private static final SymbolLookup SHELL32 =
             SymbolLookup.libraryLookup("shell32.dll", GLOBAL);
+    private static final SymbolLookup COMDLG32 =
+            SymbolLookup.libraryLookup("comdlg32.dll", GLOBAL);
 
     private Win32() {
     }
@@ -350,6 +352,50 @@ final class Win32 {
                     MemorySegment.NULL, MemorySegment.NULL, 1);
             if (result.address() <= 32) throw new IllegalStateException("ShellExecuteW failed");
         } catch (Throwable t) { throw wrap("ShellExecuteW", t); }
+    }
+
+    // ---- comdlg32 file dialogs + ShellExecute print ----
+    private static final MethodHandle GET_OPEN_FILE_NAME = down(COMDLG32, "GetOpenFileNameW",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS));
+    private static final MethodHandle GET_SAVE_FILE_NAME = down(COMDLG32, "GetSaveFileNameW",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS));
+
+    static MethodHandle getOpenFileNameHandle() {
+        return GET_OPEN_FILE_NAME;
+    }
+
+    static MethodHandle getSaveFileNameHandle() {
+        return GET_SAVE_FILE_NAME;
+    }
+
+    /**
+     * ShellExecuteW with the "print"/"printto" verb (default vs. named printer). The
+     * print verb can delegate to COM-based shell/print handlers, so this initializes an
+     * STA apartment on the calling (print) thread — printFile runs on a fresh virtual
+     * thread that has no apartment otherwise.
+     */
+    static void shellPrint(String filePath, String printerName) {
+        int hr = coInitializeEx(COINIT_APARTMENTTHREADED);
+        // hr S_OK (0) / S_FALSE (1) both mean initialized; only balance CoUninitialize
+        // when we actually initialized it (hr >= 0).
+        boolean initialized = hr >= 0;
+        try (Arena arena = Arena.ofConfined()) {
+            String verb = printerName == null ? "print" : "printto";
+            MemorySegment params = printerName == null
+                    ? MemorySegment.NULL : WideStrings.alloc(arena, "\"" + printerName + "\"");
+            MemorySegment result = (MemorySegment) SHELL_EXECUTE.invokeExact(MemorySegment.NULL,
+                    WideStrings.alloc(arena, verb), WideStrings.alloc(arena, filePath),
+                    params, MemorySegment.NULL, 0);
+            if (result.address() <= 32) {
+                throw new IllegalStateException("ShellExecuteW print failed (" + result.address() + ")");
+            }
+        } catch (Throwable t) {
+            throw wrap("ShellExecuteW print", t);
+        } finally {
+            if (initialized) {
+                coUninitialize();
+            }
+        }
     }
 
     static String readClipboardText() {

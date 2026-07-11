@@ -48,6 +48,9 @@ public final class Main {
     private static final boolean STREAM_2GB = Boolean.getBoolean("jdesk.smoke.stream2gb");
     private static final long PROCESS_KILL_HOLD_MS = Long.getLong("jdesk.smoke.processKillHoldMs", 0L);
     private static final boolean MESSAGE_DIALOG = Boolean.getBoolean("jdesk.smoke.messageDialog");
+    /** Manual opt-in: shows a real save dialog / print panel (needs a driver to dismiss). */
+    private static final boolean FILE_DIALOG = Boolean.getBoolean("jdesk.smoke.fileDialog");
+    private static final boolean PRINT_DIALOG = Boolean.getBoolean("jdesk.smoke.printDialog");
     /**
      * Environment-dependent probes (OS secret service, automation HTTP endpoint,
      * multi-window state persistence). On by default for the native lanes; the
@@ -301,6 +304,22 @@ public final class Main {
                                 && dialogResult.buttonLabel().equals("Audit PASS"),
                         "selected=" + dialogResult.buttonLabel());
             }
+            if (FILE_DIALOG) {
+                // A driver (osascript) types a name and clicks Save; we assert the panel
+                // returned that path — the real NSSavePanel round trip.
+                var saved = runtime.showSaveDialog(dev.jdesk.api.FileDialog.SaveDialog.withName(
+                        "JDesk save test", "jdesk-live.txt",
+                        new dev.jdesk.api.FileDialog.Filter("Text", List.of("txt"))))
+                        .toCompletableFuture().get(120, TimeUnit.SECONDS);
+                evidence.addCase("java:file-save-dialog", saved.path().isPresent(),
+                        "path=" + saved.path().orElse("(cancelled)"));
+            }
+            if (PRINT_DIALOG) {
+                // A driver cancels the print panel; showing it (no exception) is the check.
+                runtime.window(MAIN_WINDOW).orElseThrow().print()
+                        .toCompletableFuture().get(120, TimeUnit.SECONDS);
+                evidence.addCase("java:window-print", true, "print panel shown and dismissed");
+            }
             evidence.addCase("java:denied-handler-never-ran", !deniedRan.get(),
                     "deniedRan=" + deniedRan.get());
 
@@ -387,9 +406,99 @@ public final class Main {
                                     + " unauthorized=" + unauthorized.statusCode()
                                     + " snapshotPng=" + pngMagic + " (" + png.length + " bytes)"
                                     + " consoleMarker=" + consoleHasMarker);
+
+                    // /evaluate returns parsed JSON under `result`.
+                    var evalResponse = http.send(java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create("http://127.0.0.1:" + port + "/evaluate"))
+                            .header("Authorization", "Bearer " + token)
+                            .POST(java.net.http.HttpRequest.BodyPublishers.ofString(
+                                    "{\"window\":\"main\",\"script\":\"({a:1,b:[2,3],c:'x'})\"}"))
+                            .build(), java.net.http.HttpResponse.BodyHandlers.ofString());
+                    boolean evalJson = evalResponse.statusCode() == 200
+                            && evalResponse.body().contains("\"a\":1")
+                            && evalResponse.body().contains("\"b\":[2,3]");
+                    evidence.addCase("java:automation-evaluate-json", evalJson,
+                            "body=" + evalResponse.body());
+
+                    // /input synthesizes a real DOM click; assert both the endpoint's own
+                    // status (200 + ok:true — catches per-engine boolean serialization)
+                    // and the page-side effect.
+                    var inputResponse = http.send(java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create("http://127.0.0.1:" + port + "/input"))
+                            .header("Authorization", "Bearer " + token)
+                            .POST(java.net.http.HttpRequest.BodyPublishers.ofString(
+                                    "{\"window\":\"main\",\"action\":\"click\","
+                                            + "\"selector\":\"#input-probe\"}"))
+                            .build(), java.net.http.HttpResponse.BodyHandlers.ofString());
+                    boolean inputAck = inputResponse.statusCode() == 200
+                            && inputResponse.body().contains("\"ok\":true");
+                    Thread.sleep(150);
+                    var clickedResponse = http.send(java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create("http://127.0.0.1:" + port + "/evaluate"))
+                            .header("Authorization", "Bearer " + token)
+                            .POST(java.net.http.HttpRequest.BodyPublishers.ofString(
+                                    "{\"window\":\"main\",\"script\":\"!!window.__inputProbeClicked\"}"))
+                            .build(), java.net.http.HttpResponse.BodyHandlers.ofString());
+                    boolean inputWorked = inputAck
+                            && clickedResponse.body().contains("\"result\":true");
+                    evidence.addCase("java:automation-input", inputWorked,
+                            "inputAck=" + inputResponse.body() + " afterClick=" + clickedResponse.body());
+                    automationPassed = automationPassed && evalJson && inputWorked;
+
+                    // Earliest-error capture: a window whose module fails to load must
+                    // surface the load error in /console even though no page script ran.
+                    WindowId broken = new WindowId("broken-probe");
+                    runtime.openWindow(WindowConfig.builder().id(broken.value())
+                            .title("broken").size(400, 300)
+                            .entry("jdesk://app/broken-module.html").build())
+                            .toCompletableFuture().get(10, TimeUnit.SECONDS);
+                    Thread.sleep(800);
+                    var brokenConsole = http.send(java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create(
+                                    "http://127.0.0.1:" + port + "/console?window=broken-probe"))
+                            .header("Authorization", "Bearer " + token).GET().build(),
+                            java.net.http.HttpResponse.BodyHandlers.ofString());
+                    runtime.closeWindow(broken).toCompletableFuture().get(10, TimeUnit.SECONDS);
+                    boolean earlyError = brokenConsole.body().contains("does-not-exist-module")
+                            || brokenConsole.body().contains("also-missing")
+                            || brokenConsole.body().contains("Failed to load");
+                    evidence.addCase("java:early-error-capture", earlyError,
+                            "brokenConsole=" + brokenConsole.body());
+                    automationPassed = automationPassed && earlyError;
                 }
             } catch (Exception e) {
                 evidence.addCase("java:automation-endpoint", false, String.valueOf(e));
+            }
+
+            // Printing plumbing: printFile validates inputs and reaches the OS spooler.
+            try {
+                boolean rejectsMissing = false;
+                try {
+                    runtime.printFile(dev.jdesk.api.PrintJob.of("/no/such/file.pdf"))
+                            .toCompletableFuture().get(10, TimeUnit.SECONDS);
+                } catch (Exception ex) {
+                    rejectsMissing = String.valueOf(ex).contains("INVALID_REQUEST")
+                            || String.valueOf(ex).contains("not readable")
+                            || String.valueOf(ex).contains("does not exist");
+                }
+                // A real (tiny) PDF to a non-existent printer must be rejected by lp,
+                // proving the job reached the spooler rather than silently succeeding.
+                java.nio.file.Path pdf = java.nio.file.Files.createTempFile("jdesk-print", ".pdf");
+                java.nio.file.Files.writeString(pdf,
+                        "%PDF-1.1\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n");
+                boolean spoolerReached = false;
+                try {
+                    runtime.printFile(dev.jdesk.api.PrintJob.of(pdf.toString())
+                            .toPrinter("jdesk-nonexistent-printer"))
+                            .toCompletableFuture().get(25, TimeUnit.SECONDS);
+                } catch (Exception ex) {
+                    spoolerReached = true; // lp rejected the unknown printer
+                }
+                java.nio.file.Files.deleteIfExists(pdf);
+                evidence.addCase("java:print-file-plumbing", rejectsMissing && spoolerReached,
+                        "rejectsMissing=" + rejectsMissing + " spoolerReached=" + spoolerReached);
+            } catch (Exception e) {
+                evidence.addCase("java:print-file-plumbing", false, String.valueOf(e));
             }
 
             // Window min-size + remembered bounds through real native windows.

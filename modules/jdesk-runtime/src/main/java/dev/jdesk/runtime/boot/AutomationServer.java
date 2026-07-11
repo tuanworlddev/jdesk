@@ -55,6 +55,17 @@ final class AutomationServer implements AutoCloseable {
     public record ConsoleLine(String window, String level, String message) {
     }
 
+    /**
+     * POST /input request. Synthesizes DOM interaction on a target element (CSS
+     * {@code selector}). Actions: {@code click}, {@code focus}, {@code type} (sets value
+     * and fires input/change), {@code key} (keydown/keyup with {@code key}), {@code hover}
+     * (mouseover/mousemove). These are synthetic DOM events (isTrusted=false) — enough
+     * for automation, but real OS-level hover CSS and IME composition are NOT reproduced.
+     */
+    public record InputRequest(String window, String action, String selector, String text,
+            String key) {
+    }
+
     private final JDeskRuntime runtime;
     private final HttpServer server;
     private final byte[] tokenBytes;
@@ -88,6 +99,7 @@ final class AutomationServer implements AutoCloseable {
         server.createContext("/evaluate", exchange -> guarded(exchange, this::handleEvaluate));
         server.createContext("/snapshot", exchange -> guarded(exchange, this::handleSnapshot));
         server.createContext("/console", exchange -> guarded(exchange, this::handleConsole));
+        server.createContext("/input", exchange -> guarded(exchange, this::handleInput));
         server.start();
 
         String configured = System.getProperty("jdesk.automation.dir");
@@ -178,9 +190,99 @@ final class AutomationServer implements AutoCloseable {
             return;
         }
         String window = request.window() == null ? "main" : request.window();
-        String value = runtime.evaluate(new WindowId(window), request.script())
+        // Wrap the caller's expression so the page returns JSON.stringify of its value:
+        // `result` is the parsed JSON (objects/arrays/numbers/booleans/null), while
+        // `value` keeps the raw string form for back-compat. A non-serializable or
+        // throwing expression yields result:null with the raw string in `value`.
+        String wrapped = "(function(){try{return JSON.stringify((function(){return ("
+                + request.script() + ");})());}catch(e){return undefined;}})()";
+        String raw = runtime.evaluate(new WindowId(window), wrapped)
                 .toCompletableFuture().get(15, TimeUnit.SECONDS);
-        sendJson(exchange, 200, Map.of("value", String.valueOf(value)));
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("value", String.valueOf(raw));
+        response.put("result", parseJsonOrNull(raw));
+        sendJson(exchange, 200, response);
+    }
+
+    /** Parses an engine-returned JSON string into a tree, or null when not JSON. */
+    private Object parseJsonOrNull(String raw) {
+        if (raw == null || raw.isBlank() || "undefined".equals(raw)) {
+            return null;
+        }
+        try {
+            return codec.decode(raw, Object.class);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private void handleInput(HttpExchange exchange) throws Exception {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            sendJson(exchange, 405, Map.of("error", "POST required"));
+            return;
+        }
+        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        InputRequest request = codec.decode(body, InputRequest.class);
+        String window = request.window() == null ? "main" : request.window();
+        if (request.selector() == null || request.selector().isBlank()) {
+            sendJson(exchange, 400, Map.of("error", "selector is required"));
+            return;
+        }
+        // Wrap in JSON.stringify so the boolean serializes to "true"/"false" on every
+        // engine (a bare JS boolean stringifies to "1"/"0" on WKWebView).
+        String raw = runtime.evaluate(new WindowId(window),
+                        "JSON.stringify(" + inputScript(request) + ")")
+                .toCompletableFuture().get(15, TimeUnit.SECONDS);
+        boolean ok = "true".equals(raw);
+        sendJson(exchange, ok ? 200 : 422,
+                Map.of("ok", ok, "detail", ok ? "dispatched" : "element not found or action failed"));
+    }
+
+    /** Builds a self-contained page script that performs the requested DOM interaction. */
+    private static String inputScript(InputRequest request) {
+        String selector = jsString(request.selector());
+        String action = request.action() == null ? "click" : request.action();
+        String text = jsString(request.text() == null ? "" : request.text());
+        String key = jsString(request.key() == null ? "" : request.key());
+        return "(function(){var el=document.querySelector(" + selector + ");"
+                + "if(!el){return false;}"
+                + "var base={bubbles:true,cancelable:true};"
+                + "function mouse(t){el.dispatchEvent(new MouseEvent(t,Object.assign({},base)));}"
+                + "function keyev(t,k){el.dispatchEvent(new KeyboardEvent(t,"
+                + "Object.assign({key:k},base)));}"
+                + "function plain(t){el.dispatchEvent(new Event(t,Object.assign({},base)));}"
+                + "var a=" + jsString(action) + ";"
+                + "if(a==='click'){el.focus&&el.focus();mouse('mousedown');mouse('mouseup');"
+                + "el.click?el.click():mouse('click');}"
+                + "else if(a==='focus'){el.focus&&el.focus();}"
+                + "else if(a==='hover'){mouse('mouseover');mouse('mousemove');}"
+                + "else if(a==='type'){el.focus&&el.focus();"
+                + "if('value' in el){el.value=" + text + ";}else{el.textContent=" + text + ";}"
+                + "plain('input');plain('change');}"
+                + "else if(a==='key'){var k=" + key + ";keyev('keydown',k);keyev('keyup',k);}"
+                + "else{return false;}return true;})()";
+    }
+
+    private static String jsString(String value) {
+        StringBuilder out = new StringBuilder("\"");
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '"' -> out.append("\\\"");
+                case '\\' -> out.append("\\\\");
+                case '\n' -> out.append("\\n");
+                case '\r' -> out.append("\\r");
+                case '\t' -> out.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        out.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        out.append(c);
+                    }
+                }
+            }
+        }
+        return out.append('"').toString();
     }
 
     private void handleSnapshot(HttpExchange exchange) throws Exception {

@@ -20,7 +20,7 @@ paths but remain compile-verified only until runs on those operating systems.
 - **Template bugs fixed**: `import "./style.css"` removed (CSS now a `<link>`, `Build.java` rewrites the path); `jdeskFrontendBuild` decoupled from `classes` (now wired to `jar`), covered by TestKit functional test.
 - IPC latency instrumentation now recorded in stress runs (p50/p95/p99 in `js:ipc-stress-10000`).
 
-### Batch 2 (same day, runs 1783791506/1783791575/1783788948; verified on Windows/Linux CI too)
+### Batch 2 (2026-07-11; all three platforms green on CI run 29162068874)
 
 - **Debug/automation channel**: opt-in loopback automation endpoint (`-Djdesk.automation=true`; token-gated `GET /windows`, `POST /evaluate`, `GET /snapshot`, `GET /console`) for E2E tests, CI, and agents — verified live over real HTTP against the running app. See `docs/guides/automation-and-e2e.md`.
 - **App-defined asset routes** (`JDeskApplication.Builder.assetRoute`): Java-served binary content under `jdesk://app/<prefix>/` through the streaming pipeline (Range included) — replaces base64-over-IPC image proxying. macOS scheme serving is now fully asynchronous (background resolve/stream, main-thread-marshalled WKURLSchemeTask callbacks, stop handling); verified live that a stalled route does not block IPC. Windows/Linux still serve synchronously (documented).
@@ -29,6 +29,13 @@ paths but remain compile-verified only until runs on those operating systems.
 - **Window polish**: `WindowConfig` gains `minSize` (enforced for user and programmatic resizes), `startMaximized`, `rememberBounds` (persisted per app/window under `~/.jdesk/window-state/`); `PlatformWindow.getBounds()` added on all three platforms; verified live (clamp + restore).
 - **Handler thread-model docs fixed**: handlers always ran on virtual threads, but the docs' own example pushed work onto the common ForkJoinPool via `supplyAsync` — the guide now says "just block" and shows the correct concurrent-fetch pattern.
 - **Framework templates now use jdesk-client + generated TS bindings** (react/vanilla/vue/svelte) instead of a hand-rolled ~80-line bridge; `ui/src/generated/` gitignored; dev-loop state save/restore pattern documented.
+
+### Batch 3 (2026-07-12, runs 1783793227/1783793252)
+
+- **Native file dialogs** (`ApplicationHandle.showOpenDialog`/`showSaveDialog`): app-modal, follow the app appearance — replaces `osascript choose file`. macOS NSOpenPanel/NSSavePanel live-verified (save round trip returns the typed path); Windows comdlg32 and Linux GtkFileChooser implemented, compile-verified.
+- **Printing**: `WindowHandle.print()` opens the OS print dialog for the page (macOS NSPrintOperation live; Linux webkit_print_operation compile; Windows WebView2 print UI is a documented gap). `ApplicationHandle.printFile(PrintJob)` sends a PDF straight to a printer with printer/paper/copies (macOS+Linux CUPS `lp`, live-verified reaching the spooler; Windows ShellExecute print, no copies/paper).
+- **Automation `/evaluate` returns parsed JSON** under `result` (object/array/number), not just a string; new **`/input`** endpoint synthesizes DOM click/type/focus/hover/key (documented as DOM-level, not OS-level IME/hover).
+- **Earliest page errors captured**: the console-capture script now installs error listeners in the capture phase at document-start, so a module/parse/resource-load failure that crashes the page before any script runs is recorded in `/console` and the Java log (verified with a deliberately broken module page).
 
 ## P0 — release blockers
 
@@ -43,8 +50,8 @@ paths but remain compile-verified only until runs on those operating systems.
 
 ## P1/P2 gaps
 
-- Window operations beyond basic create/show/hide/title/bounds/close: focus, minimize, maximize, fullscreen, icon, always-on-top.
-- Native menu, tray, dialogs, clipboard, notifications, drag-and-drop, global shortcuts.
+- Window operations: window icon still missing (focus/minimize/maximize/fullscreen/always-on-top/min-size/remembered-bounds are done — see Resolved).
+- Native menu, tray, notifications, drag-and-drop, global shortcuts still missing (clipboard, message dialog, file dialogs, and printing are done — see Resolved).
 - Cookie/session control, downloads, and uploads.
 - Engine-level DevTools gating test.
 - Cold/warm startup, idle CPU, p50/p95/p99 IPC latency, peak RSS, 100-window cycle, 8-hour soak, and helper/renderer recovery benchmarks.

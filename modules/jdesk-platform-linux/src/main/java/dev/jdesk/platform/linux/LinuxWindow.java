@@ -299,6 +299,28 @@ final class LinuxWindow extends NativeHandle implements PlatformWindow {
     }
 
     @Override
+    public void print() {
+        requireOpen();
+        try {
+            MemorySegment operation = (MemorySegment) Gtk.WEBKIT_PRINT_OPERATION_NEW
+                    .invokeExact(webView.widget());
+            if (operation.equals(MemorySegment.NULL)) {
+                throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                        "webkit_print_operation_new returned null");
+            }
+            try {
+                // Modal print dialog parented to this window; blocks until dismissed.
+                int ignored = (int) Gtk.WEBKIT_PRINT_OPERATION_RUN_DIALOG
+                        .invokeExact(operation, gtkWindow);
+            } finally {
+                Gtk.gObjectUnref(operation);
+            }
+        } catch (Throwable t) {
+            throw Gtk.rethrow(t);
+        }
+    }
+
+    @Override
     protected void releaseNative() {
         if (!destroyed) {
             // Programmatic close never consults the delete-event veto (correct for
