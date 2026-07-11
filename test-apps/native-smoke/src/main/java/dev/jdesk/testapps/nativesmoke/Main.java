@@ -85,7 +85,8 @@ public final class Main {
 
     public static void main(String[] args) throws Exception {
         Path evidenceBase = Path.of(System.getProperty("jdesk.evidence.dir", "build/evidence"));
-        EvidenceRun evidence = EvidenceRun.start(evidenceBase, "native",
+        EvidenceRun evidence = EvidenceRun.start(evidenceBase,
+                System.getProperty("jdesk.evidence.category", "native"),
                 "native-smoke " + String.join(" ", args));
         int exitCode = 1;
         try {

@@ -101,12 +101,12 @@ Gates:
 - [ ] Fresh external sample builds and runs the vertical slice via public APIs only
 
 ### Phase 4 — macOS adapter
-Status: NOT STARTED
+Status: DONE (2026-07-11, verified locally on real Apple Silicon hardware)
 
 Gates:
-- [ ] AppKit/WKWebView via FFM, no private selectors
-- [ ] `macos-arm64-native` green (local machine qualifies as real hardware; also CI when repo pushed)
-- [ ] Launch from packaged `.app` image
+- [x] AppKit/WKWebView via FFM (ObjC runtime bindings, public clang blocks ABI, WKURLSchemeHandler, WKScriptMessageHandler, navigation delegate, takeSnapshot). No private selectors; DevTools via public `setInspectable:` only.
+- [x] Native smoke green on real macOS 26.5.1 arm64 (this machine): runs 1783741626-1b31e8d3bd4403a7 (functional, 21/21) and 1783741637-3a7dffd9377a2d6b (stress: 10,000 IPC round trips 0 mismatch in 509 ms, 25/25 window cycles), commit 9cd65d40c, dirty=false, provider `macos-wkwebview`, verifier green. Archived at ~/JDesk-evidence-archive/. A macOS CI job is deferred to the Phase 7 consolidated run (private-repo macOS minutes are 10x; local runs ARE real hardware per spec rule 5).
+- [x] Launch from packaged `.app` image: jpackage app-image built and executed (`JDeskSmoke.app`), evidence run 1783741694-0ba04a314ebd5e40, category `package`, PASSED 21/21, exit 0.
 
 ### Phase 5 — Linux adapter
 Status: NOT STARTED
