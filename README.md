@@ -25,7 +25,7 @@ Vue, and Svelte.
 
 | Platform | WebView | Minimum target | Verification |
 | --- | --- | --- | --- |
-| Windows x64 | WebView2 | Windows 10 1809 | Native, package, security, and stress tests on a real CI runner |
+| Windows x64 | WebView2 | Windows 10 1809 | Core native, package, security, and stress tests pass on a real CI runner. Two new advanced-window features (multi-window event routing, full window controls) are **not yet verified on Windows** — they pass on macOS + Linux. |
 | macOS ARM64 | WKWebView | macOS 13 | Native, package, security, and stress tests on real Apple Silicon hardware |
 | Linux x64 | WebKitGTK 4.1 | Ubuntu 22.04 | Native, package, security, and stress tests on a real CI runner |
 
