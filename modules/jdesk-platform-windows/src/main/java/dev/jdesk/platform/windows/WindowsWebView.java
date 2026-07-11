@@ -167,6 +167,7 @@ final class WindowsWebView implements PlatformWebView {
                             return Hresult.S_OK; // non-string message: ignore
                         }
                         String message = WideStrings.readAndFreeCoTaskMem(out.get(ADDRESS, 0));
+                        LOG.log(Level.INFO, "bridge<- {0} chars", message.length());
                         for (Consumer<String> listener : messageListeners) {
                             listener.accept(message);
                         }
@@ -193,12 +194,30 @@ final class WindowsWebView implements PlatformWebView {
                 "ContentLoadingHandler", WebView2.IID_CONTENT_LOADING_HANDLER,
                 (self, sender, args) -> {
                     URI uri = currentSource();
+                    LOG.log(Level.INFO, "contentLoading source={0}", uri);
                     for (Consumer<URI> listener : committedListeners) {
                         listener.accept(uri);
                     }
                     return Hresult.S_OK;
                 });
         addEvent(WebView2.WV_ADD_CONTENT_LOADING, "add_ContentLoading", contentLoadingHandler);
+
+        // NavigationCompleted: diagnostics only (success flag + web error status)
+        MemorySegment navigationCompletedHandler = ComCallback.ptrPtrHandler(registry,
+                "NavigationCompletedHandler", WebView2.IID_NAVIGATION_COMPLETED_HANDLER,
+                (self, sender, args) -> {
+                    try (Arena confined = Arena.ofConfined()) {
+                        MemorySegment ok = confined.allocate(JAVA_INT);
+                        ComRuntime.invoke(args, 3, THIS_PTR, ok); // get_IsSuccess
+                        MemorySegment status = confined.allocate(JAVA_INT);
+                        ComRuntime.invoke(args, 4, THIS_PTR, status); // get_WebErrorStatus
+                        LOG.log(Level.INFO, "navigationCompleted success={0} webErrorStatus={1}",
+                                ok.get(JAVA_INT, 0) != 0, status.get(JAVA_INT, 0));
+                    }
+                    return Hresult.S_OK;
+                });
+        addEvent(WebView2.WV_ADD_NAVIGATION_COMPLETED, "add_NavigationCompleted",
+                navigationCompletedHandler);
 
         // ProcessFailed
         MemorySegment processFailedHandler = ComCallback.ptrPtrHandler(registry,
@@ -255,10 +274,12 @@ final class WindowsWebView implements PlatformWebView {
             }
             for (NavigationListener listener : navigationListeners) {
                 if (listener.onNavigate(request) == NavigationDecision.BLOCK) {
+                    LOG.log(Level.INFO, "navigationStarting BLOCK main={0} uri={1}", mainFrame, uri);
                     ComRuntime.invoke(args, WebView2.NAV_ARGS_PUT_CANCEL, THIS_INT, 1);
                     return Hresult.S_OK;
                 }
             }
+            LOG.log(Level.INFO, "navigationStarting ALLOW main={0} uri={1}", mainFrame, uri);
         }
         return Hresult.S_OK;
     }
@@ -302,6 +323,7 @@ final class WindowsWebView implements PlatformWebView {
 
             AssetResponse asset = app.config().assetHandler()
                     .handle(new AssetRequest(URI.create(uri), method));
+            LOG.log(Level.INFO, "asset {0} {1} -> {2}", method, uri, asset.status());
 
             MemorySegment stream = streamFor(asset);
             StringBuilder headers = new StringBuilder();
@@ -411,6 +433,7 @@ final class WindowsWebView implements PlatformWebView {
         if (closed) {
             return;
         }
+        LOG.log(Level.INFO, "bridge-> {0} chars", json.length());
         try (Arena confined = Arena.ofConfined()) {
             ComRuntime.invokeChecked(webView, WebView2.WV_POST_WEB_MESSAGE_AS_STRING,
                     "PostWebMessageAsString", THIS_PTR, WideStrings.alloc(confined, json));

@@ -182,6 +182,17 @@ public final class JDeskRuntime implements AutoCloseable {
         });
     }
 
+    /** Evaluates script in the page; development/diagnostics use only. */
+    public CompletionStage<String> evaluate(WindowId windowId, String script) {
+        WindowRuntime windowRuntime = windows.get(windowId);
+        if (windowRuntime == null) {
+            return CompletableFuture.failedFuture(
+                    new JDeskException(ErrorCode.WINDOW_CLOSED, "Unknown or closed window"));
+        }
+        return platformApp.ui().submit(() -> windowRuntime.window.webView().evaluate(script))
+                .thenCompose(stage -> stage);
+    }
+
     /** Captures the window's WebView through the engine's real snapshot API. */
     public CompletionStage<WebViewSnapshot> snapshot(WindowId windowId) {
         WindowRuntime windowRuntime = windows.get(windowId);

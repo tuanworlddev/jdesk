@@ -161,6 +161,25 @@ public final class Main {
         try {
             if (!reportLatch.await(180, TimeUnit.SECONDS)) {
                 evidence.addCase("page-report", false, "no report within 180s");
+                try {
+                    String state = runtime.evaluate(MAIN_WINDOW,
+                            "JSON.stringify({href: location.href, title: document.title,"
+                                    + " bridge: !!(window.__jdesk && window.__jdesk.post),"
+                                    + " nonce: window.__jdesk ? String(window.__jdesk.nonce) : 'n/a',"
+                                    + " status: (document.getElementById('status')||{}).textContent,"
+                                    + " log: document.body ? document.body.innerText.slice(0, 3000) : 'no-body'})")
+                            .toCompletableFuture().get(15, TimeUnit.SECONDS);
+                    evidence.log("page state on timeout: " + state);
+                } catch (Exception e) {
+                    evidence.log("page state evaluation failed: " + e);
+                }
+                try {
+                    WebViewSnapshot shot = runtime.snapshot(MAIN_WINDOW)
+                            .toCompletableFuture().get(20, TimeUnit.SECONDS);
+                    evidence.attach("screenshot.png", shot.png());
+                } catch (Exception e) {
+                    evidence.log("timeout snapshot failed: " + e);
+                }
                 return;
             }
             Report report = reportRef.get();
