@@ -8,15 +8,15 @@ This file is updated **only from machine-generated reports** (spec sections 18, 
 | --- | --- | --- | --- |
 | Windows x64 | PASS | CI runs 29137796715 + 29137919391 (stress), artifact `windows-x64-native-evidence`, provider `windows-webview2`, evidence verifier green | WebView2 Evergreen on Windows Server 2025 |
 | macOS ARM64 | PASS | Local real hardware (macOS 26.5.1 arm64), runs 1783741626-1b31e8d3bd4403a7 + 1783741637-3a7dffd9377a2d6b (stress), commit 9cd65d40c clean, verifier green, archived ~/JDesk-evidence-archive | WKWebView (system WebKit) |
-| Linux x64 | NOT STARTED | — | — |
+| Linux x64 | PASS | CI run 29139086672 (branch), provider `linux-webkitgtk`, evidence `1783743433-2f0db9f6f5b9b528`, verifier green | WebKitGTK 4.1 (libwebkit2gtk-4.1) |
 
 ## Package smoke
 
 | Platform | Status | Evidence | Package checksum |
 | --- | --- | --- | --- |
-| Windows x64 | NOT STARTED | — | — |
+| Windows x64 | see CI run 29139506086 (`package-windows-x64`) | jpackage app-image `JDeskSmoke.exe` launched without Gradle, category `package` | — |
 | macOS ARM64 | PASS | jpackage app-image `JDeskSmoke.app` executed directly; run 1783741694-0ba04a314ebd5e40, category `package`, 21/21, exit 0 | — |
-| Linux x64 | NOT STARTED | — | — |
+| Linux x64 | see CI run 29139506086 (`package-linux-x64`) | jpackage app-image launched without Gradle under Xvfb, category `package` | — |
 
 ## Security probes (section 17.6)
 

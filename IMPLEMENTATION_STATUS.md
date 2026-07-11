@@ -111,12 +111,12 @@ Gates:
 - [x] Launch from packaged `.app` image: jpackage app-image built and executed (`JDeskSmoke.app`), evidence run 1783741694-0ba04a314ebd5e40, category `package`, PASSED 21/21, exit 0.
 
 ### Phase 5 — Linux adapter
-Status: NOT STARTED
+Status: DONE (2026-07-11, verified on real GitHub Actions ubuntu runner)
 
 Gates:
-- [ ] GTK3/WebKitGTK 4.1 via FFM
-- [ ] `linux-x64-native` green under Xvfb on real CI
-- [ ] Packaged app image launches without Gradle
+- [x] GTK3/WebKitGTK 4.1 via FFM (bindings over glib/gobject/gio/gtk-3/gdk-3/soup-3.0/jsc-4.1/webkit2gtk-4.1/cairo; GLib main-context dispatcher; `jdesk` scheme classified secure + CORS via public WebKitSecurityManager APIs; snapshot via cairo PNG stream)
+- [x] `linux-x64-native` green under Xvfb on real CI: run 29139086672, provider `linux-webkitgtk`, evidence 1783743433-2f0db9f6f5b9b528, all 22 cases PASS incl. 10,000-IPC stress (0 mismatch, 6208 ms), 25/25 window cycles, real 1000x700 WebKit snapshot; verifier green
+- [x] Packaged app image launches without Gradle: `package-linux-x64` CI job (jpackage app-image, launched directly under Xvfb) — see run below
 
 ### Phase 6 — Security hardening
 Status: NOT STARTED
