@@ -342,9 +342,12 @@ public final class DesktopCommandProcessor extends AbstractProcessor {
             return new TopLevelType(qualifiedName, scalar);
         }
         if (element.getKind() == ElementKind.RECORD) {
-            if (!validateRecord(element, method, new ArrayDeque<>(), referencedRecords)) {
+            // Nested records land in types.ts via the record registry; commands.ts only
+            // imports the interfaces that appear in method signatures.
+            if (!validateRecord(element, method, new ArrayDeque<>(), new TreeSet<>())) {
                 return null;
             }
+            referencedRecords.add(element.getSimpleName().toString());
             return new TopLevelType(qualifiedName, element.getSimpleName().toString());
         }
         error(method, "Command " + role + " type " + qualifiedName + " is not supported; it must "

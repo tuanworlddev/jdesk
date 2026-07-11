@@ -1,8 +1,13 @@
 {
   "name": "@jdesk/client",
   "version": "0.1.0",
-  "description": "Typed JDesk IPC client for web frontends. Implemented in Phase 3.",
+  "description": "Typed JDesk IPC client runtime for web frontends; generated command bindings are produced by jdesk-codegen.",
   "type": "module",
   "license": "Apache-2.0",
-  "private": true
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
 }
