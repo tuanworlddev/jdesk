@@ -39,7 +39,8 @@ tasks.register<JavaExec>("verifyEvidence") {
     description = "Recomputes checksums and validates evidence manifests (spec 18)."
     classpath = sourceSets["main"].runtimeClasspath
     mainClass = "dev.jdesk.testkit.evidence.VerifyMain"
-    args(layout.buildDirectory.dir("evidence").get().asFile.absolutePath)
+    args(providers.gradleProperty("jdeskEvidenceVerifyDir")
+        .getOrElse(layout.buildDirectory.dir("evidence").get().asFile.absolutePath))
 }
 
 tasks.named<JavaExec>("run") {
