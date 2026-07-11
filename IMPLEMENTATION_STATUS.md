@@ -45,13 +45,24 @@ Gates:
 No native functionality is claimed. Test-app mains exit 64 on purpose so a scaffold can never fake a pass.
 
 ### Phase 1 — Pure Java core
-Status: NOT STARTED
+Status: DONE (2026-07-11)
 
 Gates:
-- [ ] Lifecycle state machine, platform SPI, IPC protocol, limits/cancellation/backpressure, capability engine, asset resolver, JsonCodec SPI
-- [ ] Unit + property tests; core line coverage >= 80%, branch >= 70%
-- [ ] Protocol fuzz corpus
-- [ ] Architecture boundary tests (no platform deps in core)
+- [x] Lifecycle state machine, platform SPI (incl. close-request/closed/navigation-committed hooks), IPC protocol v1 (hello/invoke/cancel/result/event/nonce), limits/cancellation/backpressure, capability engine (deny-by-default, pre-deserialization), asset resolver (strict path normalization, symlink containment, MIME, cache/security headers), JsonCodec SPI + defensive Jackson default
+- [x] 523 unit/property tests, 0 failures (api 107, runtime 359+, ffm 27, spi 9, testkit 12); coverage: api 89.7%/89.6%, runtime 89.4%/84.6%, ffm 97.0%/100%, spi 86.7%/100% (line/branch, thresholds 80/70 enforced by JaCoCo in `check`)
+- [x] Protocol fuzz corpus: jqwik properties over envelopes (7 properties, ~7000 tries) + asset path fuzz
+- [x] Architecture boundary tests (ArchUnit): api java-only; runtime free of AWT/Swing/JavaFX/sun.misc/platform/ffm deps; Jackson confined to runtime internals
+- [x] CI green on real ubuntu runner: run 29136815933 (core-unit-jdk25, gradle-plugin-functional)
+- [x] Fresh-worktree `./gradlew check` green (exit 0)
+
+Bugs found and fixed during test review (evidence: test suite + CI):
+- JsonLimits/IpcLimits DEFAULTS self-referential class-init NPE (framework-fatal) — fixed with literal ceilings.
+- Timeout/cancel race: worker could win the terminal CAS with CANCELLED over TIMEOUT — fixed by claiming the CAS before interrupting.
+- OriginNormalizer accepted query components — now rejected.
+
+Deferred to native phases (documented, not skipped silently): deadlock regression on real adapters, leak/stress counters, RSS baselines (17.5) — they require real windows/WebViews.
+
+Extra Phase-2 prep landed early: evidence writer/verifier (section 18) with 12 round-trip tests incl. tamper detection; native-smoke app + probe page (17.3); WebView2 vtable reference generated from SDK 1.0.2903.40.
 
 ### Phase 2 — Windows vertical slice
 Status: NOT STARTED

@@ -38,12 +38,12 @@ This file is updated **only from machine-generated reports** (spec sections 18, 
 
 | Gate | Status | Evidence |
 | --- | --- | --- |
-| Core unit tests (JDK 25) | NOT STARTED | — |
-| Coverage (line >= 80%, branch >= 70%) | NOT STARTED | — |
-| Gradle plugin TestKit functional | NOT STARTED | — |
+| Core unit tests (JDK 25) | PASS (523 tests, 0 failures) | CI run 29136815933 (`core-unit-jdk25`, ubuntu, Temurin 25) + local Gradle reports |
+| Coverage (line >= 80%, branch >= 70%) | PASS | JaCoCo verification in `check`; api 89.7/89.6, runtime 89.4/84.6, ffm 97.0/100, spi 86.7/100 |
+| Gradle plugin TestKit functional | IN PROGRESS (plugin is a Phase 3 stub; job runs, no functional tests yet) | CI run 29136815933 (`gradle-plugin-functional`) |
 | Deterministic codegen (golden, double-run) | NOT STARTED | — |
-| Configuration-cache compatibility | NOT STARTED | — |
-| Dependency verification | NOT STARTED | — |
+| Configuration-cache compatibility | PASS (all local builds run with configuration cache on) | gradle.properties + CI logs |
+| Dependency verification | PASS (sha256 metadata, 97 components; locks per project) | gradle/verification-metadata.xml; CI resolves with verification active |
 
 ## Secondary architectures
 
