@@ -246,6 +246,14 @@ jobs:
         env:
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
         run: xvfb-run -a --server-args="-screen 0 1280x800x24" ./build/jpackage/JDeskSmoke/bin/JDeskSmoke
+      - name: Create DEB installer (jpackage, real target-OS packaging; UNSIGNED)
+        run: |
+          sudo apt-get install -y fakeroot binutils
+          jpackage --type deb --name jdesksmoke \
+            --app-image build/jpackage/JDeskSmoke \
+            --app-version 1.0.0 --dest build/installer
+          ls -la build/installer
+          sha256sum build/installer/*.deb | tee -a package-evidence/installer.sha256
       - name: Record package checksum
         run: sha256sum build/jpackage/JDeskSmoke/bin/JDeskSmoke | tee package-evidence/launcher.sha256
       - name: Verify evidence (anti-fake)
@@ -297,6 +305,14 @@ jobs:
         run: |
           & .\build\jpackage\JDeskSmoke\JDeskSmoke.exe | Out-Host
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Create MSI installer (jpackage, real target-OS packaging; UNSIGNED)
+        shell: pwsh
+        run: |
+          jpackage --type msi --name JDeskSmoke `
+            --app-image build/jpackage/JDeskSmoke `
+            --app-version 1.0.0 --dest build/installer
+          Get-ChildItem build/installer
+          Get-FileHash build/installer/*.msi -Algorithm SHA256 | Format-List | Out-File -Append package-evidence/installer.sha256
       - name: Record package checksum
         shell: pwsh
         run: Get-FileHash build\jpackage\JDeskSmoke\JDeskSmoke.exe -Algorithm SHA256 | Format-List | Out-File -Append package-evidence/launcher.sha256

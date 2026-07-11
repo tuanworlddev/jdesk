@@ -18,11 +18,11 @@ Date: 2026-07-11 (UTC)
   security; codegen + TypeScript client; Gradle plugin + packaging; jlink/jpackage app
   images launched without Gradle; SBOM + checksums; security probes; stress/leak counters
   returning to zero.
-- **Not implemented / deferred:** installers (`jdeskInstaller` fails loudly as Phase-7
-  WIP); named-module native-access runtime images (uses `--enable-native-access=ALL-UNNAMED`
-  fallback); end-to-end signed+notarized release pipeline; secondary architectures
-  (Windows ARM64, macOS Intel, Linux ARM64); a project-generator for the basic/structured
-  templates.
+- **Not implemented / deferred:** signed+notarized release pipeline (installers build
+  UNSIGNED); named-module native-access runtime images (uses
+  `--enable-native-access=ALL-UNNAMED` fallback); secondary architectures (Windows ARM64,
+  macOS Intel, Linux ARM64); a project-generator for the basic/structured templates; a
+  dedicated performance benchmark harness.
 
 ## Real verification matrix
 
@@ -77,6 +77,7 @@ jpackage --type app-image ... && <launch app image without Gradle>   # package s
 | Artifact | How produced | Signed? | Tested? |
 | --- | --- | --- | --- |
 | jpackage app image (Win/mac/Linux) | `jpackage --type app-image` on the target OS | UNSIGNED | Yes — launched without Gradle, ran the native smoke, exit 0 |
+| Native installer (DMG/MSI/DEB) | `jdeskInstaller` → `jpackage --type <dmg/msi/deb>` on the target OS | UNSIGNED | Created (DMG verified locally through the plugin; MSI/DEB in CI package jobs) |
 | `checksums.sha256` | `ReleaseArtifacts.writeChecksums` in `jdeskPackage` | n/a | Yes — 282-file image verified, unit-tested |
 | `sbom.cyclonedx.json` | `ReleaseArtifacts.writeSbom` (CycloneDX 1.5) in `jdeskPackage` | n/a | Yes — deterministic, unit-tested |
 | Maven artifacts + sources/javadoc | `maven-publish` per module | UNSIGNED | Build-verified |
@@ -97,6 +98,8 @@ handshake latency, p50/p95/p99 IPC) is a documented follow-up.
   documented job.
 - **Signed release** not produced: signing hooks exist as configuration surface only; CI
   packages are `UNSIGNED` and do not satisfy a signed-release gate (spec 16.3).
-- **Installers** (MSI/DMG/DEB) not implemented; `jdeskInstaller` fails loudly.
+- **Installers build UNSIGNED.** `jdeskInstaller` produces real DMG/MSI/DEB via jpackage
+  (verified: 34 MB DMG locally through the plugin; MSI/DEB in CI), but without signing
+  identities they are `UNSIGNED` and do not satisfy a signed-release gate.
 - No other unverified pass claims: every green cell above links to machine-generated
   evidence or a real CI run on the stated commit range.

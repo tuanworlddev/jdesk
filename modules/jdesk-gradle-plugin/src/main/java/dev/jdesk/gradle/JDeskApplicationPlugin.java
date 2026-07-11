@@ -5,6 +5,7 @@ import dev.jdesk.gradle.tasks.JDeskDevTask;
 import dev.jdesk.gradle.tasks.JDeskDoctorTask;
 import dev.jdesk.gradle.tasks.JDeskFrontendBuildTask;
 import dev.jdesk.gradle.tasks.JDeskNativeSmokeTestTask;
+import dev.jdesk.gradle.tasks.JDeskInstallerTask;
 import dev.jdesk.gradle.tasks.JDeskPackageTask;
 import dev.jdesk.gradle.tasks.JDeskRuntimeImageTask;
 import dev.jdesk.gradle.tasks.JDeskVerifyEvidenceTask;
@@ -208,16 +209,23 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
                             layout.getBuildDirectory().dir("jdesk/package"));
                 });
 
-        tasks.register("jdeskInstaller", t -> {
+        tasks.register("jdeskInstaller", JDeskInstallerTask.class, t -> {
             t.setGroup(GROUP);
-            t.setDescription("Builds platform installers (MSI/DMG/DEB). Not implemented"
-                    + " yet: lands in Phase 7.");
-            t.doLast(action -> {
-                throw new GradleException("jdeskInstaller lands in Phase 7 (spec section"
-                        + " 16.2): installer packages (MSI/DMG/DEB) are not implemented"
-                        + " yet and nothing here fakes success. Use jdeskPackage for a"
-                        + " runnable app-image.");
-            });
+            t.setDescription("Builds a platform installer (DMG/PKG, MSI/EXE, DEB/RPM) from"
+                    + " the jdeskPackage app-image via jpackage, on the target OS only."
+                    + " UNSIGNED unless a signing identity is configured.");
+            t.dependsOn(packageTask);
+            t.getAppImageDirectory().set(
+                    packageTask.flatMap(JDeskPackageTask::getDestination));
+            t.getImageName().set(extension.getApplicationId()
+                    .map(id -> id.substring(id.lastIndexOf('.') + 1)));
+            t.getAppVersion().convention(projectVersion);
+            t.getInstallerType().set(
+                    project.getProviders().gradleProperty("jdeskInstallerType"));
+            t.getMacSigningIdentity().set(extension.getSigning().getMacSigningIdentity());
+            t.getJavaHome().set(javaHome);
+            t.getDestination().convention(
+                    layout.getBuildDirectory().dir("jdesk/installer"));
         });
 
         tasks.register("jdeskNativeSmokeTest", JDeskNativeSmokeTestTask.class, t -> {

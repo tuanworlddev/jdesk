@@ -217,7 +217,7 @@ class JDeskApplicationPluginFunctionalTest {
     }
 
     @Test
-    void installerFailsHonestlyUntilPhase7() throws IOException {
+    void installerTaskIsWiredToPackage() throws IOException {
         Path projectDir = tempDir.resolve("consumer");
         writeSettings(projectDir);
         write(projectDir.resolve("build.gradle"), """
@@ -228,9 +228,16 @@ class JDeskApplicationPluginFunctionalTest {
                 }
                 """);
 
-        BuildResult result = runner(projectDir, "jdeskInstaller").buildAndFail();
+        // A full installer build needs a runtime image + jpackage on the target OS; that
+        // is exercised by the packager unit tests and the CI package jobs. Here we prove
+        // the task is a real installer task wired after jdeskPackage (no fail-loudly stub)
+        // via the execution plan, without running the heavy jpackage chain.
+        BuildResult result = runner(projectDir, "jdeskInstaller", "--dry-run").build();
 
-        assertThat(result.getOutput()).contains("Phase 7");
+        assertThat(result.getOutput())
+                .contains(":jdeskPackage SKIPPED")
+                .contains(":jdeskInstaller SKIPPED")
+                .doesNotContain("Phase 7");
     }
 
     // jdeskGenerateBindings: real jdesk-codegen run producing TypeScript into the ui tree

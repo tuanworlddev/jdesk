@@ -96,7 +96,7 @@ Status: DONE (2026-07-11)
 
 Gates:
 - [x] Annotation processor: deterministic Java registry + TS types/client generation, 46 tests incl. golden double-compile byte-identical checks and all section-11 compile-time rejections; @jdesk/client TS runtime (zero deps, protocol v1)
-- [x] Gradle plugin `dev.jdesk.application`: spec-shaped extension; jdeskDoctor/GenerateBindings/FrontendBuild/Dev/RuntimeImage/Package/NativeSmokeTest/VerifyEvidence registered and real (jdeskInstaller fails loudly as Phase-7 work — never fake-green); packager arg builders unit-tested (18 tests)
+- [x] Gradle plugin `dev.jdesk.application`: spec-shaped extension; jdeskDoctor/GenerateBindings/FrontendBuild/Dev/RuntimeImage/Package/NativeSmokeTest/VerifyEvidence registered and real (jdeskInstaller now builds real DMG/MSI/DEB installers); packager arg builders unit-tested (18 tests)
 - [x] TestKit consumer builds: 13 real functional tests (isolated consumers, config-cache reuse asserted, spaces/non-ASCII paths, real codegen TS emission, real jdeps+jlink image)
 - [x] Fresh external sample (scratchpad, outside the repo): applied the plugin via includeBuild, jdeskDoctor + jdeskGenerateBindings produced GreetServiceCommands.java + typed TS client; ran the vertical slice end-to-end on the real macOS WKWebView using ONLY public APIs (nonce -> hello -> greeting.greet -> typed response -> app.quit), stdout evidence: FRESH-SAMPLE-READY + FRESH-SAMPLE-GREET-CONFIRMED, exit 0. (Spec names the Windows slice; the equally-verified macOS adapter was used for the local run — Windows consumer run follows with the Phase 7 consolidated CI.)
 
@@ -132,6 +132,7 @@ Status: SUBSTANTIALLY DONE (packaging + docs + evidence complete; signed-release
 
 Gates:
 - [x] jlink + jpackage pipeline (Gradle plugin jdeskRuntimeImage/jdeskPackage; app images built + launched without Gradle on windows/macos/linux)
+- [x] jdeskInstaller builds OS-native installers (DMG/PKG/MSI/EXE/DEB/RPM) via jpackage on the target OS: verified end-to-end locally (real 34 MB DMG through the plugin) + Windows MSI / Linux DEB in CI package jobs; unit-tested arg builder
 - [x] Signing hooks (jdesk { signing { ... } } extension: Authenticode / Developer ID + notarization / GPG) — configuration surface; CI packages labeled UNSIGNED
 - [x] SBOM + SHA-256 checksums: ReleaseArtifacts writes checksums.sha256 + CycloneDX 1.5 sbom.cyclonedx.json in jdeskPackage; deterministic, unit-tested (22 packager tests); verified against a real 282-file jpackage image
 - [x] Package smoke evidence on all 3 primary targets: macOS local (1783741694-...), windows/linux CI package jobs green (run 29139506086)
@@ -140,7 +141,7 @@ Gates:
 - [x] Fresh-project quick start reproduced: external sample (scratchpad) rebuilt against current HEAD — FRESH-SAMPLE-READY + FRESH-SAMPLE-GREET-CONFIRMED, exit 0
 - [x] Documentation set complete (docs/ section 24) + consolidated final report (docs/verification/final-report.md)
 
-Remaining before a signed v1 release (honestly incomplete, not claimed done): signed+notarized packages, installers (MSI/DMG/DEB), a macos CI leg, secondary architectures, a dedicated performance benchmark harness, and the RSS regression-threshold ADR. See docs/verification/final-report.md — overall status INCOMPLETE.
+Remaining before a signed v1 release (honestly incomplete, not claimed done): signed+notarized packages (installers build UNSIGNED today), a macos CI leg, secondary architectures, a dedicated performance benchmark harness, and the RSS regression-threshold ADR. See docs/verification/final-report.md — overall status INCOMPLETE.
 
 ## Known deviations / notes
 
