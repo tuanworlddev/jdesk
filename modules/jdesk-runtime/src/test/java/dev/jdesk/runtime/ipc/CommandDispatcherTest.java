@@ -17,6 +17,8 @@ import dev.jdesk.api.PlatformInfo;
 import dev.jdesk.api.WindowId;
 import dev.jdesk.runtime.capability.CapabilityEngine;
 import dev.jdesk.runtime.json.JacksonJsonCodec;
+import dev.jdesk.runtime.json.JsonCodec;
+import dev.jdesk.runtime.json.JsonLimits;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -307,6 +309,19 @@ class CommandDispatcherTest {
         assertError(awaitResultFor("after-bad-hello", responder), ErrorCode.INVALID_REQUEST);
     }
 
+    @Test
+    void unsupportedHelloVersionReturnsExplicitProtocolError() throws Exception {
+        ObjectNode unsupported = (ObjectNode) plain.readTree(hello(dispatcher.currentNonce()));
+        unsupported.put("v", 2);
+        dispatcher.onMessage(unsupported.toString(), ORIGIN);
+
+        JsonNode ack = parse(responder.awaitCount(1, AWAIT).getFirst());
+        assertThat(ack.path("kind").textValue()).isEqualTo("helloAck");
+        assertThat(ack.path("ok").booleanValue()).isFalse();
+        assertThat(ack.at("/error/code").textValue())
+                .isEqualTo(ErrorCode.PROTOCOL_VERSION_UNSUPPORTED.name());
+    }
+
     // ---- echo and correlation ----
 
     @Test
@@ -451,6 +466,43 @@ class CommandDispatcherTest {
         settle();
         assertThat(resultsFor("t-1", replies)).hasSize(1);
         assertThat(timed.pendingInvocations()).isZero();
+    }
+
+    @Test
+    void responseEncodingFailureTerminatesInsteadOfTimingOut() throws Exception {
+        JsonCodec failingCodec = new JsonCodec() {
+            @Override
+            public String encode(Object value) {
+                throw new JDeskException(ErrorCode.SERIALIZATION_ERROR,
+                        "Result could not be serialized");
+            }
+
+            @Override
+            public <T> T decode(String json, Class<T> type) {
+                return null;
+            }
+
+            @Override
+            public JsonLimits limits() {
+                return JsonLimits.DEFAULTS;
+            }
+        };
+        CollectingResponder replies = new CollectingResponder();
+        CommandDefinition command = new CommandDefinition("test.encode", Optional.empty(),
+                Void.class, Optional.empty(), (request, context) ->
+                        CompletableFuture.completedFuture(new Object()));
+        CommandDispatcher encoding = new CommandDispatcher(
+                new WindowId("main"), CommandRegistry.of(command),
+                new CapabilityEngine(CapabilitySet.empty(), Set.of(ORIGIN)), failingCodec,
+                IpcLimits.DEFAULTS, new PlatformInfo("test", "1", "arm64"),
+                EventOverflowPolicy.REJECT, Duration.ZERO, replies);
+        dispatchers.add(encoding);
+
+        String nonce = handshake(encoding, replies);
+        encoding.onMessage(invoke("encode-1", "test.encode", null, nonce), ORIGIN);
+
+        assertError(awaitResultFor("encode-1", replies), ErrorCode.SERIALIZATION_ERROR);
+        assertThat(encoding.pendingInvocations()).isZero();
     }
 
     // ---- nonce / navigation ----

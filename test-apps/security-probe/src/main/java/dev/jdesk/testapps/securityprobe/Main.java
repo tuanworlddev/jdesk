@@ -141,7 +141,7 @@ public final class Main {
         boolean devMode = false;
         RuntimeOptions options = new RuntimeOptions(
                 devMode,
-                new ClasspathAssetSource(Main.class.getClassLoader(), "web"),
+                new ClasspathAssetSource(Main.class.getModule(), "web"),
                 false,
                 Map.of("Content-Security-Policy", CspValidator.DEFAULT_CSP),
                 IpcLimits.DEFAULTS,
@@ -174,15 +174,25 @@ public final class Main {
             AtomicReference<Report> reportRef,
             AtomicBoolean ranPrivileged,
             AtomicBoolean ranDenied,
-            AtomicBoolean verdict) {
+        AtomicBoolean verdict) {
         try {
-            // Java-side probe 7: DevTools disabled in production configuration. This is
-            // config-level evidence; adapters wire DevTools off from this flag. Engine-level
-            // verification (no DevTools window/menu) is a documented manual check.
-            boolean devtoolsOff = !options.devMode();
+            // The orchestrator starts before runtime.run(); wait until the native window has
+            // actually been registered before asking the engine for its DevTools state.
+            long windowDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+            while (runtime.openWindowCount() == 0 && System.nanoTime() < windowDeadline) {
+                Thread.sleep(25);
+            }
+            if (runtime.openWindowCount() == 0) {
+                throw new IllegalStateException("native window did not open within 15s");
+            }
+
+            // Java-side probe 7: query the native engine, not merely RuntimeOptions.
+            boolean engineDevtools = runtime.devToolsEnabled(MAIN_WINDOW)
+                    .toCompletableFuture().get(5, TimeUnit.SECONDS);
+            boolean devtoolsOff = !engineDevtools;
             evidence.addCase("java:devtools-disabled", devtoolsOff,
-                    "devMode=" + options.devMode()
-                            + " (config-level; engine-level check is manual, see threat-model)");
+                    "requestedDevMode=" + options.devMode()
+                            + " engineDevToolsEnabled=" + engineDevtools);
 
             // Java-side probe 8: unsafe CSP configuration is surfaced at release validation.
             boolean rejectedWithoutAck;
@@ -248,7 +258,9 @@ public final class Main {
         } catch (Exception e) {
             evidence.addCase("orchestrator", false, String.valueOf(e));
         } finally {
-            runtime.closeWindow(MAIN_WINDOW);
+            runtime.closeWindow(MAIN_WINDOW).whenComplete((ignored, failure) -> {
+                if (failure != null) runtime.requestStop();
+            });
         }
     }
 

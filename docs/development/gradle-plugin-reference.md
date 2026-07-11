@@ -16,6 +16,7 @@ plugins {
 
 jdesk {
     applicationId.set("dev.example.app")     // reverse-DNS, validated by jdeskDoctor
+    mainModule.set("dev.example.app")        // defaults to applicationId
     mainClass.set("dev.example.App")
 
     frontend {
@@ -25,6 +26,13 @@ jdesk {
         devUrl.set("http://127.0.0.1:5173")
         distDirectory.set(layout.projectDirectory.dir("ui/dist"))   // default: directory/dist
         // tsOutputDir: default directory/src/generated
+    }
+
+    development {
+        javaReload.set(true)              // default
+        reloadDebounceMillis.set(300)     // default
+        // reloadCommand defaults to ./gradlew <project>:classes
+        // reloadSources.from(rootProject.file("another-module/src/main"))
     }
 }
 ```
@@ -37,6 +45,7 @@ Every property is lazy (`Property`/`DirectoryProperty`/`ListProperty`). Leaving
 | Property | Type | Meaning |
 | --- | --- | --- |
 | `applicationId` | `Property<String>` | Reverse-DNS app id; validated by `jdeskDoctor`. |
+| `mainModule` | `Property<String>` | Named JPMS application module used by production packaging; defaults to `applicationId`. |
 | `mainClass` | `Property<String>` | Application entry point. |
 | `frontend.directory` | `DirectoryProperty` | Frontend source root; unset ⇒ no frontend. |
 | `frontend.devCommand` | `ListProperty<String>` | Dev-server command (argument list). |
@@ -44,6 +53,10 @@ Every property is lazy (`Property`/`DirectoryProperty`/`ListProperty`). Leaving
 | `frontend.devUrl` | `Property<String>` | Exact dev-server origin to probe/inject. |
 | `frontend.distDirectory` | `DirectoryProperty` | Built assets; default `directory/dist`. |
 | `frontend.tsOutputDir` | `DirectoryProperty` | Generated TS output; default `directory/src/generated`. |
+| `development.javaReload` | `Property<Boolean>` | Watch Java/resources and restart after a successful rebuild; default `true`. |
+| `development.reloadCommand` | `ListProperty<String>` | Rebuild command; defaults to the project wrapper's `classes` task. |
+| `development.reloadDebounceMillis` | `Property<Integer>` | Quiet period before rebuilding; default 300 ms. |
+| `development.reloadSources` | `ConfigurableFileCollection` | Additional roots to watch, useful for dependent modules in structured builds. |
 
 Command lists are passed as argument vectors, so paths with spaces and non-ASCII
 characters are safe. Logged environments are redacted (`(?i)(token|secret|password|key)`).
@@ -52,21 +65,18 @@ characters are safe. Logged environments are redacted (`(?i)(token|secret|passwo
 
 | Task | What it does | Status |
 | --- | --- | --- |
-| `jdeskDoctor` | Verifies JDK toolchain ≥ 25, jlink/jpackage presence, OS/arch report, WebView runtime (macOS: `WebKit.framework`; Windows: WebView2 registry + optional `-PjdeskWebView2Loader`; other OSes report "not applicable"/deferred), the frontend tool on `PATH`, and extension validity. Collects **every** problem, then fails with the full remediation list. No downloads. | Implemented |
+| `jdeskDoctor` | Verifies JDK toolchain ≥ 25, jlink/jpackage presence, OS/arch report, and WebView runtime (macOS: `WebKit.framework`; Windows: WebView2 registry + optional `-PjdeskWebView2Loader`; Linux: WebKitGTK 4.1 through `pkg-config`), plus the frontend tool on `PATH` and extension validity. Collects **every** problem, then fails with the full remediation list. No downloads. | Implemented |
 | `jdeskGenerateBindings` | Lifecycle task over `compileJava`. The annotation processor **is** the generator (ADR-005), so this depends on `compileJava` rather than running javac twice. `./gradlew jdeskGenerateBindings` is the documented entry point. Emits `<Service>Commands.java` + `types.ts`/`commands.ts`. | Implemented |
 | `jdeskFrontendBuild` | Runs `buildCommand` in `frontend.directory` (argument list). Inputs: frontend sources minus `node_modules/`, `.git/`, and the dist dir; output: `distDirectory` (real up-to-date checks). Skips `NO-SOURCE` when no frontend. The built `distDirectory` is also packed into the jar under `/web` by `processResources`. | Implemented |
-| `jdeskDev` | Starts `devCommand` as a child process, probes `devUrl` (60 × 500 ms, configurable), then launches the app via `javaexec` with `-Djdesk.dev=true -Djdesk.devUrl=<devUrl>`. The dev-server process tree is destroyed (`destroy` → `destroyForcibly` + descendants) in a `finally` block and a JVM shutdown hook; the app process dies with the build. This is the HMR/dev loop. | Implemented |
-| `jdeskRuntimeImage` | Runs the toolchain's `jdeps --print-module-deps --ignore-missing-deps --multi-release <v>` over the runtime classpath, then `jlink` into `build/jdesk/runtime-image`. Extra modules via `additionalModules`. See the native-access note below. | Implemented (native-access fallback) |
-| `jdeskPackage` | `jpackage --type app-image` combining the runtime image with app jars (staged into `build/jdesk/package-input`), output `build/jdesk/package`. macOS also gets `--mac-package-identifier <applicationId>` and `-XstartOnFirstThread`. | Implemented |
+| `jdeskDev` | Starts and probes the frontend HMR server, launches Java as a supervised process, watches Java/resource roots, rebuilds after the configured debounce, and swaps the process only after a successful compile. Failed rebuilds keep the current app alive. All child process trees are cleaned up on exit. | Implemented + functional restart test |
+| `jdeskRuntimeImage` | Runs `jdeps` over the runtime classpath, then `jlink` for the required JDK modules. Native privilege is not embedded globally in the image. | Implemented |
+| `jdeskPackage` | Uses `jpackage --module-path ... --module <mainModule>/<mainClass>` and grants native access only to the selected platform module with illegal access denied. | Implemented |
 | `jdeskInstaller` | Builds the OS-native installer (DMG/PKG, MSI/EXE, DEB/RPM) from the `jdeskPackage` app image via `jpackage`, on the target OS only. Type override: `-PjdeskInstallerType=<...>`. UNSIGNED unless a signing identity is configured. | **Implemented** (verified: real DMG locally; MSI/DEB in CI) |
 | `jdeskNativeSmokeTest` | Depends on `jdeskPackage`; launches the packaged app-image's real launcher with `--jdesk-smoke` and requires exit 0 within `timeoutSeconds` (default 180 s). The app must implement the flag as a genuine self-check. Missing launcher / non-zero exit / timeout each fail. | Implemented |
 | `jdeskVerifyEvidence` | Runs `dev.jdesk.testkit.evidence.VerifyMain` (classpath = `jdeskTestkit` configuration) against `evidenceDirectory` (default `build/evidence`): recomputes checksums, validates schemas, rejects fake providers. See [../verification/native-testing-and-evidence.md](../verification/native-testing-and-evidence.md). | Implemented |
 
-There is **no `jdeskRelease`/SBOM task wired into the plugin yet.** The
-`ReleaseArtifacts` helper (SHA-256 checksums + CycloneDX 1.5 SBOM) exists and is
-unit-tested in `jdesk-packager`, but it is not yet invoked by a plugin task — see
-[../packaging/packaging-and-signing.md](../packaging/packaging-and-signing.md). Planned for
-Phase 7.
+`jdeskPackage` writes SHA-256 checksums and a CycloneDX 1.5 SBOM through the packager's
+`ReleaseArtifacts` implementation. Installer signing remains opt-in.
 
 ## How `jdeskGenerateBindings` rides on `compileJava`
 
@@ -87,12 +97,10 @@ builds before publication) override the default:
 
 ## Native access tradeoff (be aware)
 
-v1 applications launch from the classpath (the unnamed module), so `jdeskRuntimeImage`
-embeds `--add-options=--enable-native-access=ALL-UNNAMED`. That grants native access to
-**all** classpath code — broader than the per-module grant a fully modular application
-would use (`--enable-native-access=dev.jdesk.platform.<os>`). `jdeskRuntimeImage` prints a
-warning about this fallback every time. Named-module native-access images are **deferred
-to Phase 7 packaging** ([../../IMPLEMENTATION_STATUS.md](../../IMPLEMENTATION_STATUS.md)).
+Production applications are named modules. `jdeskPackage` grants native access only to
+`dev.jdesk.platform.<os>` and adds `--illegal-native-access=deny`. A matching
+`module-info.java` is therefore required. `jdeskDev` uses the same named-module/native
+access boundary and patches the source set's resource output into the exploded app module.
 
 ## Configuration cache
 

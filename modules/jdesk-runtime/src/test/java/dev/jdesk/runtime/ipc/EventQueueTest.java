@@ -8,10 +8,13 @@ import dev.jdesk.api.JDeskException;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -67,7 +70,8 @@ class EventQueueTest {
     @Test
     void preservesFifoOrder() {
         List<String> delivered = new CopyOnWriteArrayList<>();
-        EventQueue queue = new EventQueue(16, EventOverflowPolicy.REJECT, delivered::add);
+        EventQueue queue = new EventQueue(16, EventOverflowPolicy.REJECT,
+                (Consumer<String>) delivered::add);
         for (int i = 0; i < 10; i++) {
             queue.enqueue("tick", "{\"n\":" + i + "}");
         }
@@ -82,13 +86,13 @@ class EventQueueTest {
     @Timeout(10)
     void rejectPolicyThrowsLimitExceededWhenFull() throws Exception {
         BlockingSink sink = new BlockingSink();
-        EventQueue queue = new EventQueue(3, EventOverflowPolicy.REJECT, sink);
+        EventQueue queue = new EventQueue(4, EventOverflowPolicy.REJECT, sink);
         Thread drainer = blockDrainer(queue, sink);
         try {
             queue.enqueue("a", "{\"e\":\"a\"}");
             queue.enqueue("b", "{\"e\":\"b\"}");
             queue.enqueue("c", "{\"e\":\"c\"}");
-            assertThat(queue.pending()).isEqualTo(3);
+            assertThat(queue.pending()).isEqualTo(4);
 
             assertThatThrownBy(() -> queue.enqueue("d", "{\"e\":\"d\"}"))
                     .isInstanceOfSatisfying(JDeskException.class,
@@ -107,17 +111,17 @@ class EventQueueTest {
     @Timeout(10)
     void dropOldestPolicyDropsHeadAndCounts() throws Exception {
         BlockingSink sink = new BlockingSink();
-        EventQueue queue = new EventQueue(3, EventOverflowPolicy.DROP_OLDEST, sink);
+        EventQueue queue = new EventQueue(4, EventOverflowPolicy.DROP_OLDEST, sink);
         Thread drainer = blockDrainer(queue, sink);
         try {
             queue.enqueue("a", "{\"e\":\"a\"}");
             queue.enqueue("b", "{\"e\":\"b\"}");
             queue.enqueue("c", "{\"e\":\"c\"}");
-            assertThat(queue.pending()).isEqualTo(3);
+            assertThat(queue.pending()).isEqualTo(4);
 
             queue.enqueue("d", "{\"e\":\"d\"}"); // drops oldest queued: "a"
             assertThat(queue.dropped()).isEqualTo(1);
-            assertThat(queue.pending()).isEqualTo(3);
+            assertThat(queue.pending()).isEqualTo(4);
         } finally {
             sink.release.countDown();
             drainer.join(5_000);
@@ -136,7 +140,7 @@ class EventQueueTest {
             queue.enqueue("progress", "{\"pct\":10}");
             queue.enqueue("other", "{\"e\":\"other\"}");
             queue.enqueue("progress", "{\"pct\":50}"); // replaces queued pct:10
-            assertThat(queue.pending()).isEqualTo(2);
+            assertThat(queue.pending()).isEqualTo(3);
             assertThat(queue.dropped()).isEqualTo(1);
         } finally {
             sink.release.countDown();
@@ -150,12 +154,12 @@ class EventQueueTest {
     @Timeout(10)
     void coalesceWhenFullWithNoSameNameThrowsLimitExceeded() throws Exception {
         BlockingSink sink = new BlockingSink();
-        EventQueue queue = new EventQueue(2, EventOverflowPolicy.COALESCE, sink);
+        EventQueue queue = new EventQueue(3, EventOverflowPolicy.COALESCE, sink);
         Thread drainer = blockDrainer(queue, sink);
         try {
             queue.enqueue("a", "{\"e\":\"a\"}");
             queue.enqueue("b", "{\"e\":\"b\"}");
-            assertThat(queue.pending()).isEqualTo(2);
+            assertThat(queue.pending()).isEqualTo(3);
 
             // Full, and "fresh" matches nothing queued: fail with LIMIT_EXCEEDED.
             assertThatThrownBy(() -> queue.enqueue("fresh", "{\"e\":\"fresh\"}"))
@@ -164,7 +168,7 @@ class EventQueueTest {
 
             // Full, but "b" is queued: coalesces instead of failing.
             queue.enqueue("b", "{\"e\":\"b2\"}");
-            assertThat(queue.pending()).isEqualTo(2);
+            assertThat(queue.pending()).isEqualTo(3);
         } finally {
             sink.release.countDown();
             drainer.join(5_000);
@@ -182,7 +186,7 @@ class EventQueueTest {
         try {
             queue.enqueue("a", "{\"e\":\"a\"}");
             queue.enqueue("b", "{\"e\":\"b\"}");
-            assertThat(queue.pending()).isEqualTo(2);
+            assertThat(queue.pending()).isEqualTo(3);
 
             queue.close();
             assertThat(queue.pending()).isZero();
@@ -204,7 +208,7 @@ class EventQueueTest {
         final int perEmitter = 50;
         AtomicInteger deliveredCount = new AtomicInteger();
         EventQueue queue = new EventQueue(256, EventOverflowPolicy.REJECT,
-                json -> deliveredCount.incrementAndGet());
+                (Consumer<String>) json -> deliveredCount.incrementAndGet());
         CountDownLatch start = new CountDownLatch(1);
         CountDownLatch done = new CountDownLatch(emitters);
         AtomicReference<Throwable> failure = new AtomicReference<>();
@@ -227,6 +231,22 @@ class EventQueueTest {
         assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
         assertThat(failure.get()).isNull();
         assertThat(deliveredCount.get()).isEqualTo(emitters * perEmitter);
+        assertThat(queue.pending()).isZero();
+    }
+
+    @Test
+    void asynchronousDeliveryRemainsCountedAgainstCapacityUntilCompletion() {
+        CompletableFuture<Void> delivered = new CompletableFuture<>();
+        EventQueue queue = new EventQueue(1, EventOverflowPolicy.REJECT,
+                (Function<String, CompletionStage<Void>>) json -> delivered);
+
+        queue.enqueue("first", "{\"n\":1}");
+        assertThat(queue.pending()).isEqualTo(1);
+        assertThatThrownBy(() -> queue.enqueue("second", "{\"n\":2}"))
+                .isInstanceOfSatisfying(JDeskException.class,
+                        e -> assertThat(e.code()).isEqualTo(ErrorCode.LIMIT_EXCEEDED));
+
+        delivered.complete(null);
         assertThat(queue.pending()).isZero();
     }
 }

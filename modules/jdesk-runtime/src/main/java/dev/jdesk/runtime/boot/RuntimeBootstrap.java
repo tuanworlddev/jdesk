@@ -5,6 +5,12 @@ import dev.jdesk.api.ErrorCode;
 import dev.jdesk.api.JDeskBootstrap;
 import dev.jdesk.api.JDeskException;
 import dev.jdesk.webview.spi.PlatformProvider;
+import dev.jdesk.instance.SingleInstance;
+import dev.jdesk.instance.SingleInstanceException;
+import dev.jdesk.instance.SingleInstanceResult;
+import dev.jdesk.instance.SingleInstanceSession;
+import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.ServiceLoader;
 
@@ -24,7 +30,25 @@ public final class RuntimeBootstrap implements JDeskBootstrap {
                 ServiceLoader.load(PlatformProvider.class).stream()
                         .map(ServiceLoader.Provider::get)
                         .toList());
-        try (JDeskRuntime runtime = new JDeskRuntime(spec, provider, RuntimeOptions.fromSystemProperties())) {
+        SingleInstanceSession instanceSession = null;
+        if (spec.singleInstance()) {
+            try {
+                String configured = System.getProperty("jdesk.instance.dir");
+                Path stateDirectory = configured == null || configured.isBlank()
+                        ? Path.of(System.getProperty("user.home"), ".jdesk", "instance")
+                        : Path.of(configured);
+                SingleInstanceResult result = SingleInstance.acquire(spec.id(), stateDirectory,
+                        Arrays.asList(args), spec.activationHandler());
+                if (!result.primary()) return 0;
+                instanceSession = result.session().orElseThrow();
+            } catch (SingleInstanceException e) {
+                throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                        "Single-instance coordination failed", e);
+            }
+        }
+        try (SingleInstanceSession session = instanceSession;
+             JDeskRuntime runtime = new JDeskRuntime(spec, provider,
+                     RuntimeOptions.fromSystemProperties())) {
             return runtime.run();
         }
     }

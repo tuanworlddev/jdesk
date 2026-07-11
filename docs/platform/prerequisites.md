@@ -13,9 +13,9 @@ these and reports every problem at once (see
 - **Node.js — only if your frontend build needs it.** Vanilla HTML/JS/CSS apps (like
   `hello-vanilla`) need no Node. A Vite/React/Vue/Svelte build does.
 - **FFM native access.** The platform adapters use the Foreign Function & Memory API.
-  Classpath/dev launches pass `--enable-native-access=ALL-UNNAMED`; packaged runtime
-  images embed it via `jlink --add-options` (see the native-access note in the plugin
-  reference).
+  Production launchers grant access only to `dev.jdesk.platform.<os>` and use
+  `--illegal-native-access=deny`. Explicit classpath development tools may use
+  `ALL-UNNAMED`; production packages may not.
 
 ## Windows
 

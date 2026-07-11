@@ -8,6 +8,7 @@ functional tests run real isolated consumer builds through Gradle TestKit.
 ```kotlin
 jdesk {
     applicationId.set("dev.example.app")   // reverse-DNS, validated by jdeskDoctor
+    mainModule.set("dev.example.app")      // defaults to applicationId
     mainClass.set("dev.example.App")
 
     frontend {
@@ -17,6 +18,12 @@ jdesk {
         devUrl.set("http://127.0.0.1:5173")
         distDirectory.set(layout.projectDirectory.dir("ui/dist"))   // default: directory/dist
         // tsOutputDir: default directory/src/generated
+    }
+    development {
+        javaReload.set(true)
+        reloadDebounceMillis.set(300)
+        // reloadCommand defaults to ./gradlew <project>:classes
+        // reloadSources.from(rootProject.file("another-module/src/main"))
     }
 }
 ```
@@ -28,13 +35,13 @@ All properties are lazy (`Property`/`DirectoryProperty`/`ListProperty`). Leaving
 
 | Task | What it really does |
 | --- | --- |
-| `jdeskDoctor` | Verifies JDK toolchain >= 25, jlink/jpackage presence, OS/arch report, WebView runtime (macOS: `WebKit.framework`; Windows: WebView2 registry + optional `-PjdeskWebView2Loader`; other OSes report "not applicable"/deferred), frontend tool on `PATH`, extension validity. Collects **every** problem, then fails with the full remediation list. No downloads. |
+| `jdeskDoctor` | Verifies JDK toolchain >= 25, jlink/jpackage presence, OS/arch report, and WebView runtime (macOS: `WebKit.framework`; Windows: WebView2 registry + optional `-PjdeskWebView2Loader`; Linux: WebKitGTK 4.1 through `pkg-config`), plus the frontend tool on `PATH` and extension validity. Collects **every** problem, then fails with the full remediation list. No downloads. |
 | `jdeskGenerateBindings` | Lifecycle task over `compileJava` (see design below). |
 | `jdeskFrontendBuild` | Runs `buildCommand` in `frontend.directory` via an argument list (spaces/non-ASCII safe). Inputs: frontend sources minus `node_modules/`, `.git/` and the dist directory; output: `distDirectory` (real up-to-date checks). Logged environments are redacted (`(?i)(token|secret|password|key)`). |
-| `jdeskDev` | Starts `devCommand` as a child process, probes `devUrl` (60 x 500 ms, configurable), then launches the app via `javaexec` with `-Djdesk.dev=true -Djdesk.devUrl=<devUrl>`. The dev-server process tree is destroyed (`destroy` → `destroyForcibly` + descendants) in a `finally` block and a JVM shutdown hook; the app process is Gradle-managed and dies with the build. |
-| `jdeskRuntimeImage` | Runs the toolchain's `jdeps --print-module-deps --ignore-missing-deps --multi-release <v>` over the runtime classpath, then `jlink` with the resulting module set into `build/jdesk/runtime-image`. Embeds `--add-options=--enable-native-access=ALL-UNNAMED` (see tradeoff below). Extra modules via `additionalModules`. |
-| `jdeskPackage` | `jpackage --type app-image` combining the runtime image with the app jars (staged into `build/jdesk/package-input`), output `build/jdesk/package`. macOS also gets `--mac-package-identifier <applicationId>` and `-XstartOnFirstThread`. |
-| `jdeskInstaller` | Registered but **fails with a clear "lands in Phase 7" error**. Installer types (MSI/DMG/DEB) are not implemented; nothing fakes success. |
+| `jdeskDev` | Starts and probes the frontend HMR server, supervises the Java process, watches Java/resources, invokes the configured rebuild command after a quiet period, and restarts only after a successful build. Failed builds keep the existing app alive; all child process trees are cleaned up on exit. |
+| `jdeskRuntimeImage` | Runs the toolchain's `jdeps --print-module-deps --ignore-missing-deps --multi-release <v>` over the runtime classpath, then `jlink` with the resulting JDK module set into `build/jdesk/runtime-image`. Extra modules via `additionalModules`. |
+| `jdeskPackage` | Stages named application/framework modules and runs `jpackage --module-path ... --module <mainModule>/<mainClass>`. The launcher grants native access only to `dev.jdesk.platform.<os>` and enables `--illegal-native-access=deny`. |
+| `jdeskInstaller` | Builds a real target-OS installer (DMG/PKG, MSI/EXE, DEB/RPM) from the app image. Current verified artifacts are unsigned. |
 | `jdeskNativeSmokeTest` | Depends on `jdeskPackage`; launches the packaged app-image's real launcher with `--jdesk-smoke` and requires exit code 0 within `timeoutSeconds` (default 180 s). The app must implement the flag as a genuine self-check (start, probe, exit 0). No launcher / non-zero exit / timeout each fail. |
 | `jdeskVerifyEvidence` | Runs `dev.jdesk.testkit.evidence.VerifyMain` (classpath = `jdeskTestkit` configuration) against `evidenceDirectory` (default `build/evidence`). |
 
@@ -59,16 +66,16 @@ composite builds before publication) override the default:
 The same pattern applies to `jdeskTestkit`.
 
 The built frontend (`distDirectory`) is additionally packed into the jar under `/web`
-by `processResources`, so packaged classpath apps ship their assets.
+by `processResources`, so packaged modular apps ship their assets.
 
-## Native access tradeoff
+## Native access boundary
 
-v1 applications launch from the classpath, i.e. the unnamed module, so the runtime
-image embeds `--enable-native-access=ALL-UNNAMED`. That grants native access to *all*
-classpath code — broader than the per-module grant a fully modular application would
-use (`--enable-native-access=dev.jdesk.platform.<os>`). `jdeskRuntimeImage` prints a
-warning about this fallback every time; named-module images arrive with Phase 7
-packaging.
+Production packaging requires a `module-info.java` matching `jdesk.mainModule`. The
+launcher uses `--enable-native-access=dev.jdesk.platform.<os>` plus
+`--illegal-native-access=deny`; application and third-party modules receive no FFM
+privilege. `jdeskDev` also launches the named application module and grants native access
+only to the selected platform module; it patches the exploded application resource output
+into the module during development.
 
 ## Configuration cache
 
@@ -85,7 +92,8 @@ tests that generate consumer builds in temp directories (including one with spac
 non-ASCII characters in the path), apply the plugin via `withPluginClasspath()`, and
 execute real tasks: doctor success/failure modes, frontend build + up-to-date behavior,
 NO-SOURCE skip, configuration-cache reuse, real jdesk-codegen TypeScript generation and
-a real `jdeps`+`jlink` runtime image. jlink/jpackage argument construction is
+a source edit that recompiles and restarts a live Java process, plus a real `jdeps`+`jlink`
+runtime image. jlink/jpackage argument construction is
 unit-tested in `modules/jdesk-packager`.
 
 Known limitation (honest): `jdeskPackage`/`jdeskNativeSmokeTest` execute real

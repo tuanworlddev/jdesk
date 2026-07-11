@@ -37,13 +37,9 @@ import org.gradle.work.DisableCachingByDefault;
  * --print-module-deps} over the application's runtime classpath (declared tool run, no
  * hidden downloads).
  *
- * <p>v1 pragmatic approach: JDesk applications are launched from the classpath, so the
- * image contains only the required JDK modules and the application jars stay on the
- * classpath (jpackage's {@code --input}). Because classpath code is in the unnamed
- * module, native access is embedded as {@code --enable-native-access=ALL-UNNAMED} —
- * broader than a per-module grant. A fully modular application could restrict the grant
- * to its platform module; that refinement lands with Phase 7 packaging, and this task
- * warns about the fallback.
+ * <p>The image contains the required JDK modules. Application and framework modules are
+ * supplied to jpackage separately; native access is granted by the packaged modular
+ * launcher, never globally in the runtime image.
  */
 @DisableCachingByDefault(because = "produces a full runtime image; caching would copy gigabytes")
 public abstract class JDeskRuntimeImageTask extends DefaultTask {
@@ -86,10 +82,6 @@ public abstract class JDeskRuntimeImageTask extends DefaultTask {
         modules.add("java.base");
         modules.addAll(getAdditionalModules().getOrElse(List.of()));
         getLogger().lifecycle("jdeskRuntimeImage: JDK modules = {}", String.join(",", modules));
-        getLogger().warn("jdeskRuntimeImage: embedding --enable-native-access=ALL-UNNAMED"
-                + " (classpath application). This grants native access to all classpath"
-                + " code; a fully modular application would grant it to its platform"
-                + " module only. Named-module images land with Phase 7 packaging.");
 
         Path output = getOutputDirectory().get().getAsFile().toPath();
         deleteRecursively(output); // jlink refuses to write into an existing directory
@@ -98,7 +90,6 @@ public abstract class JDeskRuntimeImageTask extends DefaultTask {
         List<String> args = JlinkArguments.builder()
                 .modules(modules)
                 .output(output)
-                .addOption("--enable-native-access=ALL-UNNAMED")
                 .build()
                 .toArguments();
         runTool(jlink, args, null);

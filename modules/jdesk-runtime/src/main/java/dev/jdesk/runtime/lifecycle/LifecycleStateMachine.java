@@ -1,6 +1,7 @@
 package dev.jdesk.runtime.lifecycle;
 
 import dev.jdesk.api.ErrorCode;
+import dev.jdesk.api.ApplicationHandle;
 import dev.jdesk.api.JDeskException;
 import dev.jdesk.api.LifecycleListener;
 import dev.jdesk.api.LifecycleState;
@@ -39,8 +40,16 @@ public final class LifecycleStateMachine {
     }
 
     public synchronized void ready() {
+        ready(null);
+    }
+
+    public synchronized void ready(ApplicationHandle application) {
         advance(LifecycleState.STARTING, LifecycleState.READY);
-        notifyListeners(LifecycleListener::onReady);
+        if (application == null) {
+            notifyListeners(LifecycleListener::onReady);
+        } else {
+            notifyListeners(listener -> listener.onReady(application));
+        }
     }
 
     /**

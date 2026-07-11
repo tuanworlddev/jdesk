@@ -18,13 +18,11 @@ Gradle tasks live in the [plugin](../development/gradle-plugin-reference.md).
    `distDirectory` is packed into the app jar under `/web`.
 2. **Runtime image** — `jdeskRuntimeImage` runs `jdeps --print-module-deps
    --ignore-missing-deps --multi-release <v>` over the runtime classpath, then `jlink`
-   into `build/jdesk/runtime-image`. It embeds
-   `--add-options=--enable-native-access=ALL-UNNAMED` (v1 apps launch from the classpath /
-   unnamed module; a warning is printed every run). Named-module native-access images are
-   **deferred to Phase 7**. See the native-access note in the
-   [plugin reference](../development/gradle-plugin-reference.md).
-3. **App image** — `jdeskPackage` runs `jpackage --type app-image`, combining the runtime
-   image with the app jars (staged in `build/jdesk/package-input`) into
+   into `build/jdesk/runtime-image`. It carries no global native-access privilege.
+3. **App image** — `jdeskPackage` stages named modules and runs
+   `jpackage --module-path ... --module <mainModule>/<mainClass>`. The launcher grants
+   native access only to `dev.jdesk.platform.<os>` and denies all other illegal native
+   access. Output is written to
    `build/jdesk/package`. macOS adds `--mac-package-identifier <applicationId>` and
    `-XstartOnFirstThread`.
 4. **Package smoke** — `jdeskNativeSmokeTest` launches the packaged app-image's real

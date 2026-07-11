@@ -191,6 +191,23 @@ final class WindowsWindow extends NativeHandle implements PlatformWindow {
         Win32.showWindow(hwnd, Win32.SW_HIDE);
     }
 
+    @Override public void focus() { requireOpen(); Win32.focusWindow(hwnd); }
+    @Override public void setMinimized(boolean value) {
+        requireOpen(); if (Win32.isIconic(hwnd) != value) Win32.showWindow(hwnd, value ? 6 : 9);
+    }
+    @Override public void setMaximized(boolean value) {
+        requireOpen(); if (Win32.isZoomed(hwnd) != value) Win32.showWindow(hwnd, value ? 3 : 9);
+    }
+    @Override public void setFullscreen(boolean value) {
+        // Borderless fullscreen needs monitor/style restoration and is intentionally
+        // separate from maximize. The helper owns that state per HWND.
+        requireOpen(); WindowsFullscreen.set(hwnd, value);
+        webView.resizeToClientArea();
+    }
+    @Override public void setAlwaysOnTop(boolean value) {
+        requireOpen(); Win32.setWindowPosAfter(hwnd, value ? -1L : -2L, 0x0001 | 0x0002);
+    }
+
     @Override
     public void setTitle(String title) {
         requireOpen();

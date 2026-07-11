@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "grants": [
+    { "capability": "greeting:use", "windows": ["main"] }
+  ]
+}

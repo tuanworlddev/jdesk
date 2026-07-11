@@ -246,6 +246,33 @@ final class MacWindow extends NativeHandle implements PlatformWindow {
         ObjC.sendVoid(nsWindow, "orderOut:", MemorySegment.NULL);
     }
 
+    @Override public void focus() { show(); }
+
+    @Override public void setMinimized(boolean minimized) {
+        requireOpen();
+        boolean current = ObjC.sendBool(nsWindow, "isMiniaturized");
+        if (current != minimized) ObjC.sendVoid(nsWindow,
+                minimized ? "miniaturize:" : "deminiaturize:", MemorySegment.NULL);
+    }
+
+    @Override public void setMaximized(boolean maximized) {
+        requireOpen();
+        boolean current = ObjC.sendBool(nsWindow, "isZoomed");
+        if (current != maximized) ObjC.sendVoid(nsWindow, "zoom:", MemorySegment.NULL);
+    }
+
+    @Override public void setFullscreen(boolean fullscreen) {
+        requireOpen();
+        boolean current = (ObjC.sendLong(nsWindow, "styleMask") & (1L << 14)) != 0;
+        if (current != fullscreen) ObjC.sendVoid(nsWindow, "toggleFullScreen:", MemorySegment.NULL);
+    }
+
+    @Override public void setAlwaysOnTop(boolean alwaysOnTop) {
+        requireOpen();
+        // NSFloatingWindowLevel=3, NSNormalWindowLevel=0 (public AppKit constants).
+        ObjC.sendVoidLong(nsWindow, "setLevel:", alwaysOnTop ? 3L : 0L);
+    }
+
     @Override
     public void setTitle(String title) {
         requireOpen();

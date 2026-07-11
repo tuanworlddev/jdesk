@@ -1,6 +1,8 @@
 package dev.jdesk.runtime.ipc;
 
 import dev.jdesk.api.CommandDefinition;
+import dev.jdesk.api.BinaryStream;
+import dev.jdesk.api.ApplicationHandle;
 import dev.jdesk.api.CommandRegistry;
 import dev.jdesk.api.ErrorCode;
 import dev.jdesk.api.EventEmitter;
@@ -22,6 +24,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Per-window IPC dispatcher (spec sections 10 and 7). Entry point is
@@ -35,22 +38,25 @@ public final class CommandDispatcher implements AutoCloseable {
 
     private final WindowId windowId;
     private final CommandRegistry registry;
+    private final CommandRegistry frontendEvents;
     private final CapabilityEngine capabilityEngine;
     private final JsonCodec codec;
     private final EnvelopeCodec envelopes;
     private final IpcLimits limits;
     private final PlatformInfo platformInfo;
-    private final Consumer<String> responder;
+    private final Function<String, CompletionStage<Void>> responder;
     private final InvocationTracker tracker;
     private final ExecutorService commandExecutor;
     private final ScheduledExecutorService scheduler;
     private final Duration navigationGrace;
     private final EventOverflowPolicy overflowPolicy;
+    private final ApplicationHandle applicationHandle;
 
     private volatile NavigationSession session;
     private volatile boolean helloCompleted;
     private volatile boolean closed;
     private volatile EventQueue eventQueue;
+    private volatile StreamManager streams = new StreamManager();
 
     public CommandDispatcher(
             WindowId windowId,
@@ -62,14 +68,57 @@ public final class CommandDispatcher implements AutoCloseable {
             EventOverflowPolicy overflowPolicy,
             Duration navigationGrace,
             Consumer<String> responder) {
+        this(windowId, registry, CommandRegistry.of(), capabilityEngine, codec, limits, platformInfo,
+                overflowPolicy, navigationGrace, json -> {
+                    responder.accept(json);
+                    return java.util.concurrent.CompletableFuture.completedFuture(null);
+                }, null);
+    }
+
+    public CommandDispatcher(
+            WindowId windowId,
+            CommandRegistry registry,
+            CapabilityEngine capabilityEngine,
+            JsonCodec codec,
+            IpcLimits limits,
+            PlatformInfo platformInfo,
+            EventOverflowPolicy overflowPolicy,
+            Duration navigationGrace,
+            Function<String, CompletionStage<Void>> responder) {
+        this(windowId, registry, CommandRegistry.of(), capabilityEngine, codec, limits, platformInfo,
+                overflowPolicy, navigationGrace, responder, null);
+    }
+
+    public CommandDispatcher(
+            WindowId windowId,
+            CommandRegistry registry,
+            CapabilityEngine capabilityEngine,
+            JsonCodec codec,
+            IpcLimits limits,
+            PlatformInfo platformInfo,
+            EventOverflowPolicy overflowPolicy,
+            Duration navigationGrace,
+            Function<String, CompletionStage<Void>> responder,
+            ApplicationHandle applicationHandle) {
+        this(windowId,registry,CommandRegistry.of(),capabilityEngine,codec,limits,platformInfo,
+                overflowPolicy,navigationGrace,responder,applicationHandle);
+    }
+
+    public CommandDispatcher(WindowId windowId,CommandRegistry registry,
+            CommandRegistry frontendEvents,CapabilityEngine capabilityEngine,JsonCodec codec,
+            IpcLimits limits,PlatformInfo platformInfo,EventOverflowPolicy overflowPolicy,
+            Duration navigationGrace,Function<String,CompletionStage<Void>> responder,
+            ApplicationHandle applicationHandle) {
         this.windowId = windowId;
         this.registry = registry;
+        this.frontendEvents = frontendEvents;
         this.capabilityEngine = capabilityEngine;
         this.codec = codec;
         this.envelopes = new EnvelopeCodec(codec, limits);
         this.limits = limits;
         this.platformInfo = platformInfo;
         this.responder = responder;
+        this.applicationHandle = applicationHandle;
         this.navigationGrace = navigationGrace;
         this.tracker = new InvocationTracker(limits.maxInFlightPerWindow());
         this.commandExecutor = Executors.newVirtualThreadPerTaskExecutor();
@@ -87,8 +136,9 @@ public final class CommandDispatcher implements AutoCloseable {
         NavigationSession target = session;
         return new EventQueue(limits.maxQueuedEventsPerWindow(), policy, json -> {
             if (!closed && target == session && !target.isInvalidated()) {
-                responder.accept(json);
+                return responder.apply(json);
             }
+            return java.util.concurrent.CompletableFuture.completedFuture(null);
         });
     }
 
@@ -126,6 +176,48 @@ public final class CommandDispatcher implements AutoCloseable {
             case IncomingEnvelope.Hello hello -> handleHello(hello);
             case IncomingEnvelope.Invoke invoke -> handleInvoke(invoke, origin);
             case IncomingEnvelope.Cancel cancel -> handleCancel(cancel);
+            case IncomingEnvelope.FrontendEvent event -> handleFrontendEvent(event, origin);
+            case IncomingEnvelope.UnsupportedVersion unsupported -> handleUnsupportedVersion(unsupported);
+        }
+    }
+
+    private void handleFrontendEvent(IncomingEnvelope.FrontendEvent event,String origin){
+        NavigationSession current=session;
+        if(!current.accepts(event.nonce())||!helloCompleted)return;
+        CommandDefinition definition=frontendEvents.find(event.event()).orElse(null);if(definition==null)return;
+        PermissionDecision decision=capabilityEngine.evaluate(definition,windowId,origin,current);if(!decision.allowed())return;
+        commandExecutor.execute(()->{try{
+            Object payload=definition.requestType()==Void.class?null:codec.decode(
+                    event.payloadJson().orElseThrow(()->new JDeskException(ErrorCode.INVALID_REQUEST,"Event requires payload")),
+                    definition.requestType());
+            CompletionStage<?> stage=definition.handler().invoke(payload,new EventContext(event.event()));
+            if(stage!=null)stage.exceptionally(failure->{LOG.log(Level.WARNING,"Frontend event handler failed",failure);return null;});
+        }catch(Throwable failure){LOG.log(Level.WARNING,"Rejected frontend event",failure);}});
+    }
+
+    private final class EventContext implements InvocationContext {
+        private final String name; EventContext(String name){this.name=name;}
+        @Override public WindowId windowId(){return windowId;}
+        @Override public String commandName(){return name;}
+        @Override public String requestId(){return "event";}
+        @Override public PlatformInfo platform(){return platformInfo;}
+        @Override public ApplicationHandle application(){return applicationHandle;}
+        @Override public EventEmitter events(){return emitter();}
+        @Override public boolean isCancelled(){return closed;}
+    }
+
+    private void handleUnsupportedVersion(IncomingEnvelope.UnsupportedVersion unsupported) {
+        NavigationSession current = session;
+        if (!current.accepts(unsupported.nonce())) {
+            return;
+        }
+        if (unsupported.kind().equals("hello")) {
+            respond(current, envelopes.helloError(ErrorCode.PROTOCOL_VERSION_UNSUPPORTED,
+                    "Unsupported protocol version " + unsupported.version()));
+        } else if (unsupported.id().isPresent()) {
+            respond(current, envelopes.errorResult(unsupported.id().get(),
+                    ErrorCode.PROTOCOL_VERSION_UNSUPPORTED,
+                    "Unsupported protocol version " + unsupported.version()));
         }
     }
 
@@ -154,6 +246,10 @@ public final class CommandDispatcher implements AutoCloseable {
         if (!current.registerRequestId(invoke.id())) {
             respond(current, envelopes.errorResult(invoke.id(), ErrorCode.INVALID_REQUEST,
                     "Duplicate request id"));
+            return;
+        }
+        if (invoke.command().startsWith("jdesk.stream.")) {
+            handleStreamInvoke(invoke, current);
             return;
         }
         CommandDefinition definition = registry.find(invoke.command()).orElse(null);
@@ -188,6 +284,28 @@ public final class CommandDispatcher implements AutoCloseable {
         }
     }
 
+    private void handleStreamInvoke(IncomingEnvelope.Invoke invoke, NavigationSession current) {
+        try {
+            String payload = invoke.payloadJson().orElseThrow(() ->
+                    new JDeskException(ErrorCode.INVALID_REQUEST, "Stream command requires payload"));
+            Object value = switch (invoke.command()) {
+                case "jdesk.stream.pull" -> streams.pull(
+                        codec.decode(payload, StreamManager.Pull.class));
+                case "jdesk.stream.cancel" -> {
+                    streams.cancel(codec.decode(payload, StreamManager.Cancel.class).streamId());
+                    yield java.util.Map.of("cancelled", true);
+                }
+                default -> throw new JDeskException(ErrorCode.UNKNOWN_COMMAND,
+                        "Unknown stream command");
+            };
+            respond(current, envelopes.successResult(invoke.id(), value));
+        } catch (Throwable failure) {
+            JDeskException jde = failure instanceof JDeskException j ? j :
+                    new JDeskException(ErrorCode.SERIALIZATION_ERROR, "Invalid stream request");
+            respond(current, envelopes.errorResult(invoke.id(), jde.code(), jde.publicMessage()));
+        }
+    }
+
     private void runInvocation(
             CommandDefinition definition,
             IncomingEnvelope.Invoke invoke,
@@ -207,10 +325,17 @@ public final class CommandDispatcher implements AutoCloseable {
             }
             stage.whenComplete((value, failure) -> {
                 timeoutTask.cancel(false);
-                if (failure != null) {
-                    terminate(invocation, errorFor(invoke.id(), failure, invocation), false);
-                } else {
-                    terminate(invocation, envelopes.successResult(invoke.id(), value), false);
+                try {
+                    if (failure != null) {
+                        terminate(invocation, errorFor(invoke.id(), failure, invocation), false);
+                    } else {
+                        Object response = value instanceof BinaryStream binary
+                                ? streams.register(binary) : value;
+                        terminate(invocation, envelopes.successResult(invoke.id(), response), false);
+                    }
+                } catch (Throwable encodingFailure) {
+                    terminate(invocation,
+                            errorFor(invoke.id(), encodingFailure, invocation), false);
                 }
             });
         } catch (Throwable t) {
@@ -280,7 +405,17 @@ public final class CommandDispatcher implements AutoCloseable {
         if (closed || target != session || target.isInvalidated()) {
             return;
         }
-        responder.accept(json);
+        try {
+            CompletionStage<Void> response = responder.apply(json);
+            if (response != null) {
+                response.exceptionally(failure -> {
+                    LOG.log(Level.ERROR, "Failed to post IPC response for {0}", windowId, failure);
+                    return null;
+                });
+            }
+        } catch (RuntimeException e) {
+            LOG.log(Level.ERROR, "Failed to post IPC response for {0}", windowId, e);
+        }
     }
 
     /** Emitter for events targeted at this window. */
@@ -303,17 +438,19 @@ public final class CommandDispatcher implements AutoCloseable {
     public void onNavigationCommitted() {
         NavigationSession old = session;
         EventQueue oldQueue = eventQueue;
+        StreamManager oldStreams = streams;
         session = new NavigationSession();
         helloCompleted = false;
         eventQueue = newEventQueue(overflowPolicy);
+        streams = new StreamManager();
         old.invalidate();
         oldQueue.close();
-        if (navigationGrace.isZero()) {
-            cancelSessionInvocations(old);
-        } else {
-            scheduler.schedule(() -> cancelSessionInvocations(old),
-                    navigationGrace.toMillis(), TimeUnit.MILLISECONDS);
-        }
+        oldStreams.close();
+        // The old document is gone and cannot consume a result. Release request IDs
+        // immediately so a freshly loaded client (whose counter commonly restarts at
+        // one) cannot collide with an old in-flight invocation. Delaying this cleanup
+        // also lets dead work consume the new document's in-flight quota.
+        cancelSessionInvocations(old);
     }
 
     private void cancelSessionInvocations(NavigationSession target) {
@@ -333,6 +470,7 @@ public final class CommandDispatcher implements AutoCloseable {
         closed = true;
         session.invalidate();
         eventQueue.close();
+        streams.close();
         for (InvocationTracker.Invocation invocation : tracker.cancelAll()) {
             if (invocation.tryTerminate()) {
                 tracker.remove(invocation.id());
@@ -378,6 +516,15 @@ public final class CommandDispatcher implements AutoCloseable {
         @Override
         public PlatformInfo platform() {
             return platformInfo;
+        }
+
+        @Override
+        public ApplicationHandle application() {
+            if (applicationHandle == null) {
+                throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                        "Application handle is unavailable in this dispatcher");
+            }
+            return applicationHandle;
         }
 
         @Override

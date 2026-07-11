@@ -1,5 +1,7 @@
 package dev.jdesk.runtime.capability;
 
+import dev.jdesk.runtime.config.Capabilities;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 

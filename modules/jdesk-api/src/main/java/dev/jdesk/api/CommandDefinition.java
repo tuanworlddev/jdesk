@@ -22,6 +22,7 @@ public record CommandDefinition(
 
     private static final Pattern NAME =
             Pattern.compile("[a-z][a-zA-Z0-9]*(\\.[a-z][a-zA-Z0-9]*)*");
+    private static final Duration MAX_TIMEOUT = Duration.ofHours(24);
 
     public CommandDefinition {
         Objects.requireNonNull(name, "name");
@@ -33,5 +34,11 @@ public record CommandDefinition(
             throw new JDeskException(ErrorCode.INVALID_REQUEST,
                     "Command name must be dot-separated camelCase segments, max 128 chars");
         }
+        timeout.ifPresent(value -> {
+            if (value.isZero() || value.isNegative() || value.compareTo(MAX_TIMEOUT) > 0) {
+                throw new JDeskException(ErrorCode.INVALID_REQUEST,
+                        "Command timeout must be greater than zero and at most 24 hours");
+            }
+        });
     }
 }

@@ -1,6 +1,7 @@
 package dev.jdesk.testapps.nativesmoke;
 
 import dev.jdesk.api.ApplicationSpec;
+import dev.jdesk.api.BinaryStream;
 import dev.jdesk.api.CapabilityGrant;
 import dev.jdesk.api.CapabilitySet;
 import dev.jdesk.api.CommandDefinition;
@@ -44,9 +45,13 @@ public final class Main {
     }
 
     private static final boolean STRESS = Boolean.getBoolean("jdesk.smoke.stress");
+    private static final boolean STREAM_2GB = Boolean.getBoolean("jdesk.smoke.stream2gb");
+    private static final long PROCESS_KILL_HOLD_MS = Long.getLong("jdesk.smoke.processKillHoldMs", 0L);
+    private static final boolean MESSAGE_DIALOG = Boolean.getBoolean("jdesk.smoke.messageDialog");
 
     // ---- DTOs (public for JSON binding) ----
-    public record RunInfo(String runId, boolean stress) {
+    public record RunInfo(String runId, boolean stress, boolean stream2gb,
+            long processKillHoldMs) {
     }
 
     public record EchoRequest(String text, int number) {
@@ -54,6 +59,16 @@ public final class Main {
 
     public record EchoResponse(String text, int number, String threadName,
             boolean uiThread, boolean virtualThread) {
+    }
+
+    public enum ProbeMode { ACTIVE, PASSIVE }
+
+    public record NestedDto(String value, List<Integer> numbers) {
+    }
+
+    public record TypeMatrix(boolean flag, int integer, long longValue, double decimal,
+            String text, String nullable, List<String> list, Map<String, Integer> map,
+            ProbeMode mode, NestedDto nested) {
     }
 
     public record SleepRequest(long millis) {
@@ -67,6 +82,7 @@ public final class Main {
 
     public record Ack(boolean ok) {
     }
+    public record EventSeen(String tag) { }
 
     public record DeniedRan(boolean ran) {
     }
@@ -76,6 +92,9 @@ public final class Main {
 
     public record CyclesResponse(int completed) {
     }
+    public record RoutingResponse(boolean isolated, String left, String right) {
+    }
+    public record WindowControlsResponse(boolean alive) { }
 
     public record ReportCase(String name, boolean passed, String detail) {
     }
@@ -110,10 +129,11 @@ public final class Main {
         AtomicBoolean deniedRan = new AtomicBoolean(false);
         AtomicReference<JDeskRuntime> runtimeRef = new AtomicReference<>();
         AtomicReference<Report> reportRef = new AtomicReference<>();
+        AtomicReference<String> frontendEvent = new AtomicReference<>();
         CountDownLatch reportLatch = new CountDownLatch(1);
 
         CommandRegistry registry = buildRegistry(
-                evidence, runtimeRef, deniedRan, reportRef, reportLatch);
+                evidence, runtimeRef, deniedRan, reportRef, reportLatch, frontendEvent);
 
         CapabilitySet capabilities = CapabilitySet.of(Set.of(
                 CapabilityGrant.forAllWindows("smoke:use")));
@@ -129,11 +149,17 @@ public final class Main {
                         .entry("jdesk://app/index.html")
                         .build()),
                 List.of(),
-                Optional.empty());
+                Optional.empty(),
+                CommandRegistry.of(new CommandDefinition("smoke.frontendPing",
+                        Optional.of("smoke:use"), PingRequest.class, Optional.empty(),
+                        (request, context) -> {
+                            frontendEvent.set(((PingRequest) request).tag());
+                            return CompletableFuture.completedFuture(null);
+                        })));
 
         RuntimeOptions options = new RuntimeOptions(
                 false,
-                new ClasspathAssetSource(Main.class.getClassLoader(), "web"),
+                new ClasspathAssetSource(Main.class.getModule(), "web"),
                 false,
                 Map.of("Content-Security-Policy", CspValidator.DEFAULT_CSP),
                 IpcLimits.DEFAULTS,
@@ -190,9 +216,21 @@ public final class Main {
                 return;
             }
             Report report = reportRef.get();
+            runtime.diagnostics(MAIN_WINDOW).toCompletableFuture().get(5, TimeUnit.SECONDS)
+                    .engineVersion().ifPresent(evidence::webViewVersion);
             for (ReportCase reportCase : report.cases()) {
                 evidence.addCase("js:" + reportCase.name(), reportCase.passed(),
                         reportCase.detail());
+            }
+            if (MESSAGE_DIALOG) {
+                var dialogResult = runtime.showMessageDialog(new dev.jdesk.api.MessageDialog(
+                        "JDesk live dialog", "Native NSAlert verification",
+                        dev.jdesk.api.MessageDialog.Kind.INFO, List.of("Audit PASS")))
+                        .toCompletableFuture().get(120, TimeUnit.SECONDS);
+                evidence.addCase("java:native-message-dialog",
+                        dialogResult.buttonIndex() == 0
+                                && dialogResult.buttonLabel().equals("Audit PASS"),
+                        "selected=" + dialogResult.buttonLabel());
             }
             evidence.addCase("java:denied-handler-never-ran", !deniedRan.get(),
                     "deniedRan=" + deniedRan.get());
@@ -236,11 +274,32 @@ public final class Main {
             AtomicReference<JDeskRuntime> runtimeRef,
             AtomicBoolean deniedRan,
             AtomicReference<Report> reportRef,
-            CountDownLatch reportLatch) {
+            CountDownLatch reportLatch,
+            AtomicReference<String> frontendEvent) {
         return CommandRegistry.of(
                 new CommandDefinition("smoke.runInfo", Optional.of("smoke:use"), Void.class,
                         Optional.empty(), (request, context) ->
-                        CompletableFuture.completedFuture(new RunInfo(evidence.runId(), STRESS))),
+                        CompletableFuture.completedFuture(new RunInfo(evidence.runId(), STRESS,
+                                STREAM_2GB, PROCESS_KILL_HOLD_MS))),
+
+                new CommandDefinition("smoke.binaryStream", Optional.of("smoke:use"), Void.class,
+                        Optional.of(Duration.ofMinutes(10)), (request, context) ->
+                        CompletableFuture.completedFuture(new BinaryStream(2L * 1024 * 1024 * 1024,
+                                "application/octet-stream", "jdesk-2gb.bin",
+                                () -> new java.io.InputStream() {
+                                    long remaining = 2L * 1024 * 1024 * 1024;
+                                    @Override public int read() {
+                                        if (remaining-- <= 0) return -1;
+                                        return 0x5a;
+                                    }
+                                    @Override public int read(byte[] bytes, int off, int len) {
+                                        if (remaining <= 0) return -1;
+                                        int count = (int) Math.min(remaining, len);
+                                        java.util.Arrays.fill(bytes, off, off + count, (byte) 0x5a);
+                                        remaining -= count;
+                                        return count;
+                                    }
+                                }))),
 
                 new CommandDefinition("smoke.echo", Optional.of("smoke:use"), EchoRequest.class,
                         Optional.empty(), (request, context) -> {
@@ -251,6 +310,20 @@ public final class Main {
                     return CompletableFuture.completedFuture(new EchoResponse(
                             echo.text(), echo.number(), thread.getName(),
                             uiThread, thread.isVirtual()));
+                }),
+
+                new CommandDefinition("smoke.types", Optional.of("smoke:use"), TypeMatrix.class,
+                        Optional.empty(), (request, context) ->
+                        CompletableFuture.completedFuture(request)),
+
+                new CommandDefinition("smoke.timeout", Optional.of("smoke:use"), SleepRequest.class,
+                        Optional.of(Duration.ofMillis(100)), (request, context) -> {
+                    try {
+                        Thread.sleep(((SleepRequest) request).millis());
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return CompletableFuture.completedFuture(new SleepResponse(true));
                 }),
 
                 new CommandDefinition("smoke.sleep", Optional.of("smoke:use"), SleepRequest.class,
@@ -282,10 +355,14 @@ public final class Main {
                         Optional.empty(), (request, context) ->
                         CompletableFuture.completedFuture(new DeniedRan(deniedRan.get()))),
 
+                new CommandDefinition("smoke.frontendEventSeen",Optional.of("smoke:use"),Void.class,
+                        Optional.empty(),(request,context)->CompletableFuture.completedFuture(
+                        new EventSeen(frontendEvent.get()))),
+
                 new CommandDefinition("smoke.windowCycles", Optional.of("smoke:use"),
                         CyclesRequest.class, Optional.of(Duration.ofSeconds(170)),
                         (request, context) -> {
-                    int cycles = Math.min(((CyclesRequest) request).cycles(), 30);
+                    int cycles = Math.min(((CyclesRequest) request).cycles(), 100);
                     JDeskRuntime runtime = runtimeRef.get();
                     return CompletableFuture.supplyAsync(() -> {
                         int completed = 0;
@@ -309,6 +386,69 @@ public final class Main {
                         return new CyclesResponse(completed);
                     });
                 }),
+
+                new CommandDefinition("smoke.multiWindowRouting", Optional.of("smoke:use"),
+                        Void.class, Optional.of(Duration.ofSeconds(30)), (request, context) ->
+                        CompletableFuture.supplyAsync(() -> {
+                    JDeskRuntime runtime = runtimeRef.get();
+                    WindowId left = new WindowId("route-left");
+                    WindowId right = new WindowId("route-right");
+                    try {
+                        runtime.openWindow(WindowConfig.builder().id(left.value()).title("left")
+                                .size(320, 240).entry("jdesk://app/index-secondary.html").build())
+                                .toCompletableFuture().get(10, TimeUnit.SECONDS);
+                        runtime.openWindow(WindowConfig.builder().id(right.value()).title("right")
+                                .size(320, 240).entry("jdesk://app/index-secondary.html").build())
+                                .toCompletableFuture().get(10, TimeUnit.SECONDS);
+                        Thread.sleep(300);
+                        runtime.emitter(left).emit("route.probe", Map.of("target", "left"));
+                        runtime.emitter(right).emit("route.probe", Map.of("target", "right"));
+                        Thread.sleep(200);
+                        String leftValue = runtime.evaluate(left, "window.__routeTarget || ''")
+                                .toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        String rightValue = runtime.evaluate(right, "window.__routeTarget || ''")
+                                .toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        return new RoutingResponse("left".equals(leftValue)
+                                && "right".equals(rightValue), leftValue, rightValue);
+                    } catch (Exception e) {
+                        throw new IllegalStateException("multi-window routing probe failed", e);
+                    } finally {
+                        runtime.closeWindow(left).exceptionally(e -> null);
+                        runtime.closeWindow(right).exceptionally(e -> null);
+                    }
+                })),
+
+                new CommandDefinition("smoke.windowControls", Optional.of("smoke:use"),
+                        Void.class, Optional.of(Duration.ofSeconds(30)), (request, context) ->
+                        CompletableFuture.supplyAsync(() -> {
+                    try {
+                        var handle = runtimeRef.get().window(MAIN_WINDOW).orElseThrow();
+                        handle.setTitle("JDesk controls live test").toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        handle.setBounds(80, 80, 900, 650).toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        handle.setAlwaysOnTop(true).toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        handle.focus().toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        handle.hide().toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        handle.show().toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        handle.setMinimized(true).toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        Thread.sleep(150);
+                        handle.setMinimized(false).toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        handle.setMaximized(true).toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        Thread.sleep(150);
+                        handle.setMaximized(false).toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        handle.setFullscreen(true).toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        Thread.sleep(500);
+                        handle.setFullscreen(false).toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        handle.setAlwaysOnTop(false).toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        handle.setTitle("JDesk native smoke").toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        String alive = runtimeRef.get().evaluate(MAIN_WINDOW, "'alive'")
+                                .toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        return new WindowControlsResponse("alive".equals(alive));
+                    } catch (Exception e) { throw new IllegalStateException("window controls failed", e); }
+                })),
+
+                new CommandDefinition("smoke.clipboardRead", Optional.of("smoke:use"),
+                        Void.class, Optional.empty(), (request, context) ->
+                        runtimeRef.get().readClipboardText().thenApply(text -> new Ack(true))),
 
                 new CommandDefinition("smoke.report", Optional.of("smoke:use"), Report.class,
                         Optional.empty(), (request, context) -> {

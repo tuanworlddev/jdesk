@@ -58,10 +58,10 @@ class ArchitectureTest {
                     .and().resideOutsideOfPackages(
                             "dev.jdesk.runtime.internal..",
                             "dev.jdesk.runtime.json..",
-                            "dev.jdesk.runtime.capability..",
+                            "dev.jdesk.runtime.config..",
                             "dev.jdesk.runtime.ipc..")
                     .should().dependOnClassesThat()
                     .resideInAPackage("com.fasterxml.jackson..")
-                    .because("only the JSON codec, defensive parsing, capability and IPC "
+                    .because("only the JSON codec, defensive parsing, configuration and IPC "
                             + "internals may touch Jackson directly");
 }

@@ -235,6 +235,26 @@ final class LinuxWindow extends NativeHandle implements PlatformWindow {
         }
     }
 
+    @Override public void focus() { call(Gtk.GTK_WINDOW_PRESENT); }
+    @Override public void setMinimized(boolean value) {
+        call(value ? Gtk.GTK_WINDOW_ICONIFY : Gtk.GTK_WINDOW_DEICONIFY);
+    }
+    @Override public void setMaximized(boolean value) {
+        call(value ? Gtk.GTK_WINDOW_MAXIMIZE : Gtk.GTK_WINDOW_UNMAXIMIZE);
+    }
+    @Override public void setFullscreen(boolean value) {
+        call(value ? Gtk.GTK_WINDOW_FULLSCREEN : Gtk.GTK_WINDOW_UNFULLSCREEN);
+    }
+    @Override public void setAlwaysOnTop(boolean value) {
+        requireOpen(); try { Gtk.GTK_WINDOW_SET_KEEP_ABOVE.invokeExact(gtkWindow, value ? 1 : 0); }
+        catch (Throwable t) { throw Gtk.rethrow(t); }
+    }
+
+    private void call(java.lang.invoke.MethodHandle handle) {
+        requireOpen(); try { handle.invokeExact(gtkWindow); }
+        catch (Throwable t) { throw Gtk.rethrow(t); }
+    }
+
     @Override
     public void setTitle(String title) {
         requireOpen();

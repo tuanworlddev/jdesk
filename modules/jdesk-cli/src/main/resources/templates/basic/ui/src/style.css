@@ -1,0 +1,6 @@
+:root { font-family: system-ui, sans-serif; color: #17202a; background: #f4f6f7; }
+body { margin: 0; }
+main { max-width: 640px; margin: 15vh auto; padding: 32px; }
+form { display: flex; gap: 8px; }
+input, button { font: inherit; padding: 10px 12px; }
+button { cursor: pointer; }

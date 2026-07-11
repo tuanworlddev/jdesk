@@ -11,6 +11,9 @@ public interface InvocationContext {
 
     PlatformInfo platform();
 
+    /** Control plane for the running application. */
+    ApplicationHandle application();
+
     /** Emitter targeting the invoking window. */
     EventEmitter events();
 

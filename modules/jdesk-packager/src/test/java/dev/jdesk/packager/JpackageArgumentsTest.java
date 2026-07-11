@@ -46,6 +46,29 @@ class JpackageArgumentsTest {
     }
 
     @Test
+    void buildsNamedModuleLaunchWithoutClasspathFallback() {
+        List<String> args = JpackageArguments.builder()
+                .name("hello")
+                .modulePath(Path.of("build", "modules"))
+                .module("dev.example.hello", "dev.example.Main")
+                .runtimeImage(Path.of("build", "runtime"))
+                .destination(Path.of("build", "package"))
+                .appVersion("1.0.0")
+                .javaOption("--enable-native-access=dev.jdesk.platform.linux")
+                .javaOption("--illegal-native-access=deny")
+                .build()
+                .toArguments();
+
+        assertThat(args).containsSubsequence(
+                "--module-path", Path.of("build", "modules").toString(),
+                "--module", "dev.example.hello/dev.example.Main");
+        assertThat(args).contains("--enable-native-access=dev.jdesk.platform.linux",
+                "--illegal-native-access=deny");
+        assertThat(args).doesNotContain("--input", "--main-jar", "--main-class",
+                "--enable-native-access=ALL-UNNAMED");
+    }
+
+    @Test
     void requiresMainClass() {
         JpackageArguments.Builder builder = JpackageArguments.builder()
                 .name("hello")

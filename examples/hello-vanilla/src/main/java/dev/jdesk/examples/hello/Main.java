@@ -2,7 +2,7 @@ package dev.jdesk.examples.hello;
 
 import dev.jdesk.api.JDeskApplication;
 import dev.jdesk.api.WindowConfig;
-import dev.jdesk.runtime.capability.Capabilities;
+import dev.jdesk.runtime.config.Capabilities;
 
 /**
  * hello-vanilla: the smallest real JDesk application, built exclusively on public APIs.
@@ -27,7 +27,8 @@ public final class Main {
         JDeskApplication.Builder builder = JDeskApplication.builder()
                 .id("dev.jdesk.examples.hello")
                 .commands(GreetingServiceCommands.create(greetings))
-                .capabilities(Capabilities.fromResource("jdesk-capabilities.json"))
+                .capabilities(Capabilities.fromResource(
+                        Main.class.getModule(), "jdesk-capabilities.json"))
                 .window(WindowConfig.builder()
                         .id("main")
                         .title("JDesk — hello-vanilla")

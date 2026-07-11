@@ -82,6 +82,7 @@ final class WindowsWebView implements PlatformWebView {
     private final NativeCallbackRegistry registry;
     private final MemorySegment controller; // owned
     private final MemorySegment webView;    // owned
+    private final boolean devToolsEnabled;
     private final List<Consumer<String>> messageListeners = new CopyOnWriteArrayList<>();
     private final List<NavigationListener> navigationListeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<URI>> committedListeners = new CopyOnWriteArrayList<>();
@@ -124,7 +125,8 @@ final class WindowsWebView implements PlatformWebView {
             this.webView = wv;
         }
 
-        configureSettings(config.devToolsEnabled());
+        this.devToolsEnabled=config.devToolsEnabled();
+        configureSettings(devToolsEnabled);
         installInitScript();
         registerEventHandlers();
         registerResourceInterception();
@@ -567,9 +569,11 @@ final class WindowsWebView implements PlatformWebView {
                 java.util.Optional.empty(),
                 java.util.Optional.ofNullable(pid));
     }
+    @Override public boolean devToolsEnabled(){return devToolsEnabled;}
 
     /** Subscribes to engine process failures (spec section 13). */
-    Subscription onProcessFailure(Consumer<WebViewProcessFailure> listener) {
+    @Override
+    public Subscription onProcessFailure(Consumer<WebViewProcessFailure> listener) {
         failureListeners.add(listener);
         return () -> failureListeners.remove(listener);
     }

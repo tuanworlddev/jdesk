@@ -33,7 +33,8 @@ together.
 ### Key files
 
 - **`jdesk-capabilities.json`** (`src/main/resources/`) — the capability grant list,
-  loaded with `Capabilities.fromResource("jdesk-capabilities.json")`. Deny-by-default:
+  loaded with `Capabilities.fromResource(Main.class.getModule(),
+  "jdesk-capabilities.json")`. Deny-by-default:
   a command runs only if its `@RequiresCapability` value is granted to the window. Format:
 
   ```json
@@ -66,10 +67,16 @@ The spec defines two starting templates ([section 15](../../JDESK_CORE_FRAMEWORK
 - **`structured`** — separate domain, application, infrastructure, desktop-composition,
   and UI modules for larger applications.
 
-> **Status.** A project *generator/initializer* that scaffolds these templates from a
-> single command is **not yet implemented** — copy `examples/hello-vanilla` as the basic
-> template today. The layout and conventions above are what a generated project will
-> produce.
+Generate either layout with the `jdesk` CLI:
+
+```bash
+jdesk create my-app --package com.example.myapp
+jdesk create my-suite --template structured --package com.example.mysuite
+```
+
+The generated project includes a Gradle wrapper, JPMS descriptors, capability policy,
+Vite frontend, production asset builder and the platform dependency selector. During
+framework development, add `--jdesk-source /path/to/JDesk` to use a composite build.
 
 ## The `hello-vanilla` basic template, concretely
 

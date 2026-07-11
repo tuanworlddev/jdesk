@@ -2,6 +2,7 @@ package dev.jdesk.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.util.Optional;
@@ -140,5 +141,21 @@ class CommandRegistryTest {
         assertThat(def.requiredCapability()).contains("fs.read");
         assertThat(def.timeout()).contains(Duration.ofSeconds(5));
         assertThat(def.requestType()).isEqualTo(String.class);
+    }
+
+    @Test
+    void definitionRejectsNonPositiveOrExcessiveTimeouts() {
+        for (Duration timeout : new Duration[] {
+                Duration.ZERO, Duration.ofNanos(-1), Duration.ofHours(25)}) {
+            assertThatThrownBy(() -> new CommandDefinition(
+                    "test.timeout", Optional.empty(), Void.class,
+                    Optional.of(timeout), NOOP_HANDLER))
+                    .isInstanceOfSatisfying(JDeskException.class,
+                            e -> assertThat(e.code()).isEqualTo(ErrorCode.INVALID_REQUEST));
+        }
+        assertThat(new CommandDefinition(
+                "test.timeout", Optional.empty(), Void.class,
+                Optional.of(Duration.ofHours(24)), NOOP_HANDLER).timeout())
+                .contains(Duration.ofHours(24));
     }
 }

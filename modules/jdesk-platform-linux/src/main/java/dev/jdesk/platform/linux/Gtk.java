@@ -109,6 +109,9 @@ final class Gtk {
     static final MethodHandle G_MEMORY_INPUT_STREAM_NEW_FROM_BYTES =
             dl("g_memory_input_stream_new_from_bytes",
                     FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle G_APP_INFO_LAUNCH_DEFAULT_FOR_URI = dl(
+            "g_app_info_launch_default_for_uri",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
 
     // ---- GTK 3 ----
     static final MethodHandle GTK_INIT_CHECK = dl("gtk_init_check",
@@ -127,14 +130,38 @@ final class Gtk {
             FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT, JAVA_INT));
     static final MethodHandle GTK_WINDOW_SET_RESIZABLE = dl("gtk_window_set_resizable",
             FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT));
+    static final MethodHandle GTK_WINDOW_PRESENT = dl("gtk_window_present", FunctionDescriptor.ofVoid(ADDRESS));
+    static final MethodHandle GTK_WINDOW_ICONIFY = dl("gtk_window_iconify", FunctionDescriptor.ofVoid(ADDRESS));
+    static final MethodHandle GTK_WINDOW_DEICONIFY = dl("gtk_window_deiconify", FunctionDescriptor.ofVoid(ADDRESS));
+    static final MethodHandle GTK_WINDOW_MAXIMIZE = dl("gtk_window_maximize", FunctionDescriptor.ofVoid(ADDRESS));
+    static final MethodHandle GTK_WINDOW_UNMAXIMIZE = dl("gtk_window_unmaximize", FunctionDescriptor.ofVoid(ADDRESS));
+    static final MethodHandle GTK_WINDOW_FULLSCREEN = dl("gtk_window_fullscreen", FunctionDescriptor.ofVoid(ADDRESS));
+    static final MethodHandle GTK_WINDOW_UNFULLSCREEN = dl("gtk_window_unfullscreen", FunctionDescriptor.ofVoid(ADDRESS));
+    static final MethodHandle GTK_WINDOW_SET_KEEP_ABOVE = dl("gtk_window_set_keep_above",
+            FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT));
     static final MethodHandle GTK_WIDGET_SHOW_ALL = dl("gtk_widget_show_all",
             FunctionDescriptor.ofVoid(ADDRESS));
     static final MethodHandle GTK_WIDGET_HIDE = dl("gtk_widget_hide",
             FunctionDescriptor.ofVoid(ADDRESS));
     static final MethodHandle GTK_WIDGET_DESTROY = dl("gtk_widget_destroy",
             FunctionDescriptor.ofVoid(ADDRESS));
+    static final MethodHandle GTK_MESSAGE_DIALOG_NEW = LINKER.downcallHandle(
+            LOOKUP.findOrThrow("gtk_message_dialog_new"),
+            FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT, ADDRESS, ADDRESS),
+            Linker.Option.firstVariadicArg(5));
+    static final MethodHandle GTK_DIALOG_RUN = dl("gtk_dialog_run",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS));
+    static final MethodHandle GTK_DIALOG_ADD_BUTTON = dl("gtk_dialog_add_button",
+            FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, JAVA_INT));
+    static final MethodHandle GTK_WINDOW_SET_TITLE_DIALOG = GTK_WINDOW_SET_TITLE;
     static final MethodHandle GTK_CONTAINER_ADD = dl("gtk_container_add",
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
+    static final MethodHandle GDK_ATOM_INTERN_STATIC_STRING = dl("gdk_atom_intern_static_string",
+            FunctionDescriptor.of(ADDRESS,ADDRESS));
+    static final MethodHandle GTK_CLIPBOARD_GET = dl("gtk_clipboard_get",FunctionDescriptor.of(ADDRESS,ADDRESS));
+    static final MethodHandle GTK_CLIPBOARD_WAIT_FOR_TEXT = dl("gtk_clipboard_wait_for_text",FunctionDescriptor.of(ADDRESS,ADDRESS));
+    static final MethodHandle GTK_CLIPBOARD_SET_TEXT = dl("gtk_clipboard_set_text",FunctionDescriptor.ofVoid(ADDRESS,ADDRESS,JAVA_INT));
+    static final MethodHandle GTK_CLIPBOARD_STORE = dl("gtk_clipboard_store",FunctionDescriptor.ofVoid(ADDRESS));
 
     // ---- WebKitGTK 4.1 ----
     static final MethodHandle WEBKIT_WEB_CONTEXT_GET_DEFAULT = dl(

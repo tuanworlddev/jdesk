@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.ServiceLoader;
+import java.util.function.Consumer;
 
 /**
  * Application entry point:
@@ -13,7 +14,8 @@ import java.util.ServiceLoader;
  * JDeskApplication.builder()
  *     .id("dev.jdesk.example")
  *     .commands(GeneratedCommands.create(services))
- *     .capabilities(Capabilities.fromResource("jdesk-capabilities.json"))
+ *     .capabilities(Capabilities.fromResource(
+ *         App.class.getModule(), "jdesk-capabilities.json"))
  *     .window(WindowConfig.builder().id("main").title("Example")
  *         .size(1100, 720).entry("jdesk://app/index.html").build())
  *     .run(args);
@@ -30,10 +32,13 @@ public final class JDeskApplication {
     public static final class Builder {
         private String id;
         private CommandRegistry commands = CommandRegistry.of();
+        private CommandRegistry frontendEvents = CommandRegistry.of();
         private CapabilitySet capabilities = CapabilitySet.empty();
         private final List<WindowConfig> windows = new ArrayList<>();
         private final List<LifecycleListener> listeners = new ArrayList<>();
         private Optional<String> devServerUrl = Optional.empty();
+        private boolean singleInstance;
+        private Consumer<List<String>> activationHandler = ignored -> { };
 
         private Builder() {
         }
@@ -46,6 +51,11 @@ public final class JDeskApplication {
         public Builder commands(CommandRegistry commands) {
             this.commands = Objects.requireNonNull(commands, "commands");
             return this;
+        }
+
+        /** Event definitions accepted from JavaScript; handlers receive InvocationContext. */
+        public Builder frontendEvents(CommandRegistry events) {
+            this.frontendEvents = Objects.requireNonNull(events, "events"); return this;
         }
 
         public Builder capabilities(CapabilitySet capabilities) {
@@ -69,11 +79,22 @@ public final class JDeskApplication {
             return this;
         }
 
+        /**
+         * Enforces one running process for this application id. Later launches deliver their
+         * command-line arguments (including deep-link URIs) to {@code activationHandler}.
+         */
+        public Builder singleInstance(Consumer<List<String>> activationHandler) {
+            this.singleInstance = true;
+            this.activationHandler = Objects.requireNonNull(activationHandler, "activationHandler");
+            return this;
+        }
+
         public ApplicationSpec buildSpec() {
             if (id == null) {
                 throw new JDeskException(ErrorCode.INVALID_REQUEST, "Application id is required");
             }
-            return new ApplicationSpec(id, commands, capabilities, windows, listeners, devServerUrl);
+            return new ApplicationSpec(id, commands, capabilities, windows, listeners,
+                    devServerUrl, frontendEvents, singleInstance, activationHandler);
         }
 
         /** Builds the spec, locates the runtime bootstrap, and runs until shutdown. */

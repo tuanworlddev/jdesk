@@ -4,13 +4,17 @@ module dev.jdesk.runtime {
     requires transitive dev.jdesk.webview.spi;
     requires com.fasterxml.jackson.core;
     requires com.fasterxml.jackson.databind;
+    requires dev.jdesk.instance;
 
     exports dev.jdesk.runtime.json;
-    exports dev.jdesk.runtime.ipc;
-    exports dev.jdesk.runtime.capability;
-    exports dev.jdesk.runtime.assets;
-    exports dev.jdesk.runtime.lifecycle;
-    exports dev.jdesk.runtime.boot;
+    exports dev.jdesk.runtime.config;
+    exports dev.jdesk.runtime.assets to
+            dev.jdesk.testapps.nativesmoke, dev.jdesk.testapps.securityprobe;
+    exports dev.jdesk.runtime.boot to
+            dev.jdesk.testapps.nativesmoke, dev.jdesk.testapps.securityprobe;
+    exports dev.jdesk.runtime.ipc to
+            dev.jdesk.testapps.nativesmoke, dev.jdesk.testapps.securityprobe;
+    opens dev.jdesk.runtime.ipc to com.fasterxml.jackson.databind;
 
     uses dev.jdesk.webview.spi.PlatformProvider;
     provides dev.jdesk.api.JDeskBootstrap with dev.jdesk.runtime.boot.RuntimeBootstrap;

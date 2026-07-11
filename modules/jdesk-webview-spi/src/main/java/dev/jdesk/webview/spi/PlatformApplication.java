@@ -1,6 +1,9 @@
 package dev.jdesk.webview.spi;
 
 import dev.jdesk.api.UiDispatcher;
+import java.net.URI;
+import dev.jdesk.api.MessageDialog;
+import dev.jdesk.api.MessageDialogResult;
 
 /**
  * One running native application: owns the UI thread/event loop and creates windows.
@@ -11,6 +14,12 @@ public interface PlatformApplication extends AutoCloseable {
     UiDispatcher ui();
 
     PlatformWindow createWindow(NativeWindowConfig config);
+
+    /** Opens an already policy-validated HTTP(S) URI in the OS default browser. */
+    void openExternal(URI uri);
+    String readClipboardText();
+    void writeClipboardText(String text);
+    MessageDialogResult showMessageDialog(MessageDialog dialog);
 
     /** Blocks running the native event loop until {@link #requestStop()}. */
     void runEventLoop();

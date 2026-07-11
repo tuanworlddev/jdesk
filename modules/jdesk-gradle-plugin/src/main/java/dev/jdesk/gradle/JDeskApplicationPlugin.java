@@ -1,6 +1,7 @@
 package dev.jdesk.gradle;
 
 import dev.jdesk.gradle.internal.PluginVersion;
+import dev.jdesk.gradle.internal.OsSupport;
 import dev.jdesk.gradle.tasks.JDeskDevTask;
 import dev.jdesk.gradle.tasks.JDeskDoctorTask;
 import dev.jdesk.gradle.tasks.JDeskFrontendBuildTask;
@@ -11,6 +12,7 @@ import dev.jdesk.gradle.tasks.JDeskRuntimeImageTask;
 import dev.jdesk.gradle.tasks.JDeskVerifyEvidenceTask;
 import java.io.File;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import org.gradle.api.GradleException;
@@ -38,7 +40,7 @@ import org.gradle.language.jvm.tasks.ProcessResources;
 /**
  * The {@code dev.jdesk.application} plugin (spec section 14). Registers the
  * {@code jdesk} extension and the jdesk task group: doctor, generateBindings,
- * frontendBuild, dev, runtimeImage, package, installer (Phase 7 placeholder),
+ * frontendBuild, dev, runtimeImage, package, installer,
  * nativeSmokeTest and verifyEvidence. All tasks use lazy configuration; everything
  * except explicitly untracked diagnostics is configuration-cache compatible.
  */
@@ -54,9 +56,16 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
         TaskContainer tasks = project.getTasks();
 
         JDeskExtension extension = project.getExtensions().create("jdesk", JDeskExtension.class);
+        // mainModule is optional: set it (with a module-info.java) for a named-module
+        // app, or leave it unset for a simpler classpath app. Tasks branch on presence.
         JDeskFrontendExtension frontend = extension.getFrontend();
+        JDeskDevelopmentExtension development = extension.getDevelopment();
         frontend.getDistDirectory().convention(frontend.getDirectory().dir("dist"));
         frontend.getTsOutputDir().convention(frontend.getDirectory().dir("src/generated"));
+        development.getJavaReload().convention(true);
+        development.getReloadDebounceMillis().convention(300);
+        development.getReloadCommand().convention(
+                project.getProviders().provider(() -> defaultReloadCommand(project)));
 
         // Dependency buckets defaulting to the published framework artifacts. Builds
         // with the artifacts in a repository need no extra configuration; composite or
@@ -115,6 +124,7 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
                     + " tool, packaging tools and jdesk configuration; lists every"
                     + " problem with remediation.");
             t.getApplicationId().set(extension.getApplicationId());
+            t.getMainModule().set(extension.getMainModule());
             t.getMainClass().set(extension.getMainClass());
             t.getFrontendTool().set(frontend.getBuildCommand()
                     .map(command -> command.isEmpty() ? null : command.get(0)));
@@ -152,19 +162,30 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
 
         tasks.register("jdeskDev", JDeskDevTask.class, t -> {
             t.setGroup(GROUP);
-            t.setDescription("Starts the frontend dev server and the application with"
-                    + " -Djdesk.dev=true -Djdesk.devUrl=<devUrl>; cleans up the dev"
-                    + " server process tree on exit.");
+            t.setDescription("Starts the frontend HMR server and supervises the Java"
+                    + " application; recompiles and restarts it after source changes.");
             t.dependsOn(tasks.named(JavaPlugin.CLASSES_TASK_NAME), generateBindings);
             t.getDevCommand().set(frontend.getDevCommand());
             t.getFrontendDirectory().set(frontend.getDirectory());
             t.getDevUrl().set(frontend.getDevUrl());
             t.getMainClass().set(extension.getMainClass());
+            t.getMainModule().set(extension.getMainModule());
             t.getJavaExecutable().set(javaExecutable);
+            t.getJavaReload().set(development.getJavaReload());
+            t.getReloadCommand().set(development.getReloadCommand());
+            t.getReloadDebounceMillis().set(development.getReloadDebounceMillis());
+            t.getReloadWorkingDirectory().set(layout.getProjectDirectory());
             SourceSetContainer sourceSets =
                     project.getExtensions().getByType(SourceSetContainer.class);
-            t.getRuntimeClasspath().from(
-                    sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME).getRuntimeClasspath());
+            SourceSet main = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
+            t.getRuntimeClasspath().from(main.getRuntimeClasspath());
+            t.dependsOn(project.getConfigurations().getByName(
+                    JavaPlugin.RUNTIME_CLASSPATH_CONFIGURATION_NAME));
+            t.getApplicationResources().from(
+                    project.getProviders().provider(() -> main.getOutput().getResourcesDir()));
+            t.getReloadSources().from(main.getAllJava().getSourceDirectories());
+            t.getReloadSources().from(main.getResources().getSourceDirectories());
+            t.getReloadSources().from(development.getReloadSources());
         });
 
         TaskProvider<Jar> jar = tasks.named(JavaPlugin.JAR_TASK_NAME, Jar.class);
@@ -188,9 +209,8 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
         TaskProvider<JDeskPackageTask> packageTask =
                 tasks.register("jdeskPackage", JDeskPackageTask.class, t -> {
                     t.setGroup(GROUP);
-                    t.setDescription("Builds a platform app-image with jpackage from the"
-                            + " runtime image and the application jars (installers land"
-                            + " in Phase 7 via jdeskInstaller).");
+                    t.setDescription("Builds a modular platform app-image with jpackage"
+                            + " from the runtime image and named application modules.");
                     t.getRuntimeImage().set(
                             runtimeImage.flatMap(JDeskRuntimeImageTask::getOutputDirectory));
                     t.getMainJar().set(jar.flatMap(Jar::getArchiveFile));
@@ -198,6 +218,7 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
                             project.getConfigurations().getByName(
                                     JavaPlugin.RUNTIME_CLASSPATH_CONFIGURATION_NAME));
                     t.getMainClass().set(extension.getMainClass());
+                    t.getMainModule().set(extension.getMainModule());
                     t.getApplicationId().set(extension.getApplicationId());
                     t.getImageName().convention(extension.getApplicationId()
                             .map(id -> id.substring(id.lastIndexOf('.') + 1)));
@@ -274,5 +295,37 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
             }
             return tree;
         }).orElse(Collections.emptyList());
+    }
+
+    private static List<String> defaultReloadCommand(Project project) {
+        List<String> command = new ArrayList<>();
+        File root = project.getRootProject().getProjectDir();
+        if (OsSupport.isWindows()) {
+            File wrapper = new File(root, "gradlew.bat");
+            if (wrapper.isFile()) {
+                command.add("cmd");
+                command.add("/c");
+                command.add(wrapper.getAbsolutePath());
+            }
+        } else {
+            File wrapper = new File(root, "gradlew");
+            if (wrapper.isFile()) {
+                command.add(wrapper.getAbsolutePath());
+            }
+        }
+        if (command.isEmpty()) {
+            File gradleHome = project.getGradle().getGradleHomeDir();
+            String executable = OsSupport.isWindows() ? "gradle.bat" : "gradle";
+            command.add(gradleHome == null
+                    ? executable
+                    : new File(gradleHome, "bin/" + executable).getAbsolutePath());
+        }
+        String classesTask = project.getPath().equals(":")
+                ? ":classes"
+                : project.getPath() + ":classes";
+        command.add(classesTask);
+        command.add("--console=plain");
+        command.add("--no-configuration-cache");
+        return List.copyOf(command);
     }
 }

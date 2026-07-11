@@ -1,4 +1,4 @@
-package dev.jdesk.runtime.capability;
+package dev.jdesk.runtime.config;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.jdesk.api.CapabilityGrant;
@@ -9,6 +9,8 @@ import dev.jdesk.runtime.internal.DefensiveJson;
 import dev.jdesk.runtime.json.JsonLimits;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.module.ModuleReader;
+import java.lang.module.ResolvedModule;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -47,6 +49,40 @@ public final class Capabilities {
         } catch (IOException e) {
             throw new JDeskException(ErrorCode.ILLEGAL_STATE,
                     "Failed to read capability resource: " + resourceName, e);
+        }
+    }
+
+    /** Loads a capability file from a named application module. */
+    public static CapabilitySet fromResource(Module module, String resourceName) {
+        if (!module.isNamed()) {
+            return fromResource(resourceName, module.getClassLoader());
+        }
+        try (InputStream in = module.getResourceAsStream(resourceName)) {
+            if (in != null) {
+                return parse(new String(in.readAllBytes(),
+                        java.nio.charset.StandardCharsets.UTF_8));
+            }
+        } catch (IOException e) {
+            throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                    "Failed to read capability resource from module " + module.getName()
+                            + ": " + resourceName, e);
+        }
+        ResolvedModule resolved = module.getLayer().configuration()
+                .findModule(module.getName())
+                .orElseThrow(() -> new JDeskException(ErrorCode.ILLEGAL_STATE,
+                        "Application module is not resolved: " + module.getName()));
+        try (ModuleReader reader = resolved.reference().open();
+             InputStream in = reader.open(resourceName).orElse(null)) {
+            if (in == null) {
+                throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                        "Capability resource not found in module " + module.getName()
+                                + ": " + resourceName);
+            }
+            return parse(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                    "Failed to read capability resource from module " + module.getName()
+                            + ": " + resourceName, e);
         }
     }
 

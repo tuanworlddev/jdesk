@@ -32,10 +32,20 @@ public interface PlatformWebView extends AutoCloseable {
      */
     Subscription onNavigationCommitted(java.util.function.Consumer<java.net.URI> listener);
 
+    /** Engine renderer/process failure notification. Implementations must never invoke
+     * listeners after close. The default preserves compatibility for embedders that
+     * cannot expose a process model. */
+    default Subscription onProcessFailure(Consumer<WebViewProcessFailure> listener) {
+        return () -> { };
+    }
+
     /** Real engine capture API; never a synthetic image. */
     CompletionStage<WebViewSnapshot> snapshot();
 
     WebViewDiagnostics diagnostics();
+
+    /** Actual engine setting after native WebView initialization. */
+    boolean devToolsEnabled();
 
     @Override
     void close();

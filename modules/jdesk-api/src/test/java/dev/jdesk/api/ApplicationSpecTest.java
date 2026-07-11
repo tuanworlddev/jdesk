@@ -37,6 +37,20 @@ class ApplicationSpecTest {
         assertThat(spec.capabilities().grants()).isEmpty();
     }
 
+    @Test
+    void builderEnablesSingleInstanceActivationHandler() {
+        List<List<String>> activations = new ArrayList<>();
+        ApplicationSpec built = JDeskApplication.builder()
+                .id("dev.jdesk.single")
+                .window(window("main"))
+                .singleInstance(activations::add)
+                .buildSpec();
+
+        assertThat(built.singleInstance()).isTrue();
+        built.activationHandler().accept(List.of("jdesk-test://open/42"));
+        assertThat(activations).containsExactly(List.of("jdesk-test://open/42"));
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
             "com.example.app",
@@ -112,6 +126,27 @@ class ApplicationSpecTest {
 
         assertThatThrownBy(() -> spec.lifecycleListeners().add(new LifecycleListener() { }))
                 .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void frontendEventsConstructorDefaultsSingleInstanceOff() {
+        CommandRegistry frontendEvents = CommandRegistry.of();
+        ApplicationSpec spec = new ApplicationSpec("dev.jdesk.example", CommandRegistry.of(),
+                CapabilitySet.empty(), List.of(window("main")), List.of(), Optional.empty(),
+                frontendEvents);
+
+        assertThat(spec.frontendEvents()).isSameAs(frontendEvents);
+        assertThat(spec.singleInstance()).isFalse();
+        // Default activation handler is a no-op and must not throw.
+        spec.activationHandler().accept(List.of("ignored"));
+    }
+
+    @Test
+    void sixArgConstructorSuppliesEmptyFrontendEvents() {
+        ApplicationSpec spec = spec("dev.jdesk.example", List.of(window("main")), List.of());
+        assertThat(spec.frontendEvents().size()).isZero();
+        assertThat(spec.singleInstance()).isFalse();
+        spec.activationHandler().accept(List.of("ignored"));
     }
 
     @Test

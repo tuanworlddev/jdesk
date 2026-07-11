@@ -14,6 +14,9 @@ import java.lang.System.Logger.Level;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.MemorySegment;
+import java.net.URI;
+import dev.jdesk.api.MessageDialog;
+import dev.jdesk.api.MessageDialogResult;
 
 import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
@@ -95,6 +98,44 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
         requireOpen();
         dispatcher.assertUiThread();
         return new MacWindow(this, windowConfig);
+    }
+
+    @Override public void openExternal(URI uri) {
+        requireOpen(); dispatcher.assertUiThread();
+        MemorySegment url = ObjC.send(ObjC.cls("NSURL"), "URLWithString:", ObjC.nsString(uri.toString()));
+        boolean opened = ObjC.sendBool(ObjC.send(ObjC.cls("NSWorkspace"), "sharedWorkspace"),
+                "openURL:", url);
+        if (!opened) throw new JDeskException(ErrorCode.ILLEGAL_STATE, "OS refused external URI");
+    }
+
+    @Override public String readClipboardText() {
+        requireOpen(); dispatcher.assertUiThread();
+        MemorySegment pasteboard=ObjC.send(ObjC.cls("NSPasteboard"),"generalPasteboard");
+        return ObjC.javaString(ObjC.send(pasteboard,"stringForType:",
+                ObjC.nsString("public.utf8-plain-text")));
+    }
+    @Override public void writeClipboardText(String text) {
+        requireOpen(); dispatcher.assertUiThread();
+        MemorySegment pasteboard=ObjC.send(ObjC.cls("NSPasteboard"),"generalPasteboard");
+        ObjC.sendLong(pasteboard,"clearContents");
+        boolean ok=ObjC.sendBool(pasteboard,"setString:forType:",ObjC.nsString(text),
+                ObjC.nsString("public.utf8-plain-text"));
+        if(!ok)throw new JDeskException(ErrorCode.ILLEGAL_STATE,"Could not write clipboard");
+    }
+    @Override public MessageDialogResult showMessageDialog(MessageDialog dialog) {
+        requireOpen(); dispatcher.assertUiThread();
+        MemorySegment alert = ObjC.send(ObjC.send(ObjC.cls("NSAlert"), "alloc"), "init");
+        try {
+            ObjC.sendVoid(alert, "setMessageText:", ObjC.nsString(dialog.title()));
+            ObjC.sendVoid(alert, "setInformativeText:", ObjC.nsString(dialog.message()));
+            long style = switch (dialog.kind()) { case WARNING -> 0L; case INFO -> 1L; case ERROR -> 2L; };
+            ObjC.sendVoidLong(alert, "setAlertStyle:", style);
+            for (String button : dialog.buttons()) ObjC.send(alert, "addButtonWithTitle:", ObjC.nsString(button));
+            long response = ObjC.sendLong(alert, "runModal");
+            int index = (int) (response - 1000L);
+            if (index < 0 || index >= dialog.buttons().size()) index = 0;
+            return new MessageDialogResult(index, dialog.buttons().get(index));
+        } finally { ObjC.release(alert); }
     }
 
     @Override

@@ -86,7 +86,8 @@ period; late results never reach the new document.
 
 ## Command times out / cancellation
 
-- Default max command duration is 30 s (configurable downward). Long work should report
+- Default max command duration is 30 s. Explicit command metadata may select a positive
+  timeout up to 24 hours. Long work should report
   progress via events, not block.
 - The JS client can send `cancel` by request id (also on `AbortSignal`); the runtime
   interrupts the virtual thread and completes the promise with `CANCELLED`. Exactly one

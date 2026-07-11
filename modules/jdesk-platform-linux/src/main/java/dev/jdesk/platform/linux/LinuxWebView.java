@@ -152,6 +152,7 @@ final class LinuxWebView implements PlatformWebView {
     private final NativeCallbackRegistry registry;
     private final MemorySegment webView;              // + one owned ref (g_object_ref_sink)
     private final MemorySegment userContentManager;   // + one owned ref (g_object_ref)
+    private final boolean devToolsEnabled;
     private final List<Consumer<String>> messageListeners = new CopyOnWriteArrayList<>();
     private final List<NavigationListener> navigationListeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<URI>> committedListeners = new CopyOnWriteArrayList<>();
@@ -161,6 +162,7 @@ final class LinuxWebView implements PlatformWebView {
 
     LinuxWebView(LinuxPlatformApplication app, LinuxWindow window, NativeWindowConfig config) {
         this.registry = window.callbackRegistry();
+        this.devToolsEnabled=config.devToolsEnabled();
         final MemorySegment view;
         final MemorySegment manager;
         try (Arena confined = Arena.ofConfined()) {
@@ -507,7 +509,8 @@ final class LinuxWebView implements PlatformWebView {
     }
 
     /** Subscribes to engine process failures (spec section 13). */
-    Subscription onProcessFailure(Consumer<WebViewProcessFailure> listener) {
+    @Override
+    public Subscription onProcessFailure(Consumer<WebViewProcessFailure> listener) {
         failureListeners.add(listener);
         return () -> failureListeners.remove(listener);
     }
@@ -586,6 +589,7 @@ final class LinuxWebView implements PlatformWebView {
                 Optional.ofNullable(userAgent),
                 Optional.empty());
     }
+    @Override public boolean devToolsEnabled(){return devToolsEnabled;}
 
     /** Called from the window's destroy path; detaches and releases the pipeline. */
     void destroyFromWindow() {

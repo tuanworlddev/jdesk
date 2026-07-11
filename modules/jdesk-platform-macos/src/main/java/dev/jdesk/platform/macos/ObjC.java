@@ -92,10 +92,14 @@ final class ObjC {
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS, ADDRESS);
     private static final FunctionDescriptor D_VOID_BOOL =
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, JAVA_BYTE);
+    private static final FunctionDescriptor D_VOID_LONG =
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, JAVA_LONG);
     private static final FunctionDescriptor D_LONG = FunctionDescriptor.of(JAVA_LONG, ADDRESS, ADDRESS);
     private static final FunctionDescriptor D_BOOL = FunctionDescriptor.of(JAVA_BYTE, ADDRESS, ADDRESS);
     private static final FunctionDescriptor D_BOOL_ID =
             FunctionDescriptor.of(JAVA_BYTE, ADDRESS, ADDRESS, ADDRESS);
+    private static final FunctionDescriptor D_BOOL_ID_ID =
+            FunctionDescriptor.of(JAVA_BYTE, ADDRESS, ADDRESS, ADDRESS, ADDRESS);
 
     private static final ConcurrentHashMap<String, MemorySegment> CLASSES = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, MemorySegment> SELECTORS = new ConcurrentHashMap<>();
@@ -206,6 +210,14 @@ final class ObjC {
         }
     }
 
+    static void sendVoidLong(MemorySegment receiver, String selector, long value) {
+        try {
+            msgSend(D_VOID_LONG).invokeExact(receiver, sel(selector), value);
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
+    }
+
     static long sendLong(MemorySegment receiver, String selector) {
         try {
             return (long) msgSend(D_LONG).invokeExact(receiver, sel(selector));
@@ -228,6 +240,11 @@ final class ObjC {
         } catch (Throwable t) {
             throw rethrow(t);
         }
+    }
+
+    static boolean sendBool(MemorySegment receiver,String selector,MemorySegment a,MemorySegment b){
+        try{return (byte)msgSend(D_BOOL_ID_ID).invokeExact(receiver,sel(selector),a,b)!=0;}
+        catch(Throwable t){throw rethrow(t);}
     }
 
     // ---- strings ----

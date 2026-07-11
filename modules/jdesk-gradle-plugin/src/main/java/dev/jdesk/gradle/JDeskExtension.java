@@ -23,11 +23,22 @@ public abstract class JDeskExtension {
     /** Fully qualified main class of the application. */
     public abstract Property<String> getMainClass();
 
+    /** Named JPMS application module used by production packaging. */
+    public abstract Property<String> getMainModule();
+
     @Nested
     public abstract JDeskFrontendExtension getFrontend();
 
     public void frontend(Action<? super JDeskFrontendExtension> action) {
         action.execute(getFrontend());
+    }
+
+    @Nested
+    public abstract JDeskDevelopmentExtension getDevelopment();
+
+    /** Java compile-and-restart settings used by {@code jdeskDev}. */
+    public void development(Action<? super JDeskDevelopmentExtension> action) {
+        action.execute(getDevelopment());
     }
 
     @Nested

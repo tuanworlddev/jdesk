@@ -6,15 +6,17 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Builds the argument list for a {@code jpackage --type app-image} run. Installer types
- * (msi/dmg/deb, ...) land in Phase 7; only app-image construction is supported here.
- * Pure argument construction; execution is the caller's job.
+ * Builds the argument list for a {@code jpackage --type app-image} run in classpath or
+ * named-module mode. Installer construction has a separate argument builder. Pure
+ * argument construction; execution is the caller's job.
  */
 public final class JpackageArguments {
     private final String name;
     private final Path input;
     private final String mainJar;
     private final String mainClass;
+    private final Path modulePath;
+    private final String module;
     private final Path runtimeImage;
     private final Path destination;
     private final String appVersion;
@@ -23,9 +25,25 @@ public final class JpackageArguments {
 
     private JpackageArguments(Builder builder) {
         this.name = require(builder.name, "name");
-        this.input = Objects.requireNonNull(builder.input, "input");
-        this.mainJar = require(builder.mainJar, "mainJar");
-        this.mainClass = require(builder.mainClass, "mainClass");
+        this.input = builder.input;
+        this.mainJar = builder.mainJar;
+        this.mainClass = builder.mainClass;
+        this.modulePath = builder.modulePath;
+        this.module = builder.module;
+        boolean classpathMode = input != null || mainJar != null || mainClass != null;
+        boolean moduleMode = modulePath != null || module != null;
+        if (classpathMode == moduleMode) {
+            throw new IllegalStateException(
+                    "jpackage requires exactly one launch mode: classpath or module");
+        }
+        if (classpathMode) {
+            Objects.requireNonNull(input, "input");
+            require(mainJar, "mainJar");
+            require(mainClass, "mainClass");
+        } else {
+            Objects.requireNonNull(modulePath, "modulePath");
+            require(module, "module");
+        }
         this.runtimeImage = Objects.requireNonNull(builder.runtimeImage, "runtimeImage");
         this.destination = Objects.requireNonNull(builder.destination, "destination");
         this.appVersion = require(builder.appVersion, "appVersion");
@@ -70,11 +88,14 @@ public final class JpackageArguments {
     /** Arguments to pass after the {@code jpackage} executable. */
     public List<String> toArguments() {
         List<String> args = new ArrayList<>(List.of(
-                "--type", "app-image",
-                "--name", name,
-                "--input", input.toString(),
-                "--main-jar", mainJar,
-                "--main-class", mainClass,
+                "--type", "app-image", "--name", name));
+        if (module != null) {
+            args.addAll(List.of("--module-path", modulePath.toString(), "--module", module));
+        } else {
+            args.addAll(List.of("--input", input.toString(), "--main-jar", mainJar,
+                    "--main-class", mainClass));
+        }
+        args.addAll(List.of(
                 "--runtime-image", runtimeImage.toString(),
                 "--dest", destination.toString(),
                 "--app-version", appVersion));
@@ -94,6 +115,8 @@ public final class JpackageArguments {
         private Path input;
         private String mainJar;
         private String mainClass;
+        private Path modulePath;
+        private String module;
         private Path runtimeImage;
         private Path destination;
         private String appVersion;
@@ -120,6 +143,16 @@ public final class JpackageArguments {
 
         public Builder mainClass(String value) {
             this.mainClass = value;
+            return this;
+        }
+
+        public Builder modulePath(Path value) {
+            this.modulePath = value;
+            return this;
+        }
+
+        public Builder module(String moduleName, String mainClassName) {
+            this.module = require(moduleName, "module") + "/" + require(mainClassName, "mainClass");
             return this;
         }
 

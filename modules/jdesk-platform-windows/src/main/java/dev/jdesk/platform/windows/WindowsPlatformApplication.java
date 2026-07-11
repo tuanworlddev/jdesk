@@ -14,6 +14,9 @@ import java.lang.foreign.MemorySegment;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
+import java.net.URI;
+import dev.jdesk.api.MessageDialog;
+import dev.jdesk.api.MessageDialogResult;
 
 /**
  * One Win32 application: the constructing thread becomes the STA/UI thread
@@ -57,6 +60,15 @@ final class WindowsPlatformApplication extends NativeHandle implements PlatformA
         requireOpen();
         dispatcher.assertUiThread();
         return new WindowsWindow(this, windowConfig);
+    }
+
+    @Override public void openExternal(URI uri) {
+        requireOpen(); dispatcher.assertUiThread(); Win32.openExternal(uri.toString());
+    }
+    @Override public String readClipboardText(){requireOpen();dispatcher.assertUiThread();return Win32.readClipboardText();}
+    @Override public void writeClipboardText(String text){requireOpen();dispatcher.assertUiThread();Win32.writeClipboardText(text);}
+    @Override public MessageDialogResult showMessageDialog(MessageDialog dialog){
+        requireOpen();dispatcher.assertUiThread();return Win32.showMessageDialog(dialog);
     }
 
     @Override

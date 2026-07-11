@@ -22,9 +22,9 @@ Machine-generated evidence rules (Section 18) apply to every `VERIFIED-*` claim.
 
 | Platform | How it will be verified | Status |
 | --- | --- | --- |
-| macOS ARM64 | Locally on this machine (real WKWebView) | NOT STARTED |
+| macOS ARM64 | Locally on this machine (real WKWebView) | VERIFIED-LOCAL |
 | Windows x64 | Real GitHub Actions `windows-latest` runner (WebView2 present); no local Windows hardware | VERIFIED-CI (runs 29137796715, 29137919391) |
-| Linux x64 | Real GitHub Actions `ubuntu-latest` runner + Xvfb + WebKitGTK 4.1 | NOT STARTED |
+| Linux x64 | Real GitHub Actions `ubuntu-latest` runner + Xvfb + WebKitGTK 4.1 | VERIFIED-CI (run 29139086672) |
 | Windows ARM64 / macOS Intel / Linux ARM64 | Only after primary gates pass; else `UNVERIFIED` | NOT STARTED |
 
 ## Phase status
@@ -100,7 +100,8 @@ Gates:
 - [x] TestKit consumer builds: 13 real functional tests (isolated consumers, config-cache reuse asserted, spaces/non-ASCII paths, real codegen TS emission, real jdeps+jlink image)
 - [x] Fresh external sample (scratchpad, outside the repo): applied the plugin via includeBuild, jdeskDoctor + jdeskGenerateBindings produced GreetServiceCommands.java + typed TS client; ran the vertical slice end-to-end on the real macOS WKWebView using ONLY public APIs (nonce -> hello -> greeting.greet -> typed response -> app.quit), stdout evidence: FRESH-SAMPLE-READY + FRESH-SAMPLE-GREET-CONFIRMED, exit 0. (Spec names the Windows slice; the equally-verified macOS adapter was used for the local run — Windows consumer run follows with the Phase 7 consolidated CI.)
 
-Known deferrals to Phase 7 (explicit): installers, named-module native-access runtime images, signing hooks.
+The original Phase-3 deferrals were completed in Phase 7: installers, signing hooks and
+named-module production launchers are implemented.
 
 ### Phase 4 — macOS adapter
 Status: DONE (2026-07-11, verified locally on real Apple Silicon hardware)
@@ -128,10 +129,13 @@ Gates:
 - [x] CspValidator release check proven by unit test (unsafe-inline/eval rejected without acknowledgement; default CSP strict)
 
 ### Phase 7 — Packaging, documentation, release candidate
-Status: SUBSTANTIALLY DONE (packaging + docs + evidence complete; signed-release + installers + macOS CI remain — overall v1 INCOMPLETE by section 26, reported honestly)
+Status: SUBSTANTIALLY DONE (packaging + installers + docs + evidence complete; signed-release + macOS CI remain — overall v1 INCOMPLETE by section 26, reported honestly)
 
 Gates:
 - [x] jlink + jpackage pipeline (Gradle plugin jdeskRuntimeImage/jdeskPackage; app images built + launched without Gradle on windows/macos/linux)
+- [x] Production launchers use JPMS `--module-path`/`--module`, grant native access only
+  to `dev.jdesk.platform.<os>`, and run with `--illegal-native-access=deny`; no production
+  `ALL-UNNAMED` fallback
 - [x] jdeskInstaller builds OS-native installers (DMG/PKG/MSI/EXE/DEB/RPM) via jpackage on the target OS: verified end-to-end locally (real 34 MB DMG through the plugin) + Windows MSI / Linux DEB in CI package jobs; unit-tested arg builder
 - [x] Signing hooks (jdesk { signing { ... } } extension: Authenticode / Developer ID + notarization / GPG) — configuration surface; CI packages labeled UNSIGNED
 - [x] SBOM + SHA-256 checksums: ReleaseArtifacts writes checksums.sha256 + CycloneDX 1.5 sbom.cyclonedx.json in jdeskPackage; deterministic, unit-tested (22 packager tests); verified against a real 282-file jpackage image
@@ -142,6 +146,24 @@ Gates:
 - [x] Documentation set complete (docs/ section 24) + consolidated final report (docs/verification/final-report.md)
 
 Remaining before a signed v1 release (honestly incomplete, not claimed done): signed+notarized packages (installers build UNSIGNED today), a macos CI leg, secondary architectures, a dedicated performance benchmark harness, and the RSS regression-threshold ADR. See docs/verification/final-report.md — overall status INCOMPLETE.
+
+### Post-review hardening
+
+- [x] Event capacity now includes delivery already queued on the native UI dispatcher;
+  backpressure is end-to-end rather than only bounding the pre-dispatch deque.
+- [x] Dynamic window ids are reserved atomically; concurrent duplicate opens cannot leak
+  a native window or corrupt shutdown bookkeeping.
+- [x] Protocol-version mismatch returns an explicit handshake error; response encoding
+  failures always produce one terminal result.
+- [x] Public `ApplicationHandle` / `WindowHandle` control plane exposed through lifecycle
+  and invocation context; runtime implementation packages removed from the public JPMS ABI.
+- [x] TypeScript client has a lockfile, build dependency and integration tests.
+- [x] Named-module native smoke and a real modular macOS jpackage app image pass with
+  `--illegal-native-access=deny`; Windows/Linux CI package commands use the same model.
+- [x] `jdeskDev` now provides frontend HMR plus supervised Java/resource rebuild and
+  restart; a TestKit session edits a live app from v1 to v2 and verifies the restart.
+- [x] `jdesk create` ships runnable `basic` and four-layer `structured` templates with a
+  bundled Gradle wrapper; both templates were generated and compiled as external builds.
 
 ## Known deviations / notes
 

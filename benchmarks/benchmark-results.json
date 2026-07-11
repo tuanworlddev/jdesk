@@ -1,0 +1,14 @@
+{
+  "auditTimestampUtc": "2026-07-11T06:24:26Z",
+  "commit": "81b9f1c796f91cf7bc5f89d8ec966a9b007fe72c",
+  "dirtyWorktree": true,
+  "environment": {"os":"macOS 26.5.1","arch":"arm64","cpu":"Apple M5","ramBytes":25769803776,"jdk":"Homebrew OpenJDK 25.0.3","webViewRuntime":"WebKit 21624 (21624.2.5.11.4)"},
+  "ipc": {"requests":10000,"mismatches":0,"elapsedMs":512,"throughputRequestsPerSecond":19531.3,"p50Ms":3.0,"p95Ms":9.0,"p99Ms":18.0,"evidence":"evidence/remediation-final/1783751891-4d1ed41ec8b3e7ef"},
+  "memory": {"startupRssBytes":87638016,"afterStressRssBytes":498630656,"deltaBytes":410992640,"after2GiBStreamRssBytes":648921088,"threshold":null},
+  "windowCycles": {"attempted":100,"completed":100,"evidence":"evidence/remediation-final/1783751891-4d1ed41ec8b3e7ef"},
+  "streaming": {"bytes":2147483648,"pulls":8192,"elapsedMs":13431,"throughputMiBPerSecond":152.5,"backpressure":"pull-based, max 256 KiB per pull","evidence":"evidence/remediation-stream-2gb-2/1783752156-4faacdfb920b8423"},
+  "rendererReload": {"inFlightRecovery":true,"freshNavigationNonce":true,"pendingAfterRecovery":0,"evidence":"evidence/remediation-reload-2/1783751780-2ce4ab9891cf903a"},
+  "nativeRendererProcessKill": {"signal":"TERM","oldPid":23302,"replacementPid":23336,"failureKind":"RENDER_PROCESS_EXITED","suiteRecovered":true,"snapshotValid":true,"pendingAfterRecovery":0,"evidence":"evidence/remediation-process-kill/1783753855-13f74bbcc519c8c1","rawLog":"logs/remediation-process-kill.log"},
+  "sizes": {"runtimeImageApproxBytes":85983232,"appImageApproxBytes":90177536,"installerBytes":34632443},
+  "notMeasured": ["coldStartup","warmStartup","cpuIdle","peakRss","8HourSoak"]
+}

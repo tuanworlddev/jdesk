@@ -10,6 +10,7 @@ description = "JDesk hello-vanilla example: a real consumer app built only on pu
 dependencies {
     implementation(project(":modules:jdesk-api"))
     implementation(project(":modules:jdesk-runtime"))
+    compileOnly(libs.jackson.databind)
     // Compile-time command registration + TS binding generation (ADR-005).
     annotationProcessor(project(":modules:jdesk-codegen"))
     // The platform adapter is selected per OS at launch, mirroring native-smoke:
@@ -21,12 +22,16 @@ dependencies {
     }
 }
 
-application { mainClass = "dev.jdesk.examples.hello.Main" }
+application {
+    mainModule = "dev.jdesk.examples.hello"
+    mainClass = "dev.jdesk.examples.hello.Main"
+}
 
 tasks.named<JavaExec>("run") {
-    // Dev/classpath launch: ALL-UNNAMED is acceptable here; packaged runtime images
-    // embed the native-access option via jlink --add-options (jdesk-gradle-plugin).
-    jvmArgs("--enable-native-access=ALL-UNNAMED")
+    val platform = providers.gradleProperty("jdeskPlatform").orNull
+    if (platform != null) {
+        jvmArgs("--enable-native-access=dev.jdesk.platform.$platform", "--illegal-native-access=deny")
+    }
     if (System.getProperty("os.name").lowercase().contains("mac")) {
         // AppKit requires the process's first thread; the plain `java` launcher runs
         // main() on a secondary thread on macOS unless told otherwise.

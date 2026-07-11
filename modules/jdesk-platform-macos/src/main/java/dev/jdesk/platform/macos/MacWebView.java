@@ -593,7 +593,8 @@ final class MacWebView implements PlatformWebView {
     }
 
     /** Subscribes to engine process failures (spec section 13). */
-    Subscription onProcessFailure(Consumer<WebViewProcessFailure> listener) {
+    @Override
+    public Subscription onProcessFailure(Consumer<WebViewProcessFailure> listener) {
         failureListeners.add(listener);
         return () -> failureListeners.remove(listener);
     }
@@ -671,8 +672,26 @@ final class MacWebView implements PlatformWebView {
 
     @Override
     public WebViewDiagnostics diagnostics() {
-        return new WebViewDiagnostics(Optional.empty(), Optional.empty(), Optional.empty());
+        Optional<String> version = Optional.empty();
+        try {
+            MemorySegment bundle = ObjC.send(ObjC.cls("NSBundle"), "bundleWithPath:",
+                    ObjC.nsString("/System/Library/Frameworks/WebKit.framework"));
+            MemorySegment shortVersion = ObjC.send(bundle, "objectForInfoDictionaryKey:",
+                    ObjC.nsString("CFBundleShortVersionString"));
+            MemorySegment buildVersion = ObjC.send(bundle, "objectForInfoDictionaryKey:",
+                    ObjC.nsString("CFBundleVersion"));
+            String shortText = ObjC.javaString(shortVersion);
+            String buildText = ObjC.javaString(buildVersion);
+            if (shortText != null) {
+                version = Optional.of("WebKit " + shortText
+                        + (buildText == null ? "" : " (" + buildText + ")"));
+            }
+        } catch (RuntimeException e) {
+            LOG.log(Level.DEBUG, "Could not read WebKit bundle version", e);
+        }
+        return new WebViewDiagnostics(version, Optional.empty(), Optional.empty());
     }
+    @Override public boolean devToolsEnabled(){return app.config().devMode();}
 
     /** Called from the window's willClose path; detaches and releases the pipeline. */
     void destroyFromWindow() {

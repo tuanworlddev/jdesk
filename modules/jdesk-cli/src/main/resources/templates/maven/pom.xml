@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>@PACKAGE@</groupId>
+  <artifactId>@PROJECT_NAME@</artifactId>
+  <version>0.1.0</version>
+
+  <properties>
+    <maven.compiler.release>25</maven.compiler.release>
+    <jdesk.version>@JDESK_VERSION@</jdesk.version>
+    <!-- Extra JVM argument for the launcher; the macos profile overrides it. A harmless
+         default keeps a valid argument on Windows/Linux. -->
+    <jdesk.jvmarg>-Dfile.encoding=UTF-8</jdesk.jvmarg>
+  </properties>
+
+  <!--
+    JDesk is pre-alpha and not yet on Maven Central. Install the framework into your local
+    repository first, from a JDesk checkout:  ./gradlew publishToMavenLocal
+    Then, in this project:  (cd ui && java Build.java) ; mvn compile ; mvn exec:exec
+    Maven builds and runs the app; native packaging (jlink/jpackage) is a Gradle feature.
+  -->
+  <dependencies>
+    <dependency><groupId>dev.jdesk</groupId><artifactId>jdesk-api</artifactId><version>${jdesk.version}</version></dependency>
+    <dependency><groupId>dev.jdesk</groupId><artifactId>jdesk-runtime</artifactId><version>${jdesk.version}</version></dependency>
+  </dependencies>
+
+  <profiles>
+    <profile>
+      <id>macos</id>
+      <activation><os><family>mac</family></os></activation>
+      <properties><jdesk.jvmarg>-XstartOnFirstThread</jdesk.jvmarg></properties>
+      <dependencies><dependency><groupId>dev.jdesk</groupId><artifactId>jdesk-platform-macos</artifactId><version>${jdesk.version}</version><scope>runtime</scope></dependency></dependencies>
+    </profile>
+    <profile>
+      <id>windows</id>
+      <activation><os><family>windows</family></os></activation>
+      <dependencies><dependency><groupId>dev.jdesk</groupId><artifactId>jdesk-platform-windows</artifactId><version>${jdesk.version}</version><scope>runtime</scope></dependency></dependencies>
+    </profile>
+    <profile>
+      <id>linux</id>
+      <activation><os><family>unix</family><name>Linux</name></os></activation>
+      <dependencies><dependency><groupId>dev.jdesk</groupId><artifactId>jdesk-platform-linux</artifactId><version>${jdesk.version}</version><scope>runtime</scope></dependency></dependencies>
+    </profile>
+  </profiles>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.14.1</version>
+        <configuration>
+          <annotationProcessorPaths>
+            <path><groupId>dev.jdesk</groupId><artifactId>jdesk-codegen</artifactId><version>${jdesk.version}</version></path>
+          </annotationProcessorPaths>
+          <compilerArgs><arg>-Ajdesk.ts.outputDir=${project.basedir}/ui/src/generated</arg></compilerArgs>
+        </configuration>
+      </plugin>
+      <!-- `mvn exec:exec` forks a JVM (needed for -XstartOnFirstThread on macOS) that
+           launches the app, serving assets from ui/dist over jdesk://app/. -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.5.0</version>
+        <configuration>
+          <executable>${java.home}/bin/java</executable>
+          <arguments>
+            <argument>--enable-native-access=ALL-UNNAMED</argument>
+            <argument>${jdesk.jvmarg}</argument>
+            <argument>-Djdesk.assets.dir=${project.basedir}/ui/dist</argument>
+            <argument>-classpath</argument>
+            <classpath/>
+            <argument>@PACKAGE@.Main</argument>
+          </arguments>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -79,6 +79,21 @@ A published consumer would instead use
 [Gradle plugin](gradle-plugin-reference.md), the processor is wired for you through a
 `jdeskCodegen` configuration and `jdeskGenerateBindings` is the entry point.
 
+Production packaging uses JPMS. Add `src/main/java/module-info.java`; open only the DTO
+package to Jackson rather than granting reflection globally:
+
+```java
+module dev.example.app {
+    requires dev.jdesk.api;
+    requires dev.jdesk.runtime;
+    requires static com.fasterxml.jackson.databind;
+
+    opens dev.example.app to com.fasterxml.jackson.databind;
+}
+```
+
+Set `jdesk.mainModule` to the same module name (it defaults to `applicationId`).
+
 ## 3. Declare capabilities
 
 Deny-by-default: a command runs only if its capability is granted to the window. Put the
@@ -103,7 +118,7 @@ package dev.example.app;
 
 import dev.jdesk.api.JDeskApplication;
 import dev.jdesk.api.WindowConfig;
-import dev.jdesk.runtime.capability.Capabilities;
+import dev.jdesk.runtime.config.Capabilities;
 
 public final class Main {
     public static void main(String[] args) {
@@ -111,7 +126,8 @@ public final class Main {
         JDeskApplication.Builder builder = JDeskApplication.builder()
                 .id("dev.example.app")
                 .commands(GreetingServiceCommands.create(greetings))     // generated
-                .capabilities(Capabilities.fromResource("jdesk-capabilities.json"))
+                .capabilities(Capabilities.fromResource(
+                        App.class.getModule(), "jdesk-capabilities.json"))
                 .window(WindowConfig.builder()
                         .id("main")
                         .title("Example")
@@ -157,7 +173,8 @@ Because the framework is pre-publication, the current way to launch a sample is 
 ./gradlew :examples:hello-vanilla:run -PjdeskPlatform=linux
 ```
 
-The `run` task adds `--enable-native-access=ALL-UNNAMED` (classpath launch) and, on macOS,
+The sample is a named module. Its `run` task grants native access only to
+`dev.jdesk.platform.<os>`, denies other illegal native access and, on macOS, adds
 `-XstartOnFirstThread` (AppKit needs the process's first thread). Omitting
 `-PjdeskPlatform` fails loudly with the exactly-one-provider diagnostic — that is by
 design, never a fake fallback.
@@ -188,7 +205,9 @@ When you apply `dev.jdesk.application` and configure a `frontend` block, `jdeskD
 the full loop: it starts your `devCommand` (e.g. `npm run dev`), probes `devUrl` until the
 dev server is up, then launches the app with `-Djdesk.dev=true -Djdesk.devUrl=<devUrl>`.
 Frontend HMR works without restarting Java; the dev-server process tree is cleaned up on
-exit. Java source changes trigger a controlled app restart (v1). See
+exit. Java/resource changes run `classes` after a 300 ms quiet period and restart the app
+only after a successful build. A compile failure leaves the current process running so it
+can display state while the developer fixes the source. See
 [gradle-plugin-reference.md](gradle-plugin-reference.md).
 
 ## Next steps

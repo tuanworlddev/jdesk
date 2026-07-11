@@ -5,7 +5,10 @@ import dev.jdesk.api.JDeskException;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Iterator;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Bounded per-window event queue preserving enqueue order from one emitter. The sink
@@ -18,17 +21,27 @@ public final class EventQueue {
 
     private final int capacity;
     private final EventOverflowPolicy policy;
-    private final Consumer<String> sink;
+    private final Function<String, CompletionStage<Void>> sink;
     private final Deque<QueuedEvent> queue = new ArrayDeque<>();
     private final Object lock = new Object();
+    private QueuedEvent inFlight;
     private boolean draining;
     private boolean closed;
     private long droppedCount;
 
-    public EventQueue(int capacity, EventOverflowPolicy policy, Consumer<String> sink) {
+    public EventQueue(int capacity, EventOverflowPolicy policy,
+            Function<String, CompletionStage<Void>> sink) {
         this.capacity = capacity;
         this.policy = policy;
         this.sink = sink;
+    }
+
+    /** Convenience adapter for synchronous sinks and focused unit tests. */
+    public EventQueue(int capacity, EventOverflowPolicy policy, Consumer<String> sink) {
+        this(capacity, policy, json -> {
+            sink.accept(json);
+            return CompletableFuture.completedFuture(null);
+        });
     }
 
     public void enqueue(String eventName, String envelopeJson) {
@@ -36,7 +49,8 @@ public final class EventQueue {
             if (closed) {
                 throw new JDeskException(ErrorCode.WINDOW_CLOSED, "Event target window is closed");
             }
-            if (queue.size() >= capacity) {
+            int outstanding = queue.size() + (inFlight == null ? 0 : 1);
+            if (outstanding >= capacity) {
                 switch (policy) {
                     case REJECT -> throw new JDeskException(ErrorCode.LIMIT_EXCEEDED,
                             "Event queue is full");
@@ -56,7 +70,7 @@ public final class EventQueue {
             }
             queue.addLast(new QueuedEvent(eventName, envelopeJson));
         }
-        drain();
+        startDrain();
     }
 
     private boolean coalesce(String eventName) {
@@ -71,36 +85,72 @@ public final class EventQueue {
         return false;
     }
 
-    private void drain() {
+    private void startDrain() {
         synchronized (lock) {
             if (draining) {
                 return;
             }
             draining = true;
         }
-        try {
-            while (true) {
-                QueuedEvent next;
-                synchronized (lock) {
-                    next = queue.pollFirst();
-                    if (next == null || closed) {
-                        draining = false;
-                        return;
-                    }
-                }
-                sink.accept(next.envelopeJson());
-            }
-        } catch (RuntimeException e) {
+        drainReadyStages();
+    }
+
+    /**
+     * Keeps the head queued until the sink confirms delivery. This makes capacity cover
+     * work already submitted to an asynchronous UI dispatcher, not just work waiting to
+     * be submitted.
+     */
+    private void drainReadyStages() {
+        while (true) {
+            QueuedEvent next;
             synchronized (lock) {
-                draining = false;
+                next = queue.pollFirst();
+                if (next == null || closed) {
+                    draining = false;
+                    return;
+                }
+                inFlight = next;
             }
-            throw e;
+
+            CompletionStage<Void> delivery;
+            try {
+                delivery = sink.apply(next.envelopeJson());
+                if (delivery == null) {
+                    delivery = CompletableFuture.failedFuture(
+                            new IllegalStateException("Event sink returned no completion stage"));
+                }
+            } catch (RuntimeException e) {
+                finishDelivery(next);
+                synchronized (lock) {
+                    draining = false;
+                }
+                throw e;
+            }
+
+            CompletableFuture<Void> future = delivery.toCompletableFuture();
+            if (future.isDone()) {
+                finishDelivery(next);
+                continue;
+            }
+            future.whenComplete((ignored, failure) -> {
+                finishDelivery(next);
+                drainReadyStages();
+            });
+            return;
+        }
+    }
+
+    private void finishDelivery(QueuedEvent delivered) {
+        synchronized (lock) {
+            if (inFlight == delivered) {
+                inFlight = null;
+            }
         }
     }
 
     public int pending() {
         synchronized (lock) {
-            return queue.size();
+            return queue.size() + (inFlight == null ? 0 : 1);
         }
     }
 
@@ -114,6 +164,7 @@ public final class EventQueue {
         synchronized (lock) {
             closed = true;
             queue.clear();
+            inFlight = null;
         }
     }
 }

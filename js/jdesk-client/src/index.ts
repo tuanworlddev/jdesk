@@ -31,6 +31,13 @@ export interface InvokeOptions {
   signal?: AbortSignal;
 }
 
+export interface BinaryStreamResult {
+  stream: ReadableStream<Uint8Array>;
+  length: number;
+  contentType: string;
+  fileName: string;
+}
+
 interface Bridge {
   post(message: string): void;
   nonce?: string;
@@ -54,9 +61,14 @@ interface PendingEntry {
   onAbort?: () => void;
 }
 
+interface NonceWaiter {
+  resolve(nonce: string): void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 const pending = new Map<string, PendingEntry>();
 const eventHandlers = new Map<string, Set<(payload: unknown) => void>>();
-const nonceWaiters: Array<(nonce: string) => void> = [];
+const nonceWaiters: NonceWaiter[] = [];
 
 const sessionPrefix = randomSessionPrefix();
 let invokeCounter = 0;
@@ -114,6 +126,9 @@ function installListener(): void {
 }
 
 function dispatch(message: Envelope): void {
+  if (message.v !== PROTOCOL_VERSION) {
+    return;
+  }
   switch (message.kind) {
     case "nonce":
       handleNonce(message.nonce);
@@ -153,7 +168,8 @@ function handleNonce(nonce: unknown): void {
   currentNonce = nonce;
   const waiters = nonceWaiters.splice(0);
   for (const waiter of waiters) {
-    waiter(nonce);
+    clearTimeout(waiter.timer);
+    waiter.resolve(nonce);
   }
 }
 
@@ -246,13 +262,17 @@ function awaitNonce(): Promise<string> {
     return Promise.resolve(bridge.nonce);
   }
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
+    const waiter: NonceWaiter = {
+      resolve,
+      timer: setTimeout(() => {
+        const index = nonceWaiters.indexOf(waiter);
+        if (index >= 0) {
+          nonceWaiters.splice(index, 1);
+        }
       reject(new JDeskError("TIMEOUT", "Timed out waiting for the navigation nonce"));
-    }, HANDSHAKE_TIMEOUT_MS);
-    nonceWaiters.push((nonce) => {
-      clearTimeout(timer);
-      resolve(nonce);
-    });
+      }, HANDSHAKE_TIMEOUT_MS),
+    };
+    nonceWaiters.push(waiter);
   });
 }
 
@@ -283,10 +303,17 @@ async function performHello(): Promise<void> {
     }, HANDSHAKE_TIMEOUT_MS);
     helloWaiter = (ack) => {
       clearTimeout(timer);
-      if (ack.ok === true) {
+      if (ack.ok === true && ack.v === PROTOCOL_VERSION && ack.nonce === nonce) {
         resolve();
       } else {
-        reject(new JDeskError("PROTOCOL_VERSION_UNSUPPORTED", "Runtime rejected the handshake"));
+        const error = (ack.error ?? {}) as Envelope;
+        const code = typeof error.code === "string"
+          ? error.code
+          : "PROTOCOL_VERSION_UNSUPPORTED";
+        const message = typeof error.message === "string"
+          ? error.message
+          : "Runtime rejected the handshake";
+        reject(new JDeskError(code, message));
       }
     };
     try {
@@ -331,6 +358,9 @@ export async function invoke(
   }
   const id = `${sessionPrefix}-${++invokeCounter}`;
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new JDeskError("INVALID_REQUEST", "timeoutMs must be a positive finite number");
+  }
   return new Promise<unknown>((resolve, reject) => {
     const entry: PendingEntry = {
       resolve,
@@ -374,6 +404,43 @@ export async function invoke(
   });
 }
 
+/** Invokes a command returning Java BinaryStream and exposes pull backpressure. */
+export async function invokeStream(
+  command: string,
+  payload?: unknown,
+  options?: InvokeOptions & { chunkBytes?: number },
+): Promise<BinaryStreamResult> {
+  const descriptor = await invoke(command, payload, options) as Envelope;
+  const streamId = descriptor.streamId;
+  if (typeof streamId !== "string" || typeof descriptor.length !== "number"
+      || typeof descriptor.contentType !== "string" || typeof descriptor.fileName !== "string") {
+    throw new JDeskError("SERIALIZATION_ERROR", "Command did not return a binary stream");
+  }
+  const chunkBytes = options?.chunkBytes ?? 256 * 1024;
+  if (!Number.isInteger(chunkBytes) || chunkBytes < 1 || chunkBytes > 256 * 1024) {
+    throw new JDeskError("INVALID_REQUEST", "chunkBytes must be between 1 and 262144");
+  }
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const chunk = await invoke("jdesk.stream.pull",
+        { streamId, maxBytes: chunkBytes }, options) as Envelope;
+      if (chunk.eof === true) { controller.close(); return; }
+      if (typeof chunk.data !== "string") {
+        controller.error(new JDeskError("SERIALIZATION_ERROR", "Invalid stream chunk"));
+        return;
+      }
+      const binary = atob(chunk.data);
+      const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+      controller.enqueue(bytes);
+    },
+    async cancel() {
+      try { await invoke("jdesk.stream.cancel", { streamId }, options); } catch { /* best effort */ }
+    },
+  });
+  return { stream, length: descriptor.length,
+    contentType: descriptor.contentType, fileName: descriptor.fileName };
+}
+
 /**
  * Subscribes to a runtime event ({"v":1,"kind":"event",...}). Returns an unsubscribe
  * function; calling it removes the handler and releases the event's slot when it was
@@ -397,6 +464,15 @@ export function on(event: string, handler: (payload: unknown) => void): () => vo
       eventHandlers.delete(event);
     }
   };
+}
+
+/** Emits a registered Java-side frontend event. Delivery is asynchronous/no-ack. */
+export async function emit(event: string, payload?: unknown): Promise<void> {
+  if (!event || event.length > 128) throw new JDeskError("INVALID_REQUEST", "Invalid event name");
+  await ensureHello();
+  if (currentNonce === null) throw new JDeskError("ILLEGAL_STATE", "No navigation nonce is available");
+  post({v:PROTOCOL_VERSION,kind:"frontendEvent",event,
+    payload:payload===undefined?null:payload,nonce:currentNonce});
 }
 
 // Install eagerly when a document exists so the nonce control envelope is never missed,

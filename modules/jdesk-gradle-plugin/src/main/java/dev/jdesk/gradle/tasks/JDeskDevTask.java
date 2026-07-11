@@ -7,12 +7,21 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.lang.module.FindException;
+import java.lang.module.ModuleFinder;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
-import javax.inject.Inject;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
 import org.gradle.api.file.ConfigurableFileCollection;
@@ -22,20 +31,16 @@ import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.api.tasks.UntrackedTask;
-import org.gradle.process.ExecOperations;
 
 /**
- * {@code jdeskDev}: starts the frontend dev server ({@code jdesk.frontend.devCommand})
- * as a child process, waits until {@code devUrl} answers (bounded retries), then runs
- * the application with {@code -Djdesk.dev=true -Djdesk.devUrl=<devUrl>}.
- *
- * <p>Termination: the app runs via Gradle's managed {@code javaexec} (killed on build
- * cancellation), and the dev-server process tree is destroyed in a {@code finally}
- * block plus a JVM shutdown hook, so Ctrl+C or an app failure never leaks a stale dev
- * server. All properties are {@code @Internal}: a dev session is never up-to-date.
+ * Interactive development supervisor. It owns the frontend dev server and Java process,
+ * recompiles after Java/resource changes, and swaps the Java process only after a
+ * successful build.
  */
 @UntrackedTask(because = "interactive development session; never up-to-date")
 public abstract class JDeskDevTask extends DefaultTask {
+
+    private static final long POLL_MILLIS = 150L;
 
     @Internal
     public abstract ListProperty<String> getDevCommand();
@@ -50,7 +55,13 @@ public abstract class JDeskDevTask extends DefaultTask {
     public abstract Property<String> getMainClass();
 
     @Internal
+    public abstract Property<String> getMainModule();
+
+    @Internal
     public abstract ConfigurableFileCollection getRuntimeClasspath();
+
+    @Internal
+    public abstract ConfigurableFileCollection getApplicationResources();
 
     @Internal
     public abstract Property<String> getJavaExecutable();
@@ -61,74 +72,77 @@ public abstract class JDeskDevTask extends DefaultTask {
     @Internal
     public abstract Property<Integer> getProbeIntervalMillis();
 
-    @Inject
-    protected abstract ExecOperations getExecOperations();
+    @Internal
+    public abstract Property<Boolean> getJavaReload();
+
+    @Internal
+    public abstract ListProperty<String> getReloadCommand();
+
+    @Internal
+    public abstract Property<Integer> getReloadDebounceMillis();
+
+    @Internal
+    public abstract DirectoryProperty getReloadWorkingDirectory();
+
+    @Internal
+    public abstract ConfigurableFileCollection getReloadSources();
 
     @TaskAction
     public void dev() throws InterruptedException {
-        if (!getMainClass().isPresent()) {
+        if (!getMainClass().isPresent() || getMainClass().get().isBlank()) {
             throw new GradleException("jdeskDev: jdesk.mainClass is not set. Set it,"
                     + " e.g. jdesk { mainClass.set(\"dev.example.App\") }.");
         }
+        validateReloadSettings();
+
         Process frontend = null;
+        Process application = null;
         Thread shutdownHook = null;
+        AtomicReference<Process> applicationRef = new AtomicReference<>();
         try {
-            List<String> devCommand = getDevCommand().getOrElse(List.of());
-            if (!devCommand.isEmpty()) {
-                if (!getFrontendDirectory().isPresent()) {
-                    throw new GradleException("jdeskDev: jdesk.frontend.devCommand is set"
-                            + " but jdesk.frontend.directory is not. Point it at the"
-                            + " frontend project.");
+            frontend = startFrontend();
+            Process frontendRef = frontend;
+            shutdownHook = new Thread(() -> {
+                Process activeApplication = applicationRef.get();
+                if (activeApplication != null) {
+                    ProcessTrees.destroy(activeApplication);
                 }
-                File dir = getFrontendDirectory().get().getAsFile();
-                ProcessBuilder builder = new ProcessBuilder(devCommand)
-                        .directory(dir)
-                        .redirectErrorStream(true);
-                getLogger().info("jdeskDev frontend environment (redacted): {}",
-                        EnvRedactor.redact(builder.environment()));
-                getLogger().lifecycle("jdeskDev: starting frontend {} (in {})", devCommand, dir);
-                try {
-                    frontend = builder.start();
-                } catch (IOException e) {
-                    throw new GradleException("jdeskDev: could not start the frontend"
-                            + " dev command " + devCommand + " in " + dir + ". Is the"
-                            + " tool installed and jdesk.frontend.devCommand correct?", e);
+                if (frontendRef != null) {
+                    ProcessTrees.destroy(frontendRef);
                 }
-                Process frontendRef = frontend;
-                shutdownHook = new Thread(() -> ProcessTrees.destroy(frontendRef), "jdesk-dev-cleanup");
-                Runtime.getRuntime().addShutdownHook(shutdownHook);
-                pumpOutput(frontend);
-                String devUrl = getDevUrl().getOrNull();
-                if (devUrl != null) {
-                    waitForDevServer(devUrl, frontend);
-                } else {
-                    getLogger().warn("jdeskDev: jdesk.frontend.devUrl is not set; the app"
-                            + " starts without waiting for the dev server.");
-                }
+            }, "jdesk-dev-cleanup");
+            Runtime.getRuntime().addShutdownHook(shutdownHook);
+
+            application = startApplication();
+            applicationRef.set(application);
+            if (!getJavaReload().getOrElse(true)) {
+                requireSuccessfulExit(application);
+                return;
             }
-            String devUrl = getDevUrl().getOrNull();
-            getLogger().lifecycle("jdeskDev: launching {} (jdesk.dev=true{})",
-                    getMainClass().get(), devUrl == null ? "" : ", jdesk.devUrl=" + devUrl);
-            getExecOperations().javaexec(spec -> {
-                spec.setExecutable(getJavaExecutable().get());
-                spec.getMainClass().set(getMainClass().get());
-                spec.classpath(getRuntimeClasspath());
-                List<String> jvmArgs = new ArrayList<>();
-                // Classpath dev launch: ALL-UNNAMED. Packaged images embed the option
-                // via jlink --add-options (see jdeskRuntimeImage).
-                jvmArgs.add("--enable-native-access=ALL-UNNAMED");
-                if (OsSupport.isMacOs()) {
-                    // AppKit needs the process's first thread; the plain java launcher
-                    // would otherwise run main() on a secondary thread.
-                    jvmArgs.add("-XstartOnFirstThread");
+
+            String sourceState = sourceState();
+            while (application.isAlive()) {
+                Thread.sleep(POLL_MILLIS);
+                String nextState = sourceState();
+                if (sourceState.equals(nextState)) {
+                    continue;
                 }
-                spec.jvmArgs(jvmArgs);
-                spec.systemProperty("jdesk.dev", "true");
-                if (devUrl != null) {
-                    spec.systemProperty("jdesk.devUrl", devUrl);
+                sourceState = awaitQuietState(nextState);
+                getLogger().lifecycle("jdeskDev: source change detected; rebuilding");
+                if (!runReloadCommand()) {
+                    getLogger().warn("jdeskDev: rebuild failed; keeping the current app running");
+                    continue;
                 }
-            });
+                getLogger().lifecycle("jdeskDev: rebuild succeeded; restarting application");
+                ProcessTrees.destroy(application);
+                application = startApplication();
+                applicationRef.set(application);
+            }
+            requireSuccessfulExit(application);
         } finally {
+            if (application != null && application.isAlive()) {
+                ProcessTrees.destroy(application);
+            }
             if (frontend != null) {
                 getLogger().lifecycle("jdeskDev: stopping frontend dev server");
                 ProcessTrees.destroy(frontend);
@@ -137,24 +151,177 @@ public abstract class JDeskDevTask extends DefaultTask {
                 try {
                     Runtime.getRuntime().removeShutdownHook(shutdownHook);
                 } catch (IllegalStateException ignored) {
-                    // JVM already shutting down
+                    // JVM already shutting down.
                 }
             }
         }
     }
 
-    private void pumpOutput(Process process) {
+    private void validateReloadSettings() {
+        int debounce = getReloadDebounceMillis().getOrElse(300);
+        if (debounce < 0) {
+            throw new GradleException("jdeskDev: development.reloadDebounceMillis must be >= 0");
+        }
+        if (getJavaReload().getOrElse(true) && getReloadCommand().getOrElse(List.of()).isEmpty()) {
+            throw new GradleException("jdeskDev: Java reload is enabled but the reload command is empty");
+        }
+    }
+
+    private Process startFrontend() throws InterruptedException {
+        List<String> command = getDevCommand().getOrElse(List.of());
+        if (command.isEmpty()) {
+            return null;
+        }
+        if (!getFrontendDirectory().isPresent()) {
+            throw new GradleException("jdeskDev: jdesk.frontend.devCommand is set but"
+                    + " jdesk.frontend.directory is not set");
+        }
+        File directory = getFrontendDirectory().get().getAsFile();
+        Process frontend = startProcess(command, directory, "frontend");
+        try {
+            String devUrl = getDevUrl().getOrNull();
+            if (devUrl == null) {
+                getLogger().warn("jdeskDev: jdesk.frontend.devUrl is not set; the app starts"
+                        + " without waiting for the dev server");
+            } else {
+                waitForDevServer(devUrl, frontend);
+            }
+            return frontend;
+        } catch (RuntimeException | InterruptedException e) {
+            ProcessTrees.destroy(frontend);
+            throw e;
+        }
+    }
+
+    private Process startApplication() {
+        boolean modular = getMainModule().isPresent() && !getMainModule().get().isBlank();
+        List<String> command = new ArrayList<>();
+        command.add(getJavaExecutable().get());
+        if (modular) {
+            String platformModule = platformModule();
+            if (hasModule(platformModule)) {
+                command.add("--add-modules=" + platformModule);
+                command.add("--enable-native-access=" + platformModule);
+            }
+            command.add("--illegal-native-access=deny");
+            String resourcePath = existingResourcePath();
+            if (!resourcePath.isEmpty()) {
+                command.add("--patch-module=" + getMainModule().get() + "=" + resourcePath);
+            }
+        } else {
+            command.add("--enable-native-access=ALL-UNNAMED");
+        }
+        if (OsSupport.isMacOs()) {
+            command.add("-XstartOnFirstThread");
+        }
+        command.add("-Djdesk.dev=true");
+        String devUrl = getDevUrl().getOrNull();
+        if (devUrl != null) {
+            command.add("-Djdesk.devUrl=" + devUrl);
+        }
+        if (modular) {
+            command.add("--module-path");
+            command.add(getRuntimeClasspath().getAsPath());
+            command.add("--module");
+            command.add(getMainModule().get() + "/" + getMainClass().get());
+        } else {
+            command.add("-cp");
+            command.add(getRuntimeClasspath().getAsPath());
+            command.add(getMainClass().get());
+        }
+        getLogger().lifecycle("jdeskDev: launching {}{}", getMainClass().get(),
+                devUrl == null ? "" : " with " + devUrl);
+        return startProcess(command, getReloadWorkingDirectory().get().getAsFile(), "app");
+    }
+
+    private boolean runReloadCommand() throws InterruptedException {
+        Process process = startProcess(getReloadCommand().get(),
+                getReloadWorkingDirectory().get().getAsFile(), "reload");
+        return process.waitFor() == 0;
+    }
+
+    private Process startProcess(List<String> command, File directory, String outputPrefix) {
+        ProcessBuilder builder = new ProcessBuilder(command)
+                .directory(directory)
+                .redirectErrorStream(true);
+        getLogger().info("jdeskDev {} command: {}", outputPrefix, command);
+        getLogger().info("jdeskDev {} environment (redacted): {}", outputPrefix,
+                EnvRedactor.redact(builder.environment()));
+        try {
+            Process process = builder.start();
+            pumpOutput(process, outputPrefix);
+            return process;
+        } catch (IOException e) {
+            throw new GradleException("jdeskDev: could not start " + outputPrefix
+                    + " command " + command + " in " + directory, e);
+        }
+    }
+
+    private void requireSuccessfulExit(Process process) throws InterruptedException {
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            throw new GradleException("jdeskDev: application exited with code " + exitCode);
+        }
+    }
+
+    private String awaitQuietState(String state) throws InterruptedException {
+        long debounce = getReloadDebounceMillis().getOrElse(300);
+        long lastChange = System.currentTimeMillis();
+        String current = state;
+        while (System.currentTimeMillis() - lastChange < debounce) {
+            Thread.sleep(Math.min(POLL_MILLIS, Math.max(1L, debounce)));
+            String next = sourceState();
+            if (!current.equals(next)) {
+                current = next;
+                lastChange = System.currentTimeMillis();
+            }
+        }
+        return current;
+    }
+
+    private String sourceState() {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            List<Path> files = new ArrayList<>();
+            for (File root : getReloadSources().getFiles()) {
+                Path path = root.toPath();
+                if (Files.isDirectory(path)) {
+                    try (Stream<Path> stream = Files.walk(path)) {
+                        stream.filter(Files::isRegularFile).forEach(files::add);
+                    }
+                } else if (Files.isRegularFile(path)) {
+                    files.add(path);
+                }
+            }
+            files.sort(Comparator.comparing(Path::toString));
+            for (Path file : files) {
+                updateDigest(digest, file.toAbsolutePath().normalize().toString());
+                updateDigest(digest, Long.toString(Files.size(file)));
+                updateDigest(digest, Files.getLastModifiedTime(file).toString());
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (IOException | NoSuchAlgorithmException e) {
+            throw new GradleException("jdeskDev: failed to inspect reload sources", e);
+        }
+    }
+
+    private static void updateDigest(MessageDigest digest, String value) {
+        digest.update(value.getBytes(StandardCharsets.UTF_8));
+        digest.update((byte) 0);
+    }
+
+    private void pumpOutput(Process process, String prefix) {
         Thread pump = new Thread(() -> {
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    getLogger().lifecycle("[frontend] {}", line);
+                    getLogger().lifecycle("[{}] {}", prefix, line);
                 }
             } catch (IOException ignored) {
-                // stream closes when the process dies
+                // Stream closes when the process exits.
             }
-        }, "jdesk-frontend-output");
+        }, "jdesk-" + prefix + "-output");
         pump.setDaemon(true);
         pump.start();
     }
@@ -166,9 +333,8 @@ public abstract class JDeskDevTask extends DefaultTask {
                 devUrl, attempts, intervalMillis);
         for (int attempt = 1; attempt <= attempts; attempt++) {
             if (!frontend.isAlive()) {
-                throw new GradleException("jdeskDev: the frontend dev server exited with"
-                        + " code " + frontend.exitValue() + " before " + devUrl
-                        + " became reachable. Check the [frontend] output above.");
+                throw new GradleException("jdeskDev: frontend exited with code "
+                        + frontend.exitValue() + " before " + devUrl + " became reachable");
             }
             if (probe(devUrl)) {
                 getLogger().lifecycle("jdeskDev: dev server is up after {} attempt(s)", attempt);
@@ -176,9 +342,8 @@ public abstract class JDeskDevTask extends DefaultTask {
             }
             Thread.sleep(intervalMillis);
         }
-        throw new GradleException("jdeskDev: dev server at " + devUrl + " did not answer"
-                + " within " + (attempts * intervalMillis / 1000) + "s. Check"
-                + " jdesk.frontend.devUrl and the [frontend] output above.");
+        throw new GradleException("jdeskDev: dev server at " + devUrl
+                + " did not answer within " + (attempts * intervalMillis / 1000) + "s");
     }
 
     private boolean probe(String devUrl) {
@@ -190,10 +355,41 @@ public abstract class JDeskDevTask extends DefaultTask {
             connection.setRequestMethod("GET");
             int code = connection.getResponseCode();
             connection.disconnect();
-            // Any HTTP answer (including 404) proves the server is accepting connections.
             return code > 0;
-        } catch (IOException e) {
+        } catch (IOException | IllegalArgumentException e) {
             return false;
         }
+    }
+
+    private static String platformModule() {
+        if (OsSupport.isMacOs()) {
+            return "dev.jdesk.platform.macos";
+        }
+        if (OsSupport.isWindows()) {
+            return "dev.jdesk.platform.windows";
+        }
+        if (OsSupport.isLinux()) {
+            return "dev.jdesk.platform.linux";
+        }
+        throw new GradleException("jdeskDev: unsupported operating system " + OsSupport.osName());
+    }
+
+    private boolean hasModule(String moduleName) {
+        Path[] entries = getRuntimeClasspath().getFiles().stream()
+                .map(File::toPath)
+                .toArray(Path[]::new);
+        try {
+            return ModuleFinder.of(entries).find(moduleName).isPresent();
+        } catch (FindException e) {
+            throw new GradleException("jdeskDev: invalid module path", e);
+        }
+    }
+
+    private String existingResourcePath() {
+        return getApplicationResources().getFiles().stream()
+                .filter(File::isDirectory)
+                .map(File::getAbsolutePath)
+                .sorted()
+                .collect(java.util.stream.Collectors.joining(File.pathSeparator));
     }
 }

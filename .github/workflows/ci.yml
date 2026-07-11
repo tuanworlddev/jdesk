@@ -26,6 +26,18 @@ jobs:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       - name: Build and unit test
         run: ./gradlew build --stacktrace
+      - name: Generate and build real CLI templates
+        shell: bash
+        run: |
+          ./gradlew :modules:jdesk-cli:installDist
+          tmp="$(mktemp -d)"
+          cli="modules/jdesk-cli/build/install/jdesk/bin/jdesk"
+          "$cli" create "$tmp/basic" --package com.example.basic --jdesk-source "$GITHUB_WORKSPACE"
+          "$cli" create "$tmp/structured" --template structured --package com.example.structured --jdesk-source "$GITHUB_WORKSPACE"
+          "$tmp/basic/gradlew" -p "$tmp/basic" classes --no-configuration-cache
+          "$tmp/structured/gradlew" -p "$tmp/structured" classes --no-configuration-cache
+      - name: TypeScript client build and tests
+        run: npm ci --prefix js/jdesk-client && npm test --prefix js/jdesk-client
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -235,10 +247,11 @@ jobs:
       - name: Build app image with jpackage (real target-OS packaging)
         run: |
           jpackage --type app-image --name JDeskSmoke \
-            --input test-apps/native-smoke/build/install/native-smoke/lib \
-            --main-jar native-smoke-0.1.0-SNAPSHOT.jar \
-            --main-class dev.jdesk.testapps.nativesmoke.Main \
-            --java-options "--enable-native-access=ALL-UNNAMED" \
+            --module-path test-apps/native-smoke/build/install/native-smoke/lib \
+            --module dev.jdesk.testapps.nativesmoke/dev.jdesk.testapps.nativesmoke.Main \
+            --add-modules dev.jdesk.platform.linux \
+            --java-options "--enable-native-access=dev.jdesk.platform.linux" \
+            --java-options "--illegal-native-access=deny" \
             --java-options "-Djdesk.evidence.dir=$GITHUB_WORKSPACE/package-evidence" \
             --java-options "-Djdesk.evidence.category=package" \
             --dest build/jpackage
@@ -292,10 +305,11 @@ jobs:
         run: |
           $ws = $env:GITHUB_WORKSPACE -replace '\\','/'
           jpackage --type app-image --name JDeskSmoke `
-            --input test-apps/native-smoke/build/install/native-smoke/lib `
-            --main-jar native-smoke-0.1.0-SNAPSHOT.jar `
-            --main-class dev.jdesk.testapps.nativesmoke.Main `
-            --java-options "--enable-native-access=ALL-UNNAMED" `
+            --module-path test-apps/native-smoke/build/install/native-smoke/lib `
+            --module dev.jdesk.testapps.nativesmoke/dev.jdesk.testapps.nativesmoke.Main `
+            --add-modules dev.jdesk.platform.windows `
+            --java-options "--enable-native-access=dev.jdesk.platform.windows" `
+            --java-options "--illegal-native-access=deny" `
             --java-options "-Djdesk.windows.webview2loader=$($env:WEBVIEW2_LOADER -replace '\\','/')" `
             --java-options "-Djdesk.evidence.dir=$ws/package-evidence" `
             --java-options "-Djdesk.evidence.category=package" `

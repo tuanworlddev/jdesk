@@ -22,6 +22,8 @@ import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.net.URI;
+import dev.jdesk.api.MessageDialog;
+import dev.jdesk.api.MessageDialogResult;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -275,6 +277,47 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
         requireOpen();
         dispatcher.assertUiThread();
         return new LinuxWindow(this, windowConfig);
+    }
+
+    @Override public void openExternal(URI uri) {
+        requireOpen(); dispatcher.assertUiThread();
+        try (Arena arena = Arena.ofConfined()) {
+            int ok = (int) Gtk.G_APP_INFO_LAUNCH_DEFAULT_FOR_URI.invokeExact(
+                    arena.allocateFrom(uri.toString()), MemorySegment.NULL, MemorySegment.NULL);
+            if (ok == 0) throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                    "OS refused external URI");
+        } catch (Throwable t) { throw Gtk.rethrow(t); }
+    }
+    private MemorySegment clipboard() throws Throwable {
+        try(Arena arena=Arena.ofConfined()){
+            MemorySegment atom=(MemorySegment)Gtk.GDK_ATOM_INTERN_STATIC_STRING.invokeExact(arena.allocateFrom("CLIPBOARD"));
+            return (MemorySegment)Gtk.GTK_CLIPBOARD_GET.invokeExact(atom);
+        }
+    }
+    @Override public String readClipboardText(){requireOpen();dispatcher.assertUiThread();try{
+        MemorySegment text=(MemorySegment)Gtk.GTK_CLIPBOARD_WAIT_FOR_TEXT.invokeExact(clipboard());
+        if(text.equals(MemorySegment.NULL))return "";return Gtk.takeString(text);
+    }catch(Throwable t){throw Gtk.rethrow(t);}}
+    @Override public void writeClipboardText(String text){requireOpen();dispatcher.assertUiThread();try(Arena arena=Arena.ofConfined()){
+        MemorySegment cb=clipboard();Gtk.GTK_CLIPBOARD_SET_TEXT.invokeExact(cb,arena.allocateFrom(text),-1);Gtk.GTK_CLIPBOARD_STORE.invokeExact(cb);
+    }catch(Throwable t){throw Gtk.rethrow(t);}}
+    @Override public MessageDialogResult showMessageDialog(MessageDialog dialog) {
+        requireOpen(); dispatcher.assertUiThread();
+        try (Arena arena = Arena.ofConfined()) {
+            int type = switch (dialog.kind()) { case INFO -> 0; case WARNING -> 1; case ERROR -> 3; };
+            MemorySegment nativeDialog = (MemorySegment) Gtk.GTK_MESSAGE_DIALOG_NEW.invokeExact(
+                    MemorySegment.NULL, 0, type, 0, arena.allocateFrom("%s"),
+                    arena.allocateFrom(dialog.message()));
+            Gtk.GTK_WINDOW_SET_TITLE_DIALOG.invokeExact(nativeDialog, arena.allocateFrom(dialog.title()));
+            for (int i = 0; i < dialog.buttons().size(); i++)
+                Gtk.GTK_DIALOG_ADD_BUTTON.invokeExact(nativeDialog,
+                        arena.allocateFrom(dialog.buttons().get(i)), 1000 + i);
+            int response = (int) Gtk.GTK_DIALOG_RUN.invokeExact(nativeDialog);
+            Gtk.GTK_WIDGET_DESTROY.invokeExact(nativeDialog);
+            int index = response - 1000;
+            if (index < 0 || index >= dialog.buttons().size()) index = 0;
+            return new MessageDialogResult(index, dialog.buttons().get(index));
+        } catch (Throwable t) { throw Gtk.rethrow(t); }
     }
 
     @Override

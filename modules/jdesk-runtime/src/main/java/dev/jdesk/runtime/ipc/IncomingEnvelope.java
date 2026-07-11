@@ -18,4 +18,10 @@ public sealed interface IncomingEnvelope {
 
     record Cancel(int version, String id, String nonce) implements IncomingEnvelope {
     }
+    record FrontendEvent(int version, String event, Optional<String> payloadJson, String nonce)
+            implements IncomingEnvelope { }
+
+    record UnsupportedVersion(int version, String kind, Optional<String> id, String nonce)
+            implements IncomingEnvelope {
+    }
 }

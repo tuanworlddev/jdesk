@@ -2,6 +2,7 @@ package dev.jdesk.runtime.boot;
 
 import dev.jdesk.runtime.assets.AssetSource;
 import dev.jdesk.runtime.assets.CspValidator;
+import dev.jdesk.runtime.assets.ClasspathAssetSource;
 import dev.jdesk.runtime.assets.DirectoryAssetSource;
 import dev.jdesk.runtime.assets.MapAssetSource;
 import dev.jdesk.runtime.ipc.EventOverflowPolicy;
@@ -51,7 +52,10 @@ public record RuntimeOptions(
 
     /**
      * Reads launch configuration from system properties set by the launcher/Gradle
-     * plugin: {@code jdesk.dev} and {@code jdesk.assets.dir}.
+     * plugin. Asset source selection, in order: {@code jdesk.assets.dir} (a directory,
+     * used in development), {@code jdesk.assets.module} (classpath resources under
+     * {@code web/} in a named module), {@code jdesk.assets.classpath} (classpath
+     * resources under that prefix for non-modular apps), else an empty in-memory source.
      */
     public static RuntimeOptions fromSystemProperties() {
         boolean dev = Boolean.getBoolean("jdesk.dev");
@@ -63,7 +67,15 @@ public record RuntimeOptions(
                         throw new UncheckedIOException("Invalid jdesk.assets.dir: " + dir, e);
                     }
                 })
-                .orElseGet(MapAssetSource::new);
+                .orElseGet(() -> Optional.ofNullable(System.getProperty("jdesk.assets.module"))
+                        .<AssetSource>map(moduleName -> ModuleLayer.boot().findModule(moduleName)
+                                .<AssetSource>map(module -> new ClasspathAssetSource(module, "web"))
+                                .orElseThrow(() -> new IllegalStateException(
+                                        "Asset module not found: " + moduleName)))
+                        .orElseGet(() -> Optional.ofNullable(System.getProperty("jdesk.assets.classpath"))
+                                .<AssetSource>map(prefix -> new ClasspathAssetSource(
+                                        Thread.currentThread().getContextClassLoader(), prefix))
+                                .orElseGet(MapAssetSource::new)));
         RuntimeOptions base = production(source);
         return new RuntimeOptions(dev, base.assetSource(), base.spaFallback(),
                 base.securityHeaders(), base.limits(), base.overflowPolicy(),

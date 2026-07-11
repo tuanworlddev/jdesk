@@ -24,6 +24,7 @@ public final class EnvelopeCodec {
     private static final Set<String> HELLO_FIELDS = Set.of("v", "kind", "client", "clientVersion", "nonce");
     private static final Set<String> INVOKE_FIELDS = Set.of("v", "kind", "id", "command", "payload", "nonce");
     private static final Set<String> CANCEL_FIELDS = Set.of("v", "kind", "id", "nonce");
+    private static final Set<String> EVENT_FIELDS = Set.of("v", "kind", "event", "payload", "nonce");
 
     private final ObjectMapper mapper;
     private final JsonCodec codec;
@@ -56,11 +57,17 @@ public final class EnvelopeCodec {
             throw new ProtocolException(ErrorCode.INVALID_REQUEST, "Envelope must be a JSON object");
         }
         int version = requireInt(root, "v");
-        if (version != PROTOCOL_VERSION) {
-            throw new ProtocolException(ErrorCode.PROTOCOL_VERSION_UNSUPPORTED,
-                    "Unsupported protocol version " + version);
-        }
         String kind = requireString(root, "kind", 32);
+        if (version != PROTOCOL_VERSION) {
+            Optional<String> id = "invoke".equals(kind)
+                    ? Optional.of(requireString(root, "id", 128)) : Optional.empty();
+            if (!"hello".equals(kind) && !"invoke".equals(kind) && !"cancel".equals(kind)
+                    && !"frontendEvent".equals(kind)) {
+                throw new ProtocolException(ErrorCode.INVALID_REQUEST, "Unknown envelope kind");
+            }
+            return new IncomingEnvelope.UnsupportedVersion(version, kind, id,
+                    requireString(root, "nonce", 128));
+        }
         return switch (kind) {
             case "hello" -> {
                 rejectUnknownFields(root, HELLO_FIELDS);
@@ -86,6 +93,14 @@ public final class EnvelopeCodec {
                         requireString(root, "id", 128),
                         requireString(root, "nonce", 128));
             }
+            case "frontendEvent" -> {
+                rejectUnknownFields(root, EVENT_FIELDS);
+                JsonNode payload=root.get("payload");
+                yield new IncomingEnvelope.FrontendEvent(version,
+                        requireString(root,"event",limits.maxNameLength()),
+                        payload==null||payload.isNull()?Optional.empty():Optional.of(payload.toString()),
+                        requireString(root,"nonce",128));
+            }
             default -> throw new ProtocolException(ErrorCode.INVALID_REQUEST,
                     "Unknown envelope kind");
         };
@@ -108,6 +123,17 @@ public final class EnvelopeCodec {
         node.put("kind", "helloAck");
         node.put("ok", true);
         node.put("nonce", nonce);
+        return node.toString();
+    }
+
+    public String helloError(ErrorCode code, String publicMessage) {
+        ObjectNode node = mapper.createObjectNode();
+        node.put("v", PROTOCOL_VERSION);
+        node.put("kind", "helloAck");
+        node.put("ok", false);
+        ObjectNode error = node.putObject("error");
+        error.put("code", code.name());
+        error.put("message", publicMessage);
         return node.toString();
     }
 

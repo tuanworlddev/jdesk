@@ -42,6 +42,10 @@ public abstract class JDeskDoctorTask extends DefaultTask {
     @Optional
     public abstract Property<String> getMainClass();
 
+    @Input
+    @Optional
+    public abstract Property<String> getMainModule();
+
     /** First element of {@code jdesk.frontend.buildCommand}; absent = no frontend. */
     @Input
     @Optional
@@ -151,8 +155,8 @@ public abstract class JDeskDoctorTask extends DefaultTask {
         }
         report.add("N/A      WebKit.framework / WebView2 checks: not applicable on "
                 + OsSupport.osName());
-        report.add("REPORT   Linux WebView (webkit2gtk) check lands with the Linux"
-                + " adapter (Phase 5); not checked");
+        report.add("REPORT   Linux requires WebKitGTK 4.1 (GTK 3 / libsoup 3);"
+                + " run pkg-config --modversion webkit2gtk-4.1 to verify it");
     }
 
     private boolean webView2RuntimeRegistered() {
@@ -255,6 +259,18 @@ public abstract class JDeskDoctorTask extends DefaultTask {
                     + " segments like \"dev.example.app\").");
         } else {
             report.add("OK       jdesk.applicationId " + applicationId);
+        }
+
+        String mainModule = getMainModule().getOrNull();
+        if (mainModule == null || mainModule.isBlank()) {
+            // Optional: a classpath app has no module-info.java and no mainModule.
+            report.add("OK       jdesk.mainModule not set (classpath app)");
+        } else if (!REVERSE_DNS.matcher(mainModule).matches()) {
+            report.add("PROBLEM  jdesk.mainModule invalid: '" + mainModule + "'");
+            problems.add("jdesk.mainModule '" + mainModule
+                    + "' is not a lowercase dot-separated JPMS module name.");
+        } else {
+            report.add("OK       jdesk.mainModule " + mainModule);
         }
 
         String mainClass = getMainClass().getOrNull();

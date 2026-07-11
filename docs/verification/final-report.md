@@ -18,11 +18,14 @@ Date: 2026-07-11 (UTC)
   security; codegen + TypeScript client; Gradle plugin + packaging; jlink/jpackage app
   images launched without Gradle; SBOM + checksums; security probes; stress/leak counters
   returning to zero.
+- **Post-review packaging hardening:** production launchers now use JPMS
+  `--module-path`/`--module`, per-platform native access and
+  `--illegal-native-access=deny`. The modular path was exercised through a real macOS
+  `jpackage` app image and native smoke; Windows/Linux package jobs contain the equivalent
+  target-specific commands for their next CI run.
 - **Not implemented / deferred:** signed+notarized release pipeline (installers build
-  UNSIGNED); named-module native-access runtime images (uses
-  `--enable-native-access=ALL-UNNAMED` fallback); secondary architectures (Windows ARM64,
-  macOS Intel, Linux ARM64); a project-generator for the basic/structured templates; a
-  dedicated performance benchmark harness.
+  UNSIGNED); secondary architectures (Windows ARM64,
+  macOS Intel, Linux ARM64); a dedicated performance benchmark harness.
 
 ## BLOCKED items — smallest action required from the user
 
@@ -48,7 +51,7 @@ faked or worked around.
    request. This item is therefore **verified on real hardware**, not blocked — listed here
    only for transparency about the CI matrix.
 
-The remaining "deferred" items (secondary architectures, project generator, benchmark
+The remaining "deferred" items (secondary architectures and benchmark
 harness) are out of the section-26 v1 DoD and are genuine future work, not blockers.
 
 ## Real verification matrix

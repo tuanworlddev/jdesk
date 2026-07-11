@@ -8,6 +8,7 @@ dependencies {
     implementation(project(":modules:jdesk-runtime"))
     implementation(project(":modules:jdesk-webview-spi"))
     implementation(project(":modules:jdesk-testkit"))
+    compileOnly(libs.jackson.databind)
     // The platform adapter is selected per-OS at run time; native runs add it via
     // -PjdeskPlatform. No adapter => startup fails loudly (never a fake).
     val platform = providers.gradleProperty("jdeskPlatform").orNull
@@ -15,12 +16,15 @@ dependencies {
         runtimeOnly(project(":modules:jdesk-platform-$platform"))
     }
 }
-application { mainClass = "dev.jdesk.testapps.nativesmoke.Main" }
+application {
+    mainModule = "dev.jdesk.testapps.nativesmoke"
+    mainClass = "dev.jdesk.testapps.nativesmoke.Main"
+}
 
 tasks.named<JavaExec>("run") {
-    // Test/dev launch on the classpath: ALL-UNNAMED is acceptable here, production
-    // images grant native access to named modules only (ADR-001).
-    jvmArgs("--enable-native-access=ALL-UNNAMED")
+    providers.gradleProperty("jdeskPlatform").orNull?.let {
+        jvmArgs("--enable-native-access=dev.jdesk.platform.$it", "--illegal-native-access=deny")
+    }
     systemProperty("jdesk.evidence.dir",
         providers.gradleProperty("jdeskEvidenceDir").getOrElse("build/evidence"))
     providers.gradleProperty("jdeskWebView2Loader").orNull?.let {
@@ -46,4 +50,6 @@ tasks.register<JavaExec>("verifyEvidence") {
 tasks.named<JavaExec>("run") {
     systemProperty("jdesk.smoke.stress",
         providers.gradleProperty("jdeskStress").getOrElse("false"))
+    systemProperty("jdesk.smoke.stream2gb",
+        providers.gradleProperty("jdeskStream2gb").getOrElse("false"))
 }

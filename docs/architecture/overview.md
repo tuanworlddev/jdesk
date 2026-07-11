@@ -7,7 +7,7 @@ rendered by the platform's own WebView (WebView2 / WKWebView / WebKitGTK). There
 bundled Chromium, no localhost HTTP server in production, and no Rust**.
 
 This document is the map. Deeper decisions live in the ADRs
-([ADR-001](ADR-001-java25-jpms-ffm.md) … [ADR-007](ADR-007-jvm-distribution-first.md)),
+([ADR-001](ADR-001-java25-jpms-ffm.md) … [ADR-009](ADR-009-linux-webkitgtk-evolution.md)),
 the wire format in [ipc-protocol.md](ipc-protocol.md), and the security posture in
 [../security/threat-model.md](../security/threat-model.md).
 
@@ -15,14 +15,15 @@ the wire format in [ipc-protocol.md](ipc-protocol.md), and the security posture 
 
 | Module | Role |
 | --- | --- |
-| `jdesk-api` | Public, Java-only API surface: `JDeskApplication`, `WindowConfig`/`WindowId`, `CommandRegistry`/`CommandDefinition`, `InvocationContext`, `CapabilitySet`/`PermissionDecision`, `EventEmitter`/`Subscription`, `UiDispatcher`, `PlatformInfo`, lifecycle hooks, `@DesktopCommand`/`@RequiresCapability`/`@PublicDesktopCommand`, `JDeskException`/`ErrorCode`. No AWT/Swing/JavaFX, no native types. ([ADR-001](ADR-001-java25-jpms-ffm.md)) |
-| `jdesk-runtime` | Pure-Java engine: lifecycle state machine, IPC protocol v1, capability engine (deny-by-default, evaluated before deserialization), asset resolver, `JsonCodec` SPI (defensive Jackson default), command dispatch onto virtual threads, limits/cancellation/backpressure. Provides the `JDeskBootstrap` that `JDeskApplication.run()` locates. |
+| `jdesk-api` | Public, Java-only API surface: `JDeskApplication`, `ApplicationHandle`/`WindowHandle`, `WindowConfig`/`WindowId`, `CommandRegistry`/`CommandDefinition`, `InvocationContext`, `CapabilitySet`/`PermissionDecision`, `EventEmitter`/`Subscription`, `UiDispatcher`, `PlatformInfo`, lifecycle hooks, annotations and public errors. No AWT/Swing/JavaFX, runtime implementation classes or native types. ([ADR-001](ADR-001-java25-jpms-ffm.md)) |
+| `jdesk-runtime` | Pure-Java engine: lifecycle state machine, IPC protocol v1, capability engine (deny-by-default, evaluated before deserialization), asset resolver, `JsonCodec` SPI (defensive Jackson default), command dispatch onto virtual threads, limits/cancellation/backpressure. Only JSON/configuration packages are exported; boot, IPC and lifecycle implementations stay internal. Provides the `JDeskBootstrap` that `JDeskApplication.run()` locates. |
 | `jdesk-webview-spi` | The platform SPI (`PlatformProvider`, `PlatformApplication`, `PlatformWindow`, `PlatformWebView`) that runtime talks to and adapters implement. See [section 8](../../JDESK_CORE_FRAMEWORK_SPEC.md). |
 | `jdesk-native-ffm` | Shared FFM helpers. The package is `dev.jdesk.ffm` (not `native`, a Java keyword) per [ADR-001](ADR-001-java25-jpms-ffm.md). Arena/callback lifetime primitives used by all adapters. |
 | `jdesk-platform-windows` | Win32 + WebView2 adapter (COM, STA message pump). Provider id `windows-webview2`. |
 | `jdesk-platform-macos` | AppKit + WKWebView adapter (ObjC runtime via FFM). Provider id `macos-wkwebview`. |
 | `jdesk-platform-linux` | GTK 3 + WebKitGTK 4.1 adapter (GLib main context). Provider id `linux-webkitgtk`. |
 | `jdesk-codegen` | Annotation processor (`DesktopCommandProcessor`): compile-time command registration → `<Service>Commands` Java registries + `types.ts`/`commands.ts`. Deterministic, byte-identical output. ([ADR-005](ADR-005-compile-time-registration.md)) |
+| `jdesk-cli` | Standalone `jdesk create` project generator. Ships the Gradle wrapper and runnable `basic`/`structured` templates; supports local composite builds for framework development. |
 | `jdesk-gradle-plugin` | The `dev.jdesk.application` Gradle plugin: doctor, bindings, frontend build, dev loop, runtime image, package, native smoke, evidence verify. Non-JPMS by necessity ([ADR-002](ADR-002-gradle-first.md)). See [../development/gradle-plugin-reference.md](../development/gradle-plugin-reference.md). |
 | `jdesk-packager` | `jlink`/`jpackage`/`jdeps` argument builders + `ReleaseArtifacts` (SHA-256 checksums, CycloneDX SBOM). Consumed by the plugin's packaging tasks. |
 | `jdesk-testkit` | Evidence system (`EvidenceRun`, `EvidenceVerifier`, `VerifyMain`, `PngValidator`, `RssSampler`) for machine-generated native/package verification ([spec 18](../../JDESK_CORE_FRAMEWORK_SPEC.md)). |

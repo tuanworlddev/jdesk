@@ -166,12 +166,17 @@ class EnvelopeCodecTest {
     }
 
     @Test
-    void unsupportedProtocolVersionIsRejected() {
+    void unsupportedProtocolVersionIsPreservedForAProtocolErrorResponse() {
         for (int version : new int[] {0, 2, -1, 99}) {
             ObjectNode node = validInvoke();
             node.put("v", version);
-            assertProtocolError(() -> codec.parse(node.toString()),
-                    ErrorCode.PROTOCOL_VERSION_UNSUPPORTED);
+            assertThat(codec.parse(node.toString()))
+                    .isInstanceOfSatisfying(IncomingEnvelope.UnsupportedVersion.class,
+                            unsupported -> {
+                                assertThat(unsupported.version()).isEqualTo(version);
+                                assertThat(unsupported.kind()).isEqualTo("invoke");
+                                assertThat(unsupported.id()).contains("01JREQ");
+                            });
         }
     }
 
@@ -298,6 +303,16 @@ class EnvelopeCodecTest {
         assertThat(node.get("kind").textValue()).isEqualTo("helloAck");
         assertThat(node.get("ok").booleanValue()).isTrue();
         assertThat(node.get("nonce").textValue()).isEqualTo("nonce-1");
+    }
+
+    @Test
+    void helloErrorShape() throws Exception {
+        JsonNode node = plain.readTree(codec.helloError(
+                ErrorCode.PROTOCOL_VERSION_UNSUPPORTED, "Unsupported protocol version 2"));
+        assertThat(node.get("kind").textValue()).isEqualTo("helloAck");
+        assertThat(node.get("ok").booleanValue()).isFalse();
+        assertThat(node.at("/error/code").textValue())
+                .isEqualTo("PROTOCOL_VERSION_UNSUPPORTED");
     }
 
     @Test

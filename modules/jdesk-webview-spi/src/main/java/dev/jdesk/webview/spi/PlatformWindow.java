@@ -23,6 +23,16 @@ public interface PlatformWindow extends AutoCloseable {
 
     void hide();
 
+    void focus();
+
+    void setMinimized(boolean minimized);
+
+    void setMaximized(boolean maximized);
+
+    void setFullscreen(boolean fullscreen);
+
+    void setAlwaysOnTop(boolean alwaysOnTop);
+
     void setTitle(String title);
 
     void setBounds(WindowBounds bounds);

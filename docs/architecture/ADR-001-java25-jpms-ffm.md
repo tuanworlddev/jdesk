@@ -23,4 +23,5 @@ stays `:modules:jdesk-native-ffm` as specified.
 
 - Deterministic native memory lifetime is enforced by the arena-ownership rules in
   spec section 6 and tested per platform.
-- jlink images embed the exact `--enable-native-access` option (Phase 7).
+- jpackage launchers embed the exact per-platform `--enable-native-access` option and
+  `--illegal-native-access=deny`; the shared jlink image carries no global privilege.

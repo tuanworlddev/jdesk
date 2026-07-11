@@ -1,7 +1,11 @@
 plugins {
     id("jdesk.java-conventions")
     `java-library`
-    `maven-publish`
+    id("jdesk.publishing-conventions")
+}
+
+java {
+    withJavadocJar()
 }
 
 publishing {

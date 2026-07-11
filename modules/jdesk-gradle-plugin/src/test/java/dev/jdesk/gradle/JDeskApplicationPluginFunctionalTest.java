@@ -11,6 +11,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.TaskOutcome;
 import org.junit.jupiter.api.Test;
@@ -163,6 +166,60 @@ class JDeskApplicationPluginFunctionalTest {
 
         assertThat(result.task(":jdeskFrontendBuild").getOutcome())
                 .isEqualTo(TaskOutcome.NO_SOURCE);
+    }
+
+    @Test
+    void devRebuildsAndRestartsJavaAfterSourceChange() throws Exception {
+        Path projectDir = tempDir.resolve("reload-consumer");
+        writeSettings(projectDir);
+        String java = FunctionalTestSupport.javaExecutable().replace('\\', '/');
+        write(projectDir.resolve("build.gradle"), """
+                plugins { id 'dev.jdesk.application' }
+                dependencies { jdeskCodegen files() }
+                jdesk {
+                    applicationId = 'dev.example.reload'
+                    mainClass = 'dev.example.App'
+                    development {
+                        javaReload = true
+                        reloadDebounceMillis = 100
+                        reloadCommand = ['%s', 'Reload.java']
+                    }
+                }
+                """.formatted(java));
+        Path source = projectDir.resolve("src/main/java/dev/example/App.java");
+        write(source, reloadAppSource(1));
+        write(projectDir.resolve("src/main/java/module-info.java"), """
+                module dev.example.reload {
+                }
+                """);
+        write(projectDir.resolve("Reload.java"), """
+                import java.nio.file.Path;
+                import javax.tools.ToolProvider;
+
+                public class Reload {
+                    public static void main(String[] args) {
+                        int result = ToolProvider.getSystemJavaCompiler().run(null, null, null,
+                                "--release", "25", "-d", "build/classes/java/main",
+                                "src/main/java/dev/example/App.java");
+                        if (result != 0) {
+                            throw new IllegalStateException("javac exited " + result);
+                        }
+                    }
+                }
+                """);
+
+        CompletableFuture<BuildResult> build = CompletableFuture.supplyAsync(
+                () -> runner(projectDir, "jdeskDev", "--no-configuration-cache").build());
+        Path starts = projectDir.resolve("starts.txt");
+        waitForContent(starts, "1", Duration.ofSeconds(30));
+        write(source, reloadAppSource(2));
+
+        BuildResult result = build.get(45, TimeUnit.SECONDS);
+        assertThat(Files.readString(starts)).contains("1", "2");
+        assertThat(result.getOutput())
+                .contains("source change detected; rebuilding")
+                .contains("rebuild succeeded; restarting application");
+        assertThat(result.task(":jdeskDev").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
     }
 
     // (d) configuration-cache compatibility of doctor + frontendBuild
@@ -332,7 +389,7 @@ class JDeskApplicationPluginFunctionalTest {
         assertThat(result.getOutput())
                 .contains("JDK modules = ")
                 .contains("java.base")
-                .contains("--enable-native-access=ALL-UNNAMED");
+                .doesNotContain("--enable-native-access=ALL-UNNAMED");
         Path image = projectDir.resolve("build/jdesk/runtime-image");
         boolean launcherExists = Files.isRegularFile(image.resolve("bin/java"))
                 || Files.isRegularFile(image.resolve("bin/java.exe"));
@@ -360,5 +417,39 @@ class JDeskApplicationPluginFunctionalTest {
         BuildResult result = runner(projectDir, "jdeskVerifyEvidence").buildAndFail();
 
         assertThat(result.getOutput()).contains("no evidence runs found");
+    }
+
+    private static String reloadAppSource(int version) {
+        return """
+                package dev.example;
+
+                import java.nio.file.Files;
+                import java.nio.file.Path;
+                import java.nio.file.StandardOpenOption;
+
+                public final class App {
+                    private static final int VERSION = %d;
+
+                    public static void main(String[] args) throws Exception {
+                        Files.writeString(Path.of("starts.txt"), VERSION + "\\n",
+                                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                        if (VERSION == 1) {
+                            Thread.sleep(60_000);
+                        }
+                    }
+                }
+                """.formatted(version);
+    }
+
+    private static void waitForContent(Path file, String expected, Duration timeout)
+            throws Exception {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            if (Files.isRegularFile(file) && Files.readString(file).contains(expected)) {
+                return;
+            }
+            Thread.sleep(100);
+        }
+        throw new AssertionError("Timed out waiting for " + expected + " in " + file);
     }
 }

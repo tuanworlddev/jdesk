@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.jdesk.api.ApplicationSpec;
+import dev.jdesk.api.ApplicationHandle;
 import dev.jdesk.api.CapabilitySet;
 import dev.jdesk.api.CommandRegistry;
 import dev.jdesk.api.ErrorCode;
@@ -14,6 +15,7 @@ import dev.jdesk.api.PlatformInfo;
 import dev.jdesk.api.Subscription;
 import dev.jdesk.api.UiDispatcher;
 import dev.jdesk.api.WindowConfig;
+import dev.jdesk.api.WindowHandle;
 import dev.jdesk.api.WindowId;
 import dev.jdesk.runtime.assets.MapAssetSource;
 import dev.jdesk.webview.spi.NativeWindowConfig;
@@ -27,6 +29,7 @@ import dev.jdesk.webview.spi.PlatformWebView;
 import dev.jdesk.webview.spi.PlatformWindow;
 import dev.jdesk.webview.spi.WebViewDiagnostics;
 import dev.jdesk.webview.spi.WebViewSnapshot;
+import dev.jdesk.webview.spi.WebViewProcessFailure;
 import dev.jdesk.webview.spi.WindowBounds;
 import java.net.URI;
 import java.util.ArrayList;
@@ -35,6 +38,7 @@ import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -119,6 +123,7 @@ class JDeskRuntimeTest {
         volatile Consumer<String> messageListener;
         volatile NavigationListener navigationListener;
         volatile Consumer<URI> committedListener;
+        volatile Consumer<WebViewProcessFailure> failureListener;
         volatile boolean closed;
 
         @Override
@@ -154,6 +159,18 @@ class JDeskRuntimeTest {
             return () -> this.committedListener = null;
         }
 
+        @Override
+        public Subscription onProcessFailure(Consumer<WebViewProcessFailure> listener) {
+            this.failureListener = listener;
+            return () -> this.failureListener = null;
+        }
+
+        void simulateProcessFailure() {
+            assertThat(failureListener).as("runtime must register a failure listener").isNotNull();
+            failureListener.accept(new WebViewProcessFailure(
+                    WebViewProcessFailure.Kind.RENDER_PROCESS_EXITED, "test renderer crash"));
+        }
+
         /** Simulates a committed main-frame document, as real engines report it. */
         void simulateCommitted(URI uri) {
             Consumer<URI> listener = committedListener;
@@ -170,6 +187,7 @@ class JDeskRuntimeTest {
         public WebViewDiagnostics diagnostics() {
             return new WebViewDiagnostics(Optional.empty(), Optional.empty(), Optional.empty());
         }
+        @Override public boolean devToolsEnabled(){return false;}
 
         @Override
         public void close() {
@@ -234,6 +252,12 @@ class JDeskRuntimeTest {
         public void hide() {
         }
 
+        @Override public void focus() { }
+        @Override public void setMinimized(boolean value) { }
+        @Override public void setMaximized(boolean value) { }
+        @Override public void setFullscreen(boolean value) { }
+        @Override public void setAlwaysOnTop(boolean value) { }
+
         @Override
         public void setTitle(String title) {
         }
@@ -254,6 +278,7 @@ class JDeskRuntimeTest {
         final CountDownLatch eventLoopEntered = new CountDownLatch(1);
         final CountDownLatch stopRequested = new CountDownLatch(1);
         final AtomicBoolean closed = new AtomicBoolean();
+        final List<URI> externalUris = new CopyOnWriteArrayList<>();
 
         @Override
         public UiDispatcher ui() {
@@ -265,6 +290,14 @@ class JDeskRuntimeTest {
             FakeWindow window = new FakeWindow(config);
             windows.add(window);
             return window;
+        }
+
+        @Override public void openExternal(URI uri) { externalUris.add(uri); }
+        @Override public String readClipboardText() { return "clipboard"; }
+        @Override public void writeClipboardText(String text) { }
+        @Override public dev.jdesk.api.MessageDialogResult showMessageDialog(
+                dev.jdesk.api.MessageDialog dialog) {
+            return new dev.jdesk.api.MessageDialogResult(0, dialog.buttons().getFirst());
         }
 
         @Override
@@ -318,6 +351,7 @@ class JDeskRuntimeTest {
     static final class RecordingLifecycleListener implements LifecycleListener {
         final List<String> calls = new CopyOnWriteArrayList<>();
         final AtomicBoolean allowClose = new AtomicBoolean(true);
+        volatile ApplicationHandle readyHandle;
 
         @Override
         public void onStarting() {
@@ -327,6 +361,12 @@ class JDeskRuntimeTest {
         @Override
         public void onReady() {
             calls.add("ready");
+        }
+
+        @Override
+        public void onReady(ApplicationHandle application) {
+            readyHandle = application;
+            onReady();
         }
 
         @Override
@@ -357,14 +397,22 @@ class JDeskRuntimeTest {
         final AtomicInteger exitCode = new AtomicInteger(-1);
 
         RunningRuntime(List<WindowConfig> windowConfigs) {
+            this(windowConfigs, Optional.empty(), false);
+        }
+
+        RunningRuntime(List<WindowConfig> windowConfigs, Optional<String> devUrl, boolean devMode) {
             ApplicationSpec spec = new ApplicationSpec(
                     "dev.jdesk.test",
                     CommandRegistry.of(),
                     CapabilitySet.empty(),
                     windowConfigs,
                     List.of(listener),
-                    Optional.empty());
-            runtime = new JDeskRuntime(spec, provider, RuntimeOptions.production(new MapAssetSource()));
+                    devUrl);
+            RuntimeOptions production = RuntimeOptions.production(new MapAssetSource());
+            RuntimeOptions options = new RuntimeOptions(devMode, production.assetSource(),
+                    production.spaFallback(), production.securityHeaders(), production.limits(),
+                    production.overflowPolicy(), production.navigationGrace());
+            runtime = new JDeskRuntime(spec, provider, options);
             thread = new Thread(() -> exitCode.set(runtime.run()), "jdesk-runtime-test");
             thread.start();
         }
@@ -420,6 +468,9 @@ class JDeskRuntimeTest {
             // Ready was reached before the event loop was entered.
             assertThat(running.runtime.lifecycle().state()).isEqualTo(LifecycleState.READY);
             assertThat(running.listener.calls).startsWith("starting", "ready");
+            assertThat(running.listener.readyHandle).isSameAs(running.runtime);
+            assertThat(running.listener.readyHandle.window(new WindowId("main")))
+                    .isPresent();
 
             FakeApp app = running.provider.app;
             assertThat(app.windows).hasSize(1);
@@ -438,6 +489,20 @@ class JDeskRuntimeTest {
                     .containsExactly("starting", "ready", "stopping", "stopped");
             assertThat(app.closed.get()).isTrue();
             assertThat(window.closed).isTrue();
+        }
+    }
+
+    @Test
+    void devModeNavigatesWindowsToTheFrontendServer() throws Exception {
+        String devUrl = "http://127.0.0.1:5173";
+        try (RunningRuntime running = new RunningRuntime(
+                List.of(RunningRuntime.window("main")), Optional.of(devUrl), true)) {
+            running.awaitReady();
+
+            FakeWindow window = running.provider.app.windows.getFirst();
+            assertThat(window.config.entry()).isEqualTo(URI.create(devUrl));
+            assertThat(window.webView.navigations).containsExactly(URI.create(devUrl));
+            assertThat(running.provider.config.devServerOrigin()).contains(devUrl);
         }
     }
 
@@ -576,6 +641,71 @@ class JDeskRuntimeTest {
             running.runtime.close(); // AutoCloseable path: requestStop
             running.joinRun();
             assertThat(running.runtime.lifecycle().state()).isEqualTo(LifecycleState.STOPPED);
+        }
+    }
+
+    @Test
+    void concurrentOpenWindowCallsReserveTheIdBeforeUiCreation() throws Exception {
+        try (RunningRuntime running = new RunningRuntime(List.of(RunningRuntime.window("main")))) {
+            running.awaitReady();
+            WindowConfig duplicate = RunningRuntime.window("dynamic");
+
+            CompletionStage<WindowHandle> first = running.runtime.openWindow(duplicate);
+            CompletionStage<WindowHandle> second = running.runtime.openWindow(duplicate);
+
+            assertThat(first.toCompletableFuture().get(5, TimeUnit.SECONDS).id())
+                    .isEqualTo(new WindowId("dynamic"));
+            assertThatThrownBy(() -> second.toCompletableFuture().join())
+                    .isInstanceOfSatisfying(CompletionException.class,
+                            e -> assertThat(e.getCause())
+                                    .isInstanceOfSatisfying(JDeskException.class,
+                                            jde -> assertThat(jde.code())
+                                                    .isEqualTo(ErrorCode.ILLEGAL_STATE)));
+            assertThat(running.provider.app.windows.stream()
+                    .filter(window -> window.id().equals(new WindowId("dynamic"))))
+                    .hasSize(1);
+        }
+    }
+
+    @Test
+    void rendererFailureInvalidatesSessionAndRenavigatesEntry() throws Exception {
+        try (RunningRuntime running = new RunningRuntime(List.of(RunningRuntime.window("main")))) {
+            running.awaitReady();
+            FakeWebView webView = running.provider.app.windows.getFirst().webView;
+            int before = webView.navigations.size();
+            webView.simulateProcessFailure();
+            assertThat(webView.navigations).hasSize(before + 1).last().isEqualTo(URI.create(ENTRY));
+        }
+    }
+
+    @Test void externalBrowserPolicyAllowsHttpAndRejectsFileCredentialsAndCustomSchemes()
+            throws Exception {
+        try (RunningRuntime running = new RunningRuntime(List.of(RunningRuntime.window("main")))) {
+            running.awaitReady();
+            URI allowed = URI.create("https://example.com/path?q=1");
+            running.runtime.openExternal(allowed).toCompletableFuture().get(5, TimeUnit.SECONDS);
+            assertThat(running.provider.app.externalUris).containsExactly(allowed);
+            for (URI denied : List.of(URI.create("file:///etc/passwd"),
+                    URI.create("https://user:secret@example.com/"), URI.create("custom://host/x"))) {
+                assertThatThrownBy(() -> running.runtime.openExternal(denied)
+                        .toCompletableFuture().join()).hasCauseInstanceOf(JDeskException.class);
+            }
+            assertThat(running.provider.app.externalUris).containsExactly(allowed);
+        }
+    }
+
+    @Test void messageDialogIsMarshalledAndOversizeInputIsRejected() throws Exception {
+        try (RunningRuntime running = new RunningRuntime(List.of(RunningRuntime.window("main")))) {
+            running.awaitReady();
+            var result = running.runtime.showMessageDialog(
+                    dev.jdesk.api.MessageDialog.ok("Title", "Body"))
+                    .toCompletableFuture().get(5, TimeUnit.SECONDS);
+            assertThat(result.buttonIndex()).isZero();
+            assertThat(result.buttonLabel()).isEqualTo("OK");
+            var oversized = new dev.jdesk.api.MessageDialog("Title", "x".repeat(16_385),
+                    dev.jdesk.api.MessageDialog.Kind.INFO, List.of("OK"));
+            assertThatThrownBy(() -> running.runtime.showMessageDialog(oversized)
+                    .toCompletableFuture().join()).hasCauseInstanceOf(JDeskException.class);
         }
     }
 }

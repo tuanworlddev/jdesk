@@ -1,0 +1,38 @@
+{
+  "name": "create-jdesk-app",
+  "version": "0.1.0",
+  "description": "Scaffold a new JDesk desktop application (Java core + system WebView, the Tauri model without Rust).",
+  "type": "module",
+  "license": "Apache-2.0",
+  "bin": {
+    "create-jdesk-app": "index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "prompts.mjs",
+    "jdesk-cli.jar",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "jdesk",
+    "desktop",
+    "webview",
+    "java",
+    "tauri",
+    "scaffold",
+    "generator"
+  ],
+  "homepage": "https://github.com/tuanworlddev/jdesk",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tuanworlddev/jdesk.git",
+    "directory": "js/create-jdesk-app"
+  },
+  "scripts": {
+    "bundle": "node scripts/bundle-cli.mjs",
+    "prepublishOnly": "node scripts/bundle-cli.mjs"
+  }
+}

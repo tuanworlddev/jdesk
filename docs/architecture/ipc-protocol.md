@@ -27,7 +27,8 @@ envelope. A stale or wrong nonce can never reach command execution:
 ```
 
 Required before any `invoke`. The runtime replies with `helloAck`. Unsupported `v`
-fails with `PROTOCOL_VERSION_UNSUPPORTED`.
+receives an explicit `helloAck` with `ok:false` and code
+`PROTOCOL_VERSION_UNSUPPORTED`; clients never need to infer incompatibility from a timeout.
 
 ### invoke
 
@@ -91,8 +92,8 @@ name).
 7. In-flight limit, default 128/window (`LIMIT_EXCEEDED`).
 8. Payload deserialization (`SERIALIZATION_ERROR`, `PAYLOAD_TOO_LARGE`,
    `INVALID_REQUEST` when a required payload is missing).
-9. Handler runs on a virtual thread with a timeout (default 30 s, per-command override;
-   `TIMEOUT`).
+9. Handler runs on a virtual thread with a timeout (default 30 s; an explicit positive
+   per-command override may extend this up to 24 hours; `TIMEOUT`).
 
 Over-limit or malformed requests fail deterministically and never execute user code.
 
@@ -102,7 +103,7 @@ Over-limit or malformed requests fail deterministically and never execute user c
 | --- | --- |
 | Max encoded incoming message | 1 MiB |
 | Max in-flight invocations per window | 128 |
-| Max command duration | 30 s (per-command metadata may override) |
+| Max command duration | 30 s default; validated per-command override up to 24 h |
 | Max queued events per window | 256 |
 | Max command/event name length | 128 chars |
 | Max JSON nesting depth | 64 |

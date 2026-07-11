@@ -31,9 +31,8 @@ import org.gradle.work.DisableCachingByDefault;
 /**
  * {@code jdeskPackage}: produces a platform application image with the toolchain's
  * {@code jpackage}, combining the {@code jdeskRuntimeImage} output with the application
- * jars (staged into a private input directory). Only {@code --type app-image} is
- * supported here; installer types (MSI/DMG/DEB) land in Phase 7 via
- * {@code jdeskInstaller}.
+ * named modules (staged into a private module-path directory). This task produces the
+ * {@code app-image}; {@code jdeskInstaller} produces target-OS installer formats.
  */
 @DisableCachingByDefault(because = "packages a platform-specific application image")
 public abstract class JDeskPackageTask extends DefaultTask {
@@ -52,6 +51,11 @@ public abstract class JDeskPackageTask extends DefaultTask {
 
     @Input
     public abstract Property<String> getMainClass();
+
+    /** Named application module containing {@link #getMainClass()}. */
+    @Input
+    @Optional
+    public abstract Property<String> getMainModule();
 
     @Input
     @Optional
@@ -85,6 +89,7 @@ public abstract class JDeskPackageTask extends DefaultTask {
             throw new GradleException("jdeskPackage: jdesk.mainClass is not set. Set it,"
                     + " e.g. jdesk { mainClass.set(\"dev.example.App\") }.");
         }
+        boolean modular = getMainModule().isPresent() && !getMainModule().get().isBlank();
         File mainJar = getMainJar().get().getAsFile();
         File staging = getStagingDirectory().get().getAsFile();
         getFileSystemOperations().sync(spec -> {
@@ -111,15 +116,25 @@ public abstract class JDeskPackageTask extends DefaultTask {
 
         JpackageArguments.Builder builder = JpackageArguments.builder()
                 .name(name)
-                .input(staging.toPath())
-                .mainJar(mainJar.getName())
-                .mainClass(getMainClass().get())
                 .runtimeImage(getRuntimeImage().get().getAsFile().toPath())
                 .destination(destination.toPath())
-                .appVersion(version)
-                // The runtime image already embeds the option via jlink --add-options;
-                // passing it here as well keeps the launcher explicit and greppable.
-                .javaOption("--enable-native-access=ALL-UNNAMED");
+                .appVersion(version);
+        if (modular) {
+            // Named-module app: launch from the module path with narrow native access.
+            builder.modulePath(staging.toPath())
+                    .module(getMainModule().get(), getMainClass().get())
+                    .javaOption("--enable-native-access=" + platformModule())
+                    .javaOption("--illegal-native-access=deny")
+                    .javaOption("-Djdesk.assets.module=" + getMainModule().get());
+        } else {
+            // Classpath app (no module-info): launch from --input jars with the main
+            // class; native access is ALL-UNNAMED and assets load from the classpath.
+            builder.input(staging.toPath())
+                    .mainJar(mainJar.getName())
+                    .mainClass(getMainClass().get())
+                    .javaOption("--enable-native-access=ALL-UNNAMED")
+                    .javaOption("-Djdesk.assets.classpath=web");
+        }
         if (macOs) {
             builder.javaOption("-XstartOnFirstThread");
             String applicationId = getApplicationId().getOrNull();
@@ -164,5 +179,19 @@ public abstract class JDeskPackageTask extends DefaultTask {
         } catch (RuntimeException e) {
             throw new GradleException("jdeskPackage: failed to write checksums/SBOM", e);
         }
+    }
+
+    private static String platformModule() {
+        if (OsSupport.isMacOs()) {
+            return "dev.jdesk.platform.macos";
+        }
+        if (OsSupport.isWindows()) {
+            return "dev.jdesk.platform.windows";
+        }
+        if (OsSupport.isLinux()) {
+            return "dev.jdesk.platform.linux";
+        }
+        throw new GradleException("jdeskPackage: unsupported operating system "
+                + OsSupport.osName());
     }
 }

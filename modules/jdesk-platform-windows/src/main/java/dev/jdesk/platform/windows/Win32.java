@@ -12,6 +12,7 @@ import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 import static java.lang.foreign.ValueLayout.JAVA_SHORT;
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 
 /**
  * FFM bindings for the Win32 APIs used by the adapter (user32/kernel32/ole32/shlwapi).
@@ -30,6 +31,8 @@ final class Win32 {
             SymbolLookup.libraryLookup("ole32.dll", GLOBAL);
     private static final SymbolLookup SHLWAPI =
             SymbolLookup.libraryLookup("shlwapi.dll", GLOBAL);
+    private static final SymbolLookup SHELL32 =
+            SymbolLookup.libraryLookup("shell32.dll", GLOBAL);
 
     private Win32() {
     }
@@ -125,10 +128,25 @@ final class Win32 {
     private static final MethodHandle SET_WINDOW_POS = down(USER32, "SetWindowPos",
             FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, JAVA_INT, JAVA_INT,
                     JAVA_INT, JAVA_INT, JAVA_INT));
+    private static final MethodHandle MESSAGE_BOX = down(USER32, "MessageBoxW",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS, JAVA_INT));
     private static final MethodHandle GET_CLIENT_RECT = down(USER32, "GetClientRect",
             FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
     private static final MethodHandle LOAD_CURSOR = down(USER32, "LoadCursorW",
             FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS));
+    private static final MethodHandle OPEN_CLIPBOARD = down(USER32,"OpenClipboard",FunctionDescriptor.of(JAVA_INT,ADDRESS));
+    private static final MethodHandle CLOSE_CLIPBOARD = down(USER32,"CloseClipboard",FunctionDescriptor.of(JAVA_INT));
+    private static final MethodHandle EMPTY_CLIPBOARD = down(USER32,"EmptyClipboard",FunctionDescriptor.of(JAVA_INT));
+    private static final MethodHandle GET_CLIPBOARD_DATA = down(USER32,"GetClipboardData",FunctionDescriptor.of(ADDRESS,JAVA_INT));
+    private static final MethodHandle SET_CLIPBOARD_DATA = down(USER32,"SetClipboardData",FunctionDescriptor.of(ADDRESS,JAVA_INT,ADDRESS));
+    private static final MethodHandle SHELL_EXECUTE = down(SHELL32, "ShellExecuteW",
+            FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS, JAVA_INT));
+    private static final MethodHandle SET_FOREGROUND_WINDOW = down(USER32, "SetForegroundWindow",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS));
+    private static final MethodHandle IS_ICONIC = down(USER32, "IsIconic",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS));
+    private static final MethodHandle IS_ZOOMED = down(USER32, "IsZoomed",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS));
 
     // ---- kernel32 ----
     private static final MethodHandle GET_MODULE_HANDLE = down(KERNEL32, "GetModuleHandleW",
@@ -141,6 +159,8 @@ final class Win32 {
             FunctionDescriptor.of(JAVA_INT, ADDRESS));
     private static final MethodHandle GLOBAL_SIZE = down(KERNEL32, "GlobalSize",
             FunctionDescriptor.of(JAVA_LONG, ADDRESS));
+    private static final MethodHandle GLOBAL_ALLOC = down(KERNEL32,"GlobalAlloc",FunctionDescriptor.of(ADDRESS,JAVA_INT,JAVA_LONG));
+    private static final MethodHandle GLOBAL_FREE = down(KERNEL32,"GlobalFree",FunctionDescriptor.of(ADDRESS,ADDRESS));
 
     // ---- ole32 ----
     private static final MethodHandle CO_INITIALIZE_EX = down(OLE32, "CoInitializeEx",
@@ -272,6 +292,28 @@ final class Win32 {
         }
     }
 
+    static void setWindowPosAfter(MemorySegment hwnd, long insertAfter, int flags) {
+        try {
+            int ignored = (int) SET_WINDOW_POS.invokeExact(hwnd,
+                    MemorySegment.ofAddress(insertAfter), 0, 0, 0, 0, flags);
+        } catch (Throwable t) { throw wrap("SetWindowPos", t); }
+    }
+
+    static void focusWindow(MemorySegment hwnd) {
+        try { int ignored = (int) SET_FOREGROUND_WINDOW.invokeExact(hwnd); }
+        catch (Throwable t) { throw wrap("SetForegroundWindow", t); }
+    }
+
+    static boolean isIconic(MemorySegment hwnd) {
+        try { return (int) IS_ICONIC.invokeExact(hwnd) != 0; }
+        catch (Throwable t) { throw wrap("IsIconic", t); }
+    }
+
+    static boolean isZoomed(MemorySegment hwnd) {
+        try { return (int) IS_ZOOMED.invokeExact(hwnd) != 0; }
+        catch (Throwable t) { throw wrap("IsZoomed", t); }
+    }
+
     static void getClientRect(MemorySegment hwnd, MemorySegment rect) {
         try {
             int ignored = (int) GET_CLIENT_RECT.invokeExact(hwnd, rect);
@@ -288,6 +330,35 @@ final class Win32 {
         } catch (Throwable t) {
             throw wrap("LoadCursorW", t);
         }
+    }
+
+    static void openExternal(String uri) {
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment result = (MemorySegment) SHELL_EXECUTE.invokeExact(MemorySegment.NULL,
+                    WideStrings.alloc(arena, "open"), WideStrings.alloc(arena, uri),
+                    MemorySegment.NULL, MemorySegment.NULL, 1);
+            if (result.address() <= 32) throw new IllegalStateException("ShellExecuteW failed");
+        } catch (Throwable t) { throw wrap("ShellExecuteW", t); }
+    }
+
+    static String readClipboardText() {
+        try {
+            if((int)OPEN_CLIPBOARD.invokeExact(MemorySegment.NULL)==0)throw new IllegalStateException("OpenClipboard failed");
+            try { MemorySegment h=(MemorySegment)GET_CLIPBOARD_DATA.invokeExact(13); if(h.equals(MemorySegment.NULL))return "";
+                MemorySegment p=globalLock(h); try{return WideStrings.read(p);}finally{globalUnlock(h);} }
+            finally{int ignored=(int)CLOSE_CLIPBOARD.invokeExact();}
+        }catch(Throwable t){throw wrap("clipboard read",t);}
+    }
+    static void writeClipboardText(String text) {
+        MemorySegment h=MemorySegment.NULL;
+        try { byte[] bytes=(text+'\0').getBytes(java.nio.charset.StandardCharsets.UTF_16LE);
+            h=(MemorySegment)GLOBAL_ALLOC.invokeExact(2, (long)bytes.length);if(h.equals(MemorySegment.NULL))throw new IllegalStateException("GlobalAlloc failed");
+            MemorySegment p=globalLock(h);try{MemorySegment.copy(bytes,0,p.reinterpret(bytes.length),JAVA_BYTE,0,bytes.length);}finally{globalUnlock(h);}
+            if((int)OPEN_CLIPBOARD.invokeExact(MemorySegment.NULL)==0)throw new IllegalStateException("OpenClipboard failed");
+            try{if((int)EMPTY_CLIPBOARD.invokeExact()==0)throw new IllegalStateException("EmptyClipboard failed");
+                MemorySegment accepted=(MemorySegment)SET_CLIPBOARD_DATA.invokeExact(13,h);if(accepted.equals(MemorySegment.NULL))throw new IllegalStateException("SetClipboardData failed");h=MemorySegment.NULL;}
+            finally{int ignored=(int)CLOSE_CLIPBOARD.invokeExact();}
+        }catch(Throwable t){throw wrap("clipboard write",t);}finally{if(!h.equals(MemorySegment.NULL))try{MemorySegment ignored=(MemorySegment)GLOBAL_FREE.invokeExact(h);}catch(Throwable ignored){}}
     }
 
     static MemorySegment getModuleHandle() {
@@ -344,6 +415,32 @@ final class Win32 {
         } catch (Throwable t) {
             throw wrap("CoUninitialize", t);
         }
+    }
+
+    static dev.jdesk.api.MessageDialogResult showMessageDialog(dev.jdesk.api.MessageDialog dialog) {
+        int buttonFlags;
+        java.util.List<String> labels = dialog.buttons();
+        if (labels.equals(java.util.List.of("OK"))) buttonFlags = 0x00000000;
+        else if (labels.equals(java.util.List.of("OK", "Cancel"))) buttonFlags = 0x00000001;
+        else if (labels.equals(java.util.List.of("Yes", "No"))) buttonFlags = 0x00000004;
+        else if (labels.equals(java.util.List.of("Yes", "No", "Cancel"))) buttonFlags = 0x00000003;
+        else throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.INVALID_REQUEST,
+                "Windows supports dialog buttons [OK], [OK, Cancel], [Yes, No], or [Yes, No, Cancel]");
+        int icon = switch (dialog.kind()) { case INFO -> 0x40; case WARNING -> 0x30; case ERROR -> 0x10; };
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment title = wide(arena, dialog.title()), message = wide(arena, dialog.message());
+            int result = (int) MESSAGE_BOX.invokeExact(MemorySegment.NULL, message, title,
+                    buttonFlags | icon | 0x00002000);
+            int index = switch (result) { case 1, 6 -> 0; case 2, 7 -> 1; default -> labels.size() - 1; };
+            return new dev.jdesk.api.MessageDialogResult(index, labels.get(index));
+        } catch (Throwable t) { throw wrap("MessageBoxW", t); }
+    }
+
+    private static MemorySegment wide(Arena arena, String value) {
+        byte[] bytes = (value + '\0').getBytes(java.nio.charset.StandardCharsets.UTF_16LE);
+        MemorySegment result = arena.allocate(bytes.length, 2);
+        MemorySegment.copy(MemorySegment.ofArray(bytes), 0, result, 0, bytes.length);
+        return result;
     }
 
     /** Allocates zeroed CoTaskMem bytes; ownership follows COM out-parameter rules. */

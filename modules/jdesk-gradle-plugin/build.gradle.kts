@@ -1,7 +1,7 @@
 plugins {
     id("jdesk.java-conventions")
     `java-gradle-plugin`
-    `maven-publish`
+    id("jdesk.publishing-conventions")
 }
 description = "JDesk Gradle application plugin (dev.jdesk.application)."
 gradlePlugin {
