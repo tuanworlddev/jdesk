@@ -1,0 +1,8 @@
+{
+  "name": "@jdesk/client",
+  "version": "0.1.0",
+  "description": "Typed JDesk IPC client for web frontends. Implemented in Phase 3.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "private": true
+}
