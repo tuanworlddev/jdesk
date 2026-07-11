@@ -33,7 +33,11 @@ obtain a [`Builder`](#jdeskapplicationbuilder) from the static factory.
 | `Builder capabilities(CapabilitySet capabilities)` | Sets the capability set. Default: `CapabilitySet.empty()`. |
 | `Builder window(WindowConfig window)` | Adds a window. Callable repeatedly; order preserved. |
 | `Builder lifecycle(LifecycleListener listener)` | Adds a lifecycle listener. Callable repeatedly. |
+| `Builder frontendEvents(CommandRegistry events)` | Event definitions accepted from JavaScript (`frontendEvent` envelopes). Default: empty. |
 | `Builder devServerUrl(String url)` | Development-only exact origin, e.g. `http://127.0.0.1:5173`. |
+| `Builder contentSecurityPolicy(String csp)` | Replaces the default strict CSP on every `jdesk://app/` response (e.g. to allow `media-src https:`). Blank throws `INVALID_REQUEST`. Production launches screen `'unsafe-*'` via `CspValidator` unless `-Djdesk.security.acknowledgeUnsafeCsp=true`. See [Serving assets](../guides/serving-assets.md). |
+| `Builder assetRoute(String prefix, AssetRoute route)` | Registers a Java-served asset route under `jdesk://app/<prefix>/...` (see [`AssetRoute`](#assetroute)). Prefix must match `[a-z0-9-]` segments; duplicates throw `INVALID_REQUEST`. |
+| `Builder singleInstance(Consumer<List<String>> activationHandler)` | Enforces one running process per application id; later launches deliver their args to the handler. |
 | `ApplicationSpec buildSpec()` | Validates and builds the spec. Throws `INVALID_REQUEST` if `id` is null. |
 | `int run(String[] args)` | Builds the spec, loads the single `JDeskBootstrap` via `ServiceLoader`, and runs until shutdown; returns the process exit code. Throws `ILLEGAL_STATE` if the number of `JDeskBootstrap` providers is not exactly one. Passing `null` args is treated as an empty array. |
 
@@ -49,7 +53,12 @@ record ApplicationSpec(
     CapabilitySet capabilities,
     List<WindowConfig> windows,
     List<LifecycleListener> lifecycleListeners,
-    Optional<String> devServerUrl)
+    Optional<String> devServerUrl,
+    CommandRegistry frontendEvents,
+    boolean singleInstance,
+    Consumer<List<String>> activationHandler,
+    Optional<String> contentSecurityPolicy,
+    Map<String, AssetRoute> assetRoutes)
 ```
 
 | Component | Meaning |
@@ -60,6 +69,13 @@ record ApplicationSpec(
 | `windows()` | Immutable copy of the window configs. |
 | `lifecycleListeners()` | Immutable copy of the lifecycle listeners. |
 | `devServerUrl()` | Optional development origin. |
+| `frontendEvents()` | Event definitions accepted from JavaScript. |
+| `singleInstance()` / `activationHandler()` | Single-instance enforcement and its activation callback. |
+| `contentSecurityPolicy()` | Optional CSP override (blank rejected). |
+| `assetRoutes()` | App-defined asset routes keyed by prefix. |
+
+Shorter convenience constructors default the trailing components (empty registry, no
+single-instance, no CSP override, no routes).
 
 Construction throws `INVALID_REQUEST` when: `id` does not match the reverse-DNS pattern;
 `windows` is empty; or two windows share the same [`WindowId`](#windowid).
@@ -76,6 +92,11 @@ Available from [`InvocationContext.application()`](#invocationcontext) and
 | `Optional<WindowHandle> window(WindowId windowId)` | Looks up a currently open window. |
 | `PlatformInfo platform()` | The running platform description. |
 | `UiDispatcher ui()` | The UI-thread dispatcher. |
+| `SecretStore secrets()` | OS-backed secret storage scoped to this application id (see [`SecretStore`](#secretstore)). |
+| `CompletionStage<Void> openExternal(URI uri)` | Opens an HTTP(S) URI in the OS default browser; rejects other schemes and credentials. |
+| `CompletionStage<String> readClipboardText()` | Reads the system clipboard as text. |
+| `CompletionStage<Void> writeClipboardText(String text)` | Writes clipboard text (max 1 MiB). |
+| `CompletionStage<MessageDialogResult> showMessageDialog(MessageDialog dialog)` | Shows a native message dialog. |
 | `void requestStop()` | Requests orderly application shutdown without blocking the caller. |
 
 ### `WindowHandle`
@@ -115,10 +136,14 @@ Provided by `dev.jdesk.runtime`; applications never implement or call it directl
 
 ```java
 record WindowConfig(
-    WindowId id, String title, int width, int height, boolean resizable, URI entry)
+    WindowId id, String title, int width, int height, boolean resizable, URI entry,
+    int minWidth, int minHeight, boolean startMaximized, boolean rememberBounds)
 ```
 
-Construction throws `INVALID_REQUEST` if `width` or `height` is outside `1..32767`.
+Construction throws `INVALID_REQUEST` if `width` or `height` is outside `1..32767`, if a
+minimum is outside `0..32767`, or if a minimum exceeds the initial size. A 6-argument
+convenience constructor defaults the trailing components (no minimum, not maximized, no
+persistence).
 
 ### `WindowConfig.Builder`
 
@@ -129,7 +154,10 @@ Construction throws `INVALID_REQUEST` if `width` or `height` is outside `1..3276
 | `Builder id(String id)` | Sets the id; wraps the string in a [`WindowId`](#windowid) (validated). | required |
 | `Builder title(String title)` | Sets the window title. | `""` |
 | `Builder size(int width, int height)` | Sets width and height (pixels). | `800 × 600` |
+| `Builder minSize(int minWidth, int minHeight)` | Minimum content size, enforced for user **and** programmatic resizes (0 = none). | `0 × 0` |
 | `Builder resizable(boolean resizable)` | Sets resizability. | `true` |
+| `Builder startMaximized(boolean startMaximized)` | Opens the window maximized. | `false` |
+| `Builder rememberBounds(boolean rememberBounds)` | Persists size/position across runs (per app id and window id, under `~/.jdesk/window-state/`, overridable via `-Djdesk.state.dir=`) and restores them on open. | `false` |
 | `Builder entry(String entry)` | Sets the entry URL; parsed with `URI.create`. | required |
 | `WindowConfig build()` | Builds the config. Throws `INVALID_REQUEST` if `id` or `entry` is unset. | — |
 
@@ -364,14 +392,51 @@ thread.
 | --- | --- |
 | `JDeskException(ErrorCode code, String publicMessage)` | Constructs with a code and frontend-safe message. |
 | `JDeskException(ErrorCode code, String publicMessage, Throwable cause)` | As above, with a cause. |
+| `JDeskException(ErrorCode code, String publicMessage, Object details, Throwable cause)` | As above, plus public-safe structured error data (any JSON-serializable value) delivered to the frontend as `error.data`. |
 | `ErrorCode code()` | The error code. |
 | `String publicMessage()` | The only message that may be sent to the frontend; must never contain secrets, paths, SQL, or internal detail. |
+| `Object details()` | Structured, public-safe error data for the frontend (`error.data`); may be null. `jdesk-client` exposes it as `JDeskError.data`. |
 
 ### `ErrorCode`
 
 `dev.jdesk.api.ErrorCode` — the only error identifiers that may cross the IPC boundary to
 the frontend. The full enumeration, when each occurs, and which reach the frontend are in
 the [error codes reference](error-codes.md).
+
+## Assets
+
+### `AssetRoute`
+
+`dev.jdesk.api.AssetRoute` — functional interface for an app-defined asset route under
+`jdesk://app/<prefix>/...`, registered with
+[`Builder.assetRoute`](#jdeskapplicationbuilder). Handlers run off the UI thread;
+blocking I/O is fine. Responses stream through the asset pipeline: security headers are
+added, and Range requests get 206 automatically when `contentLength` is known. See
+[Serving assets](../guides/serving-assets.md).
+
+| Member | Meaning |
+| --- | --- |
+| `Optional<Response> serve(Request request) throws IOException` | Returns the response, or empty for a deterministic 404. `IOException` maps to a path-free 500. |
+| `record Request(String path, Map<String, String> headers)` | Path below the prefix (normalized, traversal-safe) and request headers (lower-case keys); `header(String)` looks up case-insensitively. |
+| `record Response(String contentType, long contentLength, Supplier<InputStream> body, Map<String, String> headers)` | Content type, byte length (-1 unknown; Range needs it known), fresh-stream supplier, extra response headers (e.g. `Cache-Control`). |
+| `static Response of(byte[] bytes, String contentType)` | Buffered response from bytes (defensive copy). |
+| `static Response of(Path file, String contentType) throws IOException` | Streamed response from a file; derives the length. |
+
+## Secrets
+
+### `SecretStore`
+
+`dev.jdesk.api.SecretStore` — OS-backed secret storage (macOS Keychain, Windows DPAPI,
+Linux Secret Service), namespaced per application id. Obtained from
+[`ApplicationHandle.secrets()`](#applicationhandle). Calls may block on the OS
+credential service — fine on command-handler virtual threads, never on the UI thread.
+See [Storing secrets](../guides/storing-secrets.md).
+
+| Member | Meaning |
+| --- | --- |
+| `Optional<String> get(String key)` | The stored secret, or empty when never stored. |
+| `void put(String key, String value)` | Stores or replaces one secret. Keys are 1..128 chars; values up to 64 KiB. |
+| `void delete(String key)` | Removes one secret; absent keys are a no-op. |
 
 ## Platform
 

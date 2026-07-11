@@ -48,7 +48,7 @@ Every property is lazy (`Property`/`DirectoryProperty`/`ListProperty`). Leaving
 | `mainModule` | `Property<String>` | Named JPMS application module used by production packaging; defaults to `applicationId`. |
 | `mainClass` | `Property<String>` | Application entry point. |
 | `frontend.directory` | `DirectoryProperty` | Frontend source root; unset ⇒ no frontend. |
-| `frontend.devCommand` | `ListProperty<String>` | Dev-server command (argument list). |
+| `frontend.devCommand` | `ListProperty<String>` | Dev-server command (argument list). **Unset** ⇒ `jdeskDev` runs in static frontend mode: it runs `buildCommand` on UI changes and the app reloads the page from `distDirectory` automatically (no Node required). See [the dev loop](../guides/the-dev-loop.md). |
 | `frontend.buildCommand` | `ListProperty<String>` | Production build command (argument list). |
 | `frontend.devUrl` | `Property<String>` | Exact dev-server origin to probe/inject. |
 | `frontend.distDirectory` | `DirectoryProperty` | Built assets; default `directory/dist`. |

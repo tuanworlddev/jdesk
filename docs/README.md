@@ -35,6 +35,9 @@ Task-oriented how-tos for when you are building.
 
 - [Define a command](guides/defining-commands.md)
 - [Emit events to the frontend](guides/emitting-events.md)
+- [Stream binary data to the frontend](guides/streaming-binary-data.md)
+- [Store secrets in the OS credential store](guides/storing-secrets.md)
+- [Automate and E2E-test your app](guides/automation-and-e2e.md)
 - [Grant capabilities and permissions](guides/capabilities-and-permissions.md)
 - [Manage windows and the app lifecycle](guides/managing-windows.md)
 - [Serve assets over `jdesk://app/`](guides/serving-assets.md)

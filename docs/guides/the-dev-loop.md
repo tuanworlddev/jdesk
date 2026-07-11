@@ -45,20 +45,36 @@ jdesk {
 | Property | Meaning |
 | --- | --- |
 | `directory` | Frontend source root (`ui/`). Unset means "no frontend" and the frontend tasks skip with `NO-SOURCE`. |
-| `devCommand` | The dev-server command, as an argument list. Scaffolds run `vite --host 127.0.0.1 --port 5173 --strictPort`. |
-| `buildCommand` | The production build command (used by `jdeskFrontendBuild`, not the dev loop). |
-| `devUrl` | The exact dev-server origin `jdeskDev` probes and injects. Must match the port your dev server binds. |
+| `devCommand` | The dev-server command, as an argument list. Framework scaffolds run `vite --host 127.0.0.1 --port 5173 --strictPort`. **Omit it entirely for a static (no-bundler) frontend** — see "Static frontends" below. |
+| `buildCommand` | The production build command (used by `jdeskFrontendBuild`, and by the static dev loop). |
+| `devUrl` | The exact dev-server origin `jdeskDev` probes and injects. Must match the port your dev server binds. Omit together with `devCommand` for static frontends. |
 | `distDirectory` | Built assets; defaults to `directory/dist`. |
+
+## Static frontends: no Node, still hot
+
+The `basic` and `structured` templates ship plain HTML/CSS/JS with no bundler. Leave
+`devCommand`/`devUrl` unset and keep a `buildCommand` (the templates use
+`java Build.java`); `jdeskDev` then runs in **static frontend mode**:
+
+1. It builds the UI once and launches the app with `-Djdesk.dev=true` and
+   `-Djdesk.assets.dir=<distDirectory>` — the page loads from `jdesk://app/` as in
+   production, no dev server involved.
+2. It watches the frontend sources; on change it re-runs `buildCommand`.
+3. The runtime's dev-mode asset watcher notices the changed dist directory and reloads
+   the page in the running window automatically.
+
+Edit a CSS file, watch the window repaint — with zero Node dependencies.
 
 Command lists are passed as argument vectors, so paths with spaces or non-ASCII characters
 are safe, and logged environments are redacted (`token`/`secret`/`password`/`key`).
 
 ## Start the loop
 
-Install frontend dependencies once, then run `jdeskDev`:
+For framework templates, install frontend dependencies once, then run `jdeskDev` (static
+templates skip the `npm install`):
 
 ```bash
-npm install --prefix ui
+npm install --prefix ui   # framework templates only
 ./gradlew jdeskDev
 ```
 
@@ -108,6 +124,29 @@ jdesk {
 - The app is swapped **only after a successful compile**. A failed rebuild keeps the
   current process alive so it can display state while you fix the source.
 - Set `javaReload` to `false` to disable Java restarts entirely.
+
+## Keep UI state across Java restarts
+
+A Java restart replaces the whole process, so in-memory UI state is gone — but
+`localStorage` is persisted per origin by the system WebView and survives the swap.
+Save on change (not in `beforeunload` — a killed process never fires it), restore at
+startup:
+
+```ts
+const KEY = "dev-ui-state";
+const saved = localStorage.getItem(KEY);
+if (saved) {
+  try { restoreState(JSON.parse(saved)); } catch { /* stale shape: start fresh */ }
+}
+// Persist on every meaningful change, debounced.
+let timer;
+export function stateChanged(state) {
+  clearTimeout(timer);
+  timer = setTimeout(() => localStorage.setItem(KEY, JSON.stringify(state)), 200);
+}
+```
+
+Guard it behind your dev flag if you don't want the behavior in production builds.
 
 ## Watch extra modules in a structured build
 

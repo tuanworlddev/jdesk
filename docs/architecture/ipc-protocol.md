@@ -51,6 +51,20 @@ receives an explicit `helloAck` with `ok:false` and code
 Best-effort: the runtime interrupts the worker virtual thread and sends exactly one
 terminal result with code `CANCELLED`.
 
+### console
+
+```json
+{"v":1, "kind":"console", "level":"error", "message":"boom at app.js:3", "nonce":"<hex>"}
+```
+
+Emitted by the injected console-capture script (not by application code): wrapped
+`console.*`, uncaught `error` events, and unhandled promise rejections. `level` is one of
+`log|info|warn|error|debug` (max 16 chars); `message` is truncated page-side at 8 KiB.
+Fire-and-forget — no result envelope. The nonce is checked like every other envelope, so
+stale or spoofed documents cannot inject log lines. The Java side strips control
+characters and forwards to the `dev.jdesk.webview.console` logger only in dev mode or
+when `-Djdesk.console.forward=true` is set; otherwise the envelope is dropped.
+
 ## Runtime → client
 
 ### helloAck
@@ -65,7 +79,15 @@ terminal result with code `CANCELLED`.
 {"v":1, "kind":"result", "id":"01J...", "ok":true, "value":{"message":"Hello Tuan"}}
 {"v":1, "kind":"result", "id":"01J...", "ok":false,
  "error":{"code":"CAPABILITY_DENIED", "message":"Command is not allowed for this window"}}
+{"v":1, "kind":"result", "id":"01J...", "ok":false,
+ "error":{"code":"INVALID_REQUEST", "message":"Upstream rejected",
+          "data":{"httpStatus":429, "retryAfterSeconds":30}}}
 ```
+
+`error.data` is optional structured, public-safe data a handler attaches by throwing
+`JDeskException(code, publicMessage, details, cause)` — machine-readable facts (HTTP
+status, retry hints) the frontend can branch on instead of parsing message text.
+`jdesk-client` exposes it as `JDeskError.data`.
 
 Exactly one terminal result per request. Results correlate by `id` and may complete out
 of order. Error `code` is one of the public `ErrorCode` names; `message` never contains

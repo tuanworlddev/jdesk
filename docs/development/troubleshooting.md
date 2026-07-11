@@ -45,6 +45,20 @@ WebKitGTK needs a display.
 - Ensure `libwebkit2gtk-4.1-0` is installed (see
   [../platform/prerequisites.md](../platform/prerequisites.md)).
 
+## Seeing what the page logs (blank screen, JS crashes)
+
+You do not need screenshots or a debugger to see page-side failures:
+
+- **Console bridge** — in dev mode (or with `-Djdesk.console.forward=true` in any run)
+  every `console.*` call, uncaught error, and unhandled promise rejection is forwarded
+  to Java logging under the logger name `dev.jdesk.webview.console`. A React crash that
+  whites out the window shows up there with its stack trace.
+- **Automation endpoint** — launch with `-Djdesk.automation=true` and read
+  `GET /console`, evaluate JS, or take a PNG snapshot over token-gated loopback HTTP.
+  See [Automate and E2E-test your app](../guides/automation-and-e2e.md).
+- DevTools (Safari Web Inspector / WebView2 DevTools / WebKitGTK inspector) remain
+  available in dev mode for interactive debugging.
+
 ## Blank page / "Refused to execute inline script" (CSP)
 
 The default Content-Security-Policy is **strict and blocks inline `<script>`/inline
@@ -55,6 +69,10 @@ handlers and `eval`**. This bit the framework's own smoke page during bring-up.
 - Release builds *reject* a CSP that allows `unsafe-inline`/`unsafe-eval` unless you
   explicitly acknowledge it through the named build option, which then appears in the build
   report (spec 12.4). Prefer fixing the page over relaxing the policy.
+- Apps that legitimately need remote content (CDN media, remote images, HTTPS APIs)
+  replace the policy with `JDeskApplication.Builder.contentSecurityPolicy(...)` — see
+  [Serving assets](../guides/serving-assets.md). Content Java proxies or caches should
+  use an [asset route](../guides/serving-assets.md) instead of widening the CSP.
 
 ## "CAPABILITY_DENIED" from a command
 

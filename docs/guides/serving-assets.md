@@ -118,6 +118,71 @@ or `'unsafe-hashes'` unless you set an explicit acknowledgement option that appe
 build report. See the [CSP reference](../concepts/security-model.md) and
 [the security model](../concepts/security-model.md).
 
+## Range requests and large media
+
+The resolver understands single-range `Range: bytes=...` requests and answers them with
+`206 Partial Content`, a `Content-Range` header, and a body stream positioned at the
+requested offset (a real seek for directory-backed assets, not a read-and-discard).
+Every success response advertises `Accept-Ranges: bytes`. This is what makes `<video>`
+seeking work for large packaged media: the engine's media stack (AVFoundation on macOS)
+probes with ranged requests and only ever reads the byte windows it needs.
+
+Unsatisfiable ranges (entirely beyond the asset) get `416` with `Content-Range: bytes */<size>`.
+Multi-range and malformed headers are ignored and served as a full `200`, which is a
+valid response to any Range request.
+
+## App-defined asset routes (binary without base64)
+
+Content that Java produces or proxies — cached remote images, thumbnails, exports —
+should not travel as base64 data-URIs through command results (~33% inflation, 1 MiB
+envelope cap, no browser caching). Register an asset route instead:
+
+```java
+JDeskApplication.builder()
+    .assetRoute("proxy/images", request -> {
+        Path cached = imageCache.fetch(request.path()); // may block: runs off the UI thread
+        return Optional.of(AssetRoute.Response.of(cached, "image/jpeg"));
+    })
+```
+
+The page then loads `<img src="jdesk://app/proxy/images/p1.jpg">` — same origin, so the
+strict default CSP covers it; the response streams through the asset pipeline with Range
+support, and your `Cache-Control` header (via `Response.headers`) enables engine-side
+caching. Returning `Optional.empty()` yields a deterministic 404; an `IOException` maps
+to a path-free 500. A route owns everything under its prefix and wins over packaged
+assets there.
+
+On macOS the scheme handler resolves and streams on background threads, so a slow route
+(network fetch) never blocks the UI. On Windows/Linux serving is currently synchronous
+on the event thread — keep route handlers fast there (serve from a disk cache and
+prefetch via commands) until async serving lands for those adapters.
+
+## Customizing the Content-Security-Policy
+
+Apps that legitimately need remote content — streaming video from a CDN, loading remote
+images, calling an HTTPS API — replace the default policy on the application builder:
+
+```java
+JDeskApplication.builder()
+    .id("com.example.movies")
+    .contentSecurityPolicy(
+        "default-src 'self'; media-src 'self' https:; img-src 'self' data: https:; "
+            + "connect-src 'self' https://api.example.com; object-src 'none'; "
+            + "base-uri 'none'; frame-ancestors 'none'")
+    // ...
+    .run(args);
+```
+
+The override replaces the `Content-Security-Policy` header on every `jdesk://app/`
+response. Keep it as narrow as your app allows — prefer explicit origins
+(`https://cdn.example.com`) over broad schemes (`https:`), and never widen `script-src`
+beyond `'self'` without a strong reason.
+
+Safety rails stay on: production launches (anything not started with `-Djdesk.dev=true`)
+screen the override and refuse to start if it contains `'unsafe-inline'`, `'unsafe-eval'`,
+or `'unsafe-hashes'`, unless you explicitly acknowledge the weakening with
+`-Djdesk.security.acknowledgeUnsafeCsp=true`.
+
 ## Loading from a dev server instead
 
 During development you can render a live dev server (Vite, etc.) instead of packaged assets.

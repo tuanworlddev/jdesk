@@ -16,7 +16,9 @@ WindowConfig main = WindowConfig.builder()
         .id("main")
         .title("Example")
         .size(1100, 720)
+        .minSize(700, 500)
         .resizable(true)
+        .rememberBounds(true)
         .entry("jdesk://app/index.html")
         .build();
 ```
@@ -26,7 +28,10 @@ WindowConfig main = WindowConfig.builder()
 | `id` | required | 1..64 chars of `[a-zA-Z0-9._-]`; matches window ids in [capabilities.json](capabilities-and-permissions.md) |
 | `title` | `""` | window title bar text |
 | `size(width, height)` | `800 × 600` | each dimension 1..32767 |
+| `minSize(minWidth, minHeight)` | none | minimum size, enforced for user **and** programmatic resizes (content size on macOS/Linux; outer frame on Windows, matching that adapter's bounds convention) |
 | `resizable` | `true` | whether the user can resize the window |
+| `startMaximized` | `false` | open the window maximized |
+| `rememberBounds` | `false` | persist size/position across runs (per app id + window id, under `~/.jdesk/window-state/`) and restore them on open; restored bounds win over `size(...)` |
 | `entry` | required | the initial URL, over [the app origin](serving-assets.md) `jdesk://app/...` |
 
 The entry points at your production assets served over `jdesk://app/`. See

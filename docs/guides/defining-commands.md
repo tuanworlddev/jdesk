@@ -92,20 +92,35 @@ full type mapping (including the Java-to-TypeScript rules) see
 [Generate TypeScript bindings](generating-typescript-bindings.md) and the
 [Java API reference](../reference/java-api.md).
 
-### Run work on virtual threads
+### Run work on virtual threads — just block
 
-Every command handler runs on a **virtual thread**, never on the UI thread, with a default
-timeout of 30 seconds. Blocking I/O inside a handler is fine — it parks the virtual thread,
-not a platform thread. To return a result asynchronously, complete the `CompletionStage`
-from wherever the work finishes:
+Every command handler already runs on a **fresh virtual thread**, never on the UI thread,
+with a default timeout of 30 seconds. Blocking I/O inside a handler is the intended
+pattern — it parks the virtual thread, not a platform thread, and the runtime happily
+runs a hundred blocked handlers at once (each invocation gets its own virtual thread,
+up to the in-flight limit):
 
 ```java
-@DesktopCommand("report.build")
-@RequiresCapability("report:build")
-public CompletionStage<ReportResponse> build(ReportRequest request, InvocationContext context) {
-    return CompletableFuture.supplyAsync(() -> renderReport(request));
+@DesktopCommand("images.fetch")
+@RequiresCapability("images:fetch")
+public CompletionStage<FetchResponse> fetch(FetchRequest request, InvocationContext context)
+        throws Exception {
+    // Blocking HTTP call, directly on the handler's virtual thread. Correct.
+    HttpResponse<byte[]> response = httpClient.send(
+            HttpRequest.newBuilder(URI.create(request.url())).build(),
+            HttpResponse.BodyHandlers.ofByteArray());
+    return CompletableFuture.completedFuture(toResponse(response));
 }
 ```
+
+**Do not wrap the work in `CompletableFuture.supplyAsync(...)`.** Without an explicit
+executor that runs on the *common ForkJoinPool* — a small pool of platform threads sized
+to your CPU count. Blocking HTTP calls there starve the pool: with dozens of concurrent
+invocations everything queues behind a handful of stuck threads (the classic symptom is
+a wall of loading thumbnails that trickle in). `supplyAsync` buys you nothing here — the
+handler is already off the UI thread. Only reach for a `CompletionStage` chain when the
+work completes elsewhere (e.g. an async client library returns one); pass that stage
+through directly.
 
 See [Threading](../concepts/threading-and-the-event-loop.md) for the virtual-thread model and cancellation.
 

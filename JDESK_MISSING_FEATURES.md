@@ -2,6 +2,34 @@
 
 Commit audited: `81b9f1c796f91cf7bc5f89d8ec966a9b007fe72c` with a dirty worktree. This list is based on source inspection plus new runtime evidence, not historical claims.
 
+## Resolved since the audit (2026-07-11, verified live on macOS ARM64)
+
+Evidence: native-smoke runs `1783786098-4d5f87f18232b697` + `1783786141-cbdefa21a3dd2e5c`,
+security-probe run `1783786286-75a7f25a7d7a6ff9` (archived under `evidence/`), plus the
+"Feature evidence — 2026-07-11" section of `VERIFICATION.md`. Windows/Linux share the code
+paths but remain compile-verified only until runs on those operating systems.
+
+- **P0.1 (partially)**: named `vanilla`/`react`/`vue`/`svelte` templates and a `maven` template exist in `TemplateCatalog`; `basic`/`structured` are now zero-Node (no bundler, no package.json).
+- **P0.3**: binary pull-streaming exists end-to-end (`BinaryStream` → `StreamManager` → `jdesk.stream.pull` → JS `invokeStream`); 2 GiB with backpressure verified live (8192 pulls, 151.6 MiB/s); stream cancellation verified; renderer reload recovery while a command is in flight verified (`reload-inflight-recovery`).
+- **P0.4**: full type-matrix serialization (primitive/null/list/map/enum/nested DTO), server timeout, and simultaneous multi-window routing verified live.
+- **P1 window operations**: focus, minimize, maximize, fullscreen, always-on-top implemented on all three platforms and verified live on macOS (`js:window-controls`). Window icon still missing.
+- **CSP is configurable** via `JDeskApplication.Builder.contentSecurityPolicy(...)` with release screening (`CspValidator`, ack via `-Djdesk.security.acknowledgeUnsafeCsp`); custom policy verified on native responses.
+- **HTTP Range/206** support in the asset pipeline (206/416/`Content-Range`/`Accept-Ranges`, seek-positioned streams) verified live through the WKWebView scheme handler.
+- **Page console → Java logging bridge** (injected capture script, nonce-gated `console` envelope, `dev.jdesk.webview.console` logger; on in dev mode or `-Djdesk.console.forward=true`) verified live.
+- **Static-frontend dev loop**: `jdeskDev` without `devCommand` rebuilds the UI on change and the runtime dev-mode asset watcher reloads the page — no Node required; verified in a live session on a scaffolded `basic` app.
+- **Template bugs fixed**: `import "./style.css"` removed (CSS now a `<link>`, `Build.java` rewrites the path); `jdeskFrontendBuild` decoupled from `classes` (now wired to `jar`), covered by TestKit functional test.
+- IPC latency instrumentation now recorded in stress runs (p50/p95/p99 in `js:ipc-stress-10000`).
+
+### Batch 2 (same day, runs 1783788877/1783788922/1783788948)
+
+- **Debug/automation channel**: opt-in loopback automation endpoint (`-Djdesk.automation=true`; token-gated `GET /windows`, `POST /evaluate`, `GET /snapshot`, `GET /console`) for E2E tests, CI, and agents — verified live over real HTTP against the running app. See `docs/guides/automation-and-e2e.md`.
+- **App-defined asset routes** (`JDeskApplication.Builder.assetRoute`): Java-served binary content under `jdesk://app/<prefix>/` through the streaming pipeline (Range included) — replaces base64-over-IPC image proxying. macOS scheme serving is now fully asynchronous (background resolve/stream, main-thread-marshalled WKURLSchemeTask callbacks, stop handling); verified live that a stalled route does not block IPC. Windows/Linux still serve synchronously (documented).
+- **Structured command errors**: `JDeskException(code, message, details, cause)` → `error.data` in the result envelope → `JDeskError.data` in jdesk-client; verified live.
+- **SecretStore** (`ApplicationHandle.secrets()`): macOS Keychain (FFM SecItem*) verified live; Windows DPAPI and Linux secret-tool backends implemented, compile-verified; no plaintext fallback anywhere.
+- **Window polish**: `WindowConfig` gains `minSize` (enforced for user and programmatic resizes), `startMaximized`, `rememberBounds` (persisted per app/window under `~/.jdesk/window-state/`); `PlatformWindow.getBounds()` added on all three platforms; verified live (clamp + restore).
+- **Handler thread-model docs fixed**: handlers always ran on virtual threads, but the docs' own example pushed work onto the common ForkJoinPool via `supplyAsync` — the guide now says "just block" and shows the correct concurrent-fetch pattern.
+- **Framework templates now use jdesk-client + generated TS bindings** (react/vanilla/vue/svelte) instead of a hand-rolled ~80-line bridge; `ui/src/generated/` gitignored; dev-loop state save/restore pattern documented.
+
 ## P0 — release blockers
 
 1. Named starter templates for Vanilla, React, Vue, and Svelte are absent. The CLI accepts only `basic` and `structured`; Maven is absent.
