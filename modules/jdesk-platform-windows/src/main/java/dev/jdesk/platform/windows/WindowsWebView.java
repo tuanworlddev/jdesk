@@ -56,6 +56,14 @@ final class WindowsWebView implements PlatformWebView {
               };
               window.chrome.webview.addEventListener('message', function (e) {
                 var data = typeof e.data === 'string' ? e.data : JSON.stringify(e.data);
+                // The nonce control envelope can arrive before page scripts attach
+                // their listeners; capture it here so it is never lost.
+                try {
+                  var m = JSON.parse(data);
+                  if (m && m.kind === 'nonce' && typeof m.nonce === 'string') {
+                    window.__jdesk.nonce = m.nonce;
+                  }
+                } catch (err) { }
                 document.dispatchEvent(new CustomEvent('jdesk-message', { detail: data }));
               });
             })();
