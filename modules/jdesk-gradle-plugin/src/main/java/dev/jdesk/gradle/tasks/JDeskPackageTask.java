@@ -146,5 +146,23 @@ public abstract class JDeskPackageTask extends DefaultTask {
                     + " for its output; verify the runtime image and jars above.", e);
         }
         getLogger().lifecycle("jdeskPackage: app image written to {}", destination);
+
+        // Release hygiene (spec 12.5, 16): SHA-256 checksums + CycloneDX SBOM over the
+        // produced image. CI images are UNSIGNED and do not satisfy a signed-release gate.
+        try {
+            Path imageRoot = new File(destination, macOs ? name + ".app" : name).toPath();
+            Path root = java.nio.file.Files.isDirectory(imageRoot)
+                    ? imageRoot : destination.toPath();
+            List<dev.jdesk.packager.ReleaseArtifacts.Checksum> checksums =
+                    dev.jdesk.packager.ReleaseArtifacts.writeChecksums(
+                            root, destination.toPath().resolve("checksums.sha256"));
+            dev.jdesk.packager.ReleaseArtifacts.writeSbom(
+                    destination.toPath().resolve("sbom.cyclonedx.json"),
+                    getApplicationId().getOrElse(name), version, checksums);
+            getLogger().lifecycle("jdeskPackage: wrote checksums.sha256 ({} files) and"
+                    + " sbom.cyclonedx.json (UNSIGNED)", checksums.size());
+        } catch (RuntimeException e) {
+            throw new GradleException("jdeskPackage: failed to write checksums/SBOM", e);
+        }
     }
 }

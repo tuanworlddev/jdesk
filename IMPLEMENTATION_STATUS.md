@@ -119,23 +119,25 @@ Gates:
 - [x] Packaged app image launches without Gradle: `package-linux-x64` CI job (jpackage app-image, launched directly under Xvfb) — see run below
 
 ### Phase 6 — Security hardening
-Status: DONE locally (macOS); CI legs running (run 29140030589)
+Status: DONE (2026-07-11, verified on all three primary platforms)
 
 Gates:
 - [x] Per-window capability config, origin/nonce lifecycle, navigation/popup restrictions, threat model doc (docs/security/threat-model.md)
-- [x] security-probe app proves all Section 17.6 items on a real WebView: macOS run 1783744909-9ab8bd400421eeb1, category `native`, provider `macos-wkwebview`, 22/22 PASS, verifier green, archived. Windows + Linux legs run as `security-windows-x64` / `security-linux-x64` CI jobs.
+- [x] security-probe app proves all Section 17.6 items on real WebViews: macOS run 1783744909-9ab8bd400421eeb1 (local, `macos-wkwebview`, 22/22); Windows + Linux green on real CI runners — run 29140030589 jobs `security-windows-x64` and `security-linux-x64`, evidence uploaded, verifier green.
 - [x] Evidence category hardened to `native` so the anti-fake verifier enforces real providers (probe found + fixed this in the probe app).
 - [x] CspValidator release check proven by unit test (unsafe-inline/eval rejected without acknowledgement; default CSP strict)
 
 ### Phase 7 — Packaging, documentation, release candidate
-Status: NOT STARTED
+Status: IN PROGRESS
 
 Gates:
-- [ ] jlink + jpackage pipeline, signing hooks, SBOM/checksums
-- [ ] Package smoke evidence on all 3 primary targets
-- [ ] Every required CI job green for the same commit
-- [ ] No `UNVERIFIED` primary platform
-- [ ] Fresh-project quick start reproduced
+- [x] jlink + jpackage pipeline (Gradle plugin jdeskRuntimeImage/jdeskPackage; app images built + launched without Gradle on windows/macos/linux)
+- [x] Signing hooks (jdesk { signing { ... } } extension: Authenticode / Developer ID + notarization / GPG) — configuration surface; CI packages labeled UNSIGNED
+- [x] SBOM + SHA-256 checksums: ReleaseArtifacts writes checksums.sha256 + CycloneDX 1.5 sbom.cyclonedx.json in jdeskPackage; deterministic, unit-tested (22 packager tests); verified against a real 282-file jpackage image
+- [x] Package smoke evidence on all 3 primary targets: macOS local (1783741694-...), windows/linux CI package jobs green (run 29139506086)
+- [ ] Every required CI job green for the same HEAD commit (consolidated run pending after docs land)
+- [ ] No `UNVERIFIED` primary platform (macOS native/security verified locally on real hardware; a macos-arm64 CI leg is optional — see note)
+- [ ] Fresh-project quick start reproduced (hello-vanilla + external sample done; README quick start to be reproduced verbatim)
 
 ## Known deviations / notes
 

@@ -29,4 +29,12 @@ public abstract class JDeskExtension {
     public void frontend(Action<? super JDeskFrontendExtension> action) {
         action.execute(getFrontend());
     }
+
+    @Nested
+    public abstract JDeskSigningExtension getSigning();
+
+    /** Signing configuration hooks (spec 16.3); unconfigured builds are UNSIGNED. */
+    public void signing(Action<? super JDeskSigningExtension> action) {
+        action.execute(getSigning());
+    }
 }
