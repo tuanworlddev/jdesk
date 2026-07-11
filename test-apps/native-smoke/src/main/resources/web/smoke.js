@@ -128,6 +128,7 @@
 
       var info = await invoke("smoke.runInfo", null);
       runId = info.runId;
+      var stress = !!info.stress;
 
       // 2. JS -> Java typed echo
       var echo = await invoke("smoke.echo", { text: "xin chào", number: 42 });
@@ -215,9 +216,37 @@
         record("asset-traversal", true, "request failed as rejection: " + e.message);
       }
 
-      // 12. secondary window create/close/recreate
-      var cyc = await invoke("smoke.windowCycles", { cycles: 3 }, { timeoutMs: 25000 });
-      record("window-cycles", cyc.completed === 3, cyc.completed + "/3 cycles");
+      // stress profile: 10,000 small IPC round trips in bounded concurrent batches
+      if (stress) {
+        var t0 = Date.now();
+        var total = 0, wrong = 0;
+        for (var batch = 0; batch < 100; batch++) {
+          var group = [];
+          for (var k = 0; k < 100; k++) {
+            (function (n) {
+              group.push(invoke("smoke.echo", { text: "s" + n, number: n },
+                                { timeoutMs: 30000 }).then(function (v) {
+                return v.text === "s" + n && v.number === n;
+              }));
+            })(batch * 100 + k);
+          }
+          var outcomes = await Promise.all(group);
+          for (var j = 0; j < outcomes.length; j++) {
+            total++;
+            if (!outcomes[j]) wrong++;
+          }
+        }
+        var elapsed = Date.now() - t0;
+        record("ipc-stress-10000", total === 10000 && wrong === 0,
+               total + " round trips, " + wrong + " mismatches, " + elapsed + "ms");
+      }
+
+      // 12. secondary window create/close/recreate (25 cycles in the stress profile)
+      var wanted = stress ? 25 : 3;
+      var cyc = await invoke("smoke.windowCycles", { cycles: wanted },
+                             { timeoutMs: stress ? 175000 : 25000 });
+      record("window-cycles", cyc.completed === wanted,
+             cyc.completed + "/" + wanted + " cycles");
 
       // 13. shutdown readiness is asserted Java-side after the report.
     } catch (e) {

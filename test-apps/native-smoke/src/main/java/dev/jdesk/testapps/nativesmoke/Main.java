@@ -43,8 +43,10 @@ public final class Main {
     private Main() {
     }
 
+    private static final boolean STRESS = Boolean.getBoolean("jdesk.smoke.stress");
+
     // ---- DTOs (public for JSON binding) ----
-    public record RunInfo(String runId) {
+    public record RunInfo(String runId, boolean stress) {
     }
 
     public record EchoRequest(String text, int number) {
@@ -137,6 +139,10 @@ public final class Main {
                 EventOverflowPolicy.REJECT,
                 Duration.ofMillis(100));
 
+        evidence.putEnvironment("rss.startupBytes",
+                Long.toString(dev.jdesk.testkit.evidence.RssSampler.currentRssBytes()));
+        evidence.putEnvironment("stressMode", Boolean.toString(STRESS));
+
         AtomicBoolean verdict = new AtomicBoolean(false);
         try (JDeskRuntime runtime = new JDeskRuntime(spec, provider, options)) {
             runtimeRef.set(runtime);
@@ -199,8 +205,13 @@ public final class Main {
                     png.detail() + " " + png.width() + "x" + png.height()
                             + " colors=" + png.distinctColors());
 
-            // Quiescence: pending invocations and secondary windows must be zero.
-            Thread.sleep(500);
+            // Stabilization interval, then RSS baseline (spec 17.5: record, no threshold yet).
+            Thread.sleep(STRESS ? 3000 : 500);
+            long rssAfter = dev.jdesk.testkit.evidence.RssSampler.currentRssBytes();
+            evidence.putEnvironment("rss.afterProbesBytes", Long.toString(rssAfter));
+            evidence.addCase("java:rss-baseline-recorded", true,
+                    "rssAfterProbes=" + rssAfter + " bytes (baseline only, no threshold)");
+
             int pending = runtime.pendingInvocations();
             evidence.addCase("java:zero-pending-invocations", pending == 0,
                     "pending=" + pending);
@@ -228,7 +239,7 @@ public final class Main {
         return CommandRegistry.of(
                 new CommandDefinition("smoke.runInfo", Optional.of("smoke:use"), Void.class,
                         Optional.empty(), (request, context) ->
-                        CompletableFuture.completedFuture(new RunInfo(evidence.runId()))),
+                        CompletableFuture.completedFuture(new RunInfo(evidence.runId(), STRESS))),
 
                 new CommandDefinition("smoke.echo", Optional.of("smoke:use"), EchoRequest.class,
                         Optional.empty(), (request, context) -> {
@@ -271,7 +282,7 @@ public final class Main {
                         CompletableFuture.completedFuture(new DeniedRan(deniedRan.get()))),
 
                 new CommandDefinition("smoke.windowCycles", Optional.of("smoke:use"),
-                        CyclesRequest.class, Optional.of(Duration.ofSeconds(25)),
+                        CyclesRequest.class, Optional.of(Duration.ofSeconds(170)),
                         (request, context) -> {
                     int cycles = Math.min(((CyclesRequest) request).cycles(), 30);
                     JDeskRuntime runtime = runtimeRef.get();

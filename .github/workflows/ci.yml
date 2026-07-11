@@ -91,7 +91,7 @@ jobs:
             Start-Process -FilePath wv2setup.exe -ArgumentList "/silent","/install" -Wait }
       - name: Run native smoke (real WebView2)
         shell: pwsh
-        run: ./gradlew --no-configuration-cache :test-apps:native-smoke:run "-PjdeskPlatform=windows" "-PjdeskWebView2Loader=$env:WEBVIEW2_LOADER" --stacktrace
+        run: ./gradlew --no-configuration-cache :test-apps:native-smoke:run "-PjdeskPlatform=windows" "-PjdeskWebView2Loader=$env:WEBVIEW2_LOADER" "-PjdeskStress=true" --stacktrace
       - name: Verify evidence (anti-fake)
         shell: pwsh
         run: ./gradlew --no-configuration-cache :test-apps:native-smoke:verifyEvidence "-PjdeskPlatform=windows"

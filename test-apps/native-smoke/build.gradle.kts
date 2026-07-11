@@ -37,3 +37,8 @@ tasks.register<JavaExec>("verifyEvidence") {
     mainClass = "dev.jdesk.testkit.evidence.VerifyMain"
     args(layout.buildDirectory.dir("evidence").get().asFile.absolutePath)
 }
+
+tasks.named<JavaExec>("run") {
+    systemProperty("jdesk.smoke.stress",
+        providers.gradleProperty("jdeskStress").getOrElse("false"))
+}
