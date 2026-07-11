@@ -65,7 +65,17 @@ Deferred to native phases (documented, not skipped silently): deadlock regressio
 Extra Phase-2 prep landed early: evidence writer/verifier (section 18) with 12 round-trip tests incl. tamper detection; native-smoke app + probe page (17.3); WebView2 vtable reference generated from SDK 1.0.2903.40.
 
 ### Phase 2 — Windows vertical slice
-Status: NOT STARTED
+Status: IN PROGRESS (adapter implemented; iterating on real windows-latest CI runner)
+
+Implemented (compiles, awaiting real-runner verification — NOT claimed working yet):
+- Win32 FFM layer (user32/kernel32/ole32/shlwapi), documented x64 struct layouts
+- STA UI dispatcher via hidden message-only window; nested pump for async COM
+- COM vtable invocation + Java-implemented COM objects (gated upcalls, tear-off QI)
+- WebView2 environment with `jdesk` custom scheme (secure + authority, public API)
+- Message bridge, navigation policy, ContentLoading->nonce delivery, asset
+  interception (SHCreateMemStream fast path + streaming Java IStream), CapturePreview
+  snapshot, ProcessFailed events, popup denial
+- windows-x64-native CI job with pinned WebView2 SDK 1.0.2903.40 loader + evidence upload
 
 Gates:
 - [ ] Win32 event loop/window via FFM; COM support; WebView2 bridge/scheme/snapshot/navigation/diagnostics
