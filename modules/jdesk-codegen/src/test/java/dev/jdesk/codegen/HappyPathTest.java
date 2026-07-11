@@ -95,11 +95,16 @@ class HappyPathTest {
     }
 
     @Test
-    void aggregatorIsNotGeneratedForSingleService(@TempDir Path dir) throws IOException {
+    void aggregatorIsGeneratedEvenForSingleService(@TempDir Path dir) throws IOException {
+        // Always emitted so a one-service app copied from a multi-service template does
+        // not fail to compile with an unresolved JDeskCommands.
         TestCompiler.Result result = TestCompiler.compile(dir,
                 Map.of(Fixtures.GREETING_SERVICE_NAME, Fixtures.GREETING_SERVICE));
         assertThat(result.success()).as(result.errorText()).isTrue();
-        assertThat(result.generatedSourceExists("com.example.app.JDeskCommands")).isFalse();
+        assertThat(result.generatedSource("com.example.app.JDeskCommands"))
+                .contains("public static dev.jdesk.api.CommandRegistry combine(");
+        TestCompiler.Result compiled = TestCompiler.compileGenerated(dir, result);
+        assertThat(compiled.success()).as(compiled.errorText()).isTrue();
     }
 
     @Test
@@ -194,9 +199,9 @@ class HappyPathTest {
         assertThat(result.success()).as(result.errorText()).isTrue();
         assertThat(result.generatedSourceExists("com.example.app.GreetingServiceCommands")).isTrue();
         assertThat(result.generatedSourceExists("com.example.files.FileServiceCommands")).isTrue();
-        // Different packages: no aggregator anywhere.
-        assertThat(result.generatedSourceExists("com.example.app.JDeskCommands")).isFalse();
-        assertThat(result.generatedSourceExists("com.example.files.JDeskCommands")).isFalse();
+        // Each package gets its own aggregator (always emitted, once per package).
+        assertThat(result.generatedSourceExists("com.example.app.JDeskCommands")).isTrue();
+        assertThat(result.generatedSourceExists("com.example.files.JDeskCommands")).isTrue();
         List<String> files = result.generatedFiles().keySet().stream().toList();
         assertThat(files).contains("jdesk-ts/types.ts", "jdesk-ts/commands.ts");
     }

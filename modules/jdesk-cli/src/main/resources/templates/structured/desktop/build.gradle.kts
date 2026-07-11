@@ -22,19 +22,13 @@ dependencies {
     compileOnly("com.fasterxml.jackson.core:jackson-databind:2.19.0")
 }
 
-val javaLauncher = javaToolchains.launcherFor {
-    languageVersion = JavaLanguageVersion.of(25)
-}
-
 jdesk {
     applicationId.set("@APP_ID@")
     mainModule.set("@APP_ID@.desktop")
     mainClass.set("@PACKAGE@.desktop.Main")
     frontend {
         directory.set(rootProject.layout.projectDirectory.dir("ui"))
-        buildCommand.set(javaLauncher.map {
-            listOf(it.executablePath.asFile.absolutePath, "Build.java")
-        })
+        staticCopy()  // plain HTML/CSS/JS: copy ui/ -> ui/dist, no bundler
         distDirectory.set(rootProject.layout.projectDirectory.dir("ui/dist"))
     }
     development {

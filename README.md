@@ -137,6 +137,17 @@ cd my-app
 ./gradlew dev          # dev loop with frontend hot-reload
 ```
 
+**Debugging the WebView UI.** When the UI gets non-trivial, two launch flags make it
+observable from outside — `./gradlew run` forwards any `-Djdesk.*` flag to the app:
+
+```bash
+./gradlew run -Djdesk.console.forward=true   # page console.* + JS errors -> the app log
+./gradlew run -Djdesk.automation=true        # token-gated HTTP endpoint to drive & snapshot
+```
+
+See [Automate and E2E-test your app](docs/guides/automation-and-e2e.md) and, for a
+game/dashboard, [Build a networked / real-time app](docs/guides/networked-and-realtime-apps.md).
+
 You can also use the bundled Java CLI from a source checkout
 (`jdesk create my-app --template basic --package com.example.myapp --jdesk-source "$JDESK_HOME"`);
 `--jdesk-source` wires the generated project to the local framework as a Gradle composite

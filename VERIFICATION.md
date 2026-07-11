@@ -108,6 +108,21 @@ headless CI). `WindowHandle.print()` is macOS (NSPrintOperation, live) + Linux
 (webkit_print_operation, compile); Windows WebView2 print UI is a documented gap.
 `printFile` is CUPS `lp` on macOS/Linux and ShellExecute print on Windows.
 
+## Feature evidence — 2026-07-12 batch 4 (DX from the Dragon7 friction report)
+
+Runs 1783809395-75b906d28a0f9f3e (46/46) and 1783809410-0e37e6d9c1cedfbe (stress+stream,
+48/48); verifier green; archived under `evidence/`. These address the DX/API findings from
+building a real-time multiplayer game on JDesk.
+
+| Capability | Status (macOS) | Evidence |
+| --- | --- | --- |
+| Per-directive CSP builder (`Csp.defaults().connectSrc(...)`) | PASS | unit `CspTest`; widens one directive without retyping the strict default |
+| Window `position(x, y)` places the native window | PASS | runtime unit `configuredPositionAppliesBoundsAfterShow`; AppKit ground-truth read via System Events showed the window at exactly `170,140` (WKWebView `window.screenX/screenY` is unreliable, so the smoke only asserts the positioned window opens: `java:window-position-opens`) |
+| Codegen always emits `JDeskCommands` (even for one service) | PASS | codegen `HappyPathTest.aggregatorIsGeneratedEvenForSingleService` |
+| `frontend { staticCopy() }` mirrors ui/ → dist (no Build.java) | PASS | plugin functional `staticCopyMirrorsFrontendTreeIntoDist`; scaffolded app served `/src/main.js` + `/src/style.css` live with no bundler |
+| Dev app identity: process name set from applicationId | PASS (code) | `NSProcessInfo setProcessName:` in MacPlatformApplication — menu bar / permission dialogs show the app name instead of "java" on raw-JVM launches |
+| `-Djdesk.*` flags forwarded by `./gradlew run` | PASS | plugin run-task doFirst forwards console.forward/automation to the forked app JVM |
+
 ## Unit / functional gates
 
 | Gate | Status | Evidence |

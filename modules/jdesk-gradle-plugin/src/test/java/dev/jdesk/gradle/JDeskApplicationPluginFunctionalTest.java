@@ -150,6 +150,37 @@ class JDeskApplicationPluginFunctionalTest {
         assertThat(third.task(":jdeskFrontendBuild").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
     }
 
+    // (c1b) staticCopy() mirrors the ui tree into dist with no build command / Build.java
+    @Test
+    void staticCopyMirrorsFrontendTreeIntoDist() throws IOException {
+        Path projectDir = tempDir.resolve("consumer");
+        writeSettings(projectDir);
+        write(projectDir.resolve("ui/index.html"),
+                "<!doctype html><script type=\"module\" src=\"/src/main.js\"></script>\n");
+        write(projectDir.resolve("ui/src/main.js"), "console.log('static');\n");
+        write(projectDir.resolve("ui/node_modules/junk/x.js"), "// should be excluded\n");
+        write(projectDir.resolve("build.gradle"), """
+                plugins { id 'dev.jdesk.application' }
+                dependencies { jdeskCodegen files() }
+                jdesk {
+                    applicationId = 'dev.example.app'
+                    mainClass = 'dev.example.App'
+                    frontend {
+                        directory = layout.projectDirectory.dir('ui')
+                        distDirectory = layout.projectDirectory.dir('ui/dist')
+                        staticCopy()
+                    }
+                }
+                """);
+
+        BuildResult result = runner(projectDir, "jdeskFrontendBuild").build();
+        assertThat(result.task(":jdeskFrontendBuild").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+        // Structure preserved so /src/main.js resolves; node_modules excluded.
+        assertThat(projectDir.resolve("ui/dist/index.html")).exists();
+        assertThat(projectDir.resolve("ui/dist/src/main.js")).exists();
+        assertThat(projectDir.resolve("ui/dist/node_modules")).doesNotExist();
+    }
+
     // (c2) backend-only builds never trigger the frontend build; packaging does
     @Test
     void classesDoesNotTriggerFrontendBuildButJarDoes() throws IOException {

@@ -2,6 +2,7 @@ package dev.jdesk.api;
 
 import java.net.URI;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Immutable configuration for one native window.
@@ -11,6 +12,8 @@ import java.util.Objects;
  * @param startMaximized open maximized (after the remembered bounds, when both are set)
  * @param rememberBounds persist size/position across runs (per application id and
  *        window id, under {@code ~/.jdesk/window-state/}) and restore them on open
+ * @param position initial top-left position; empty lets the OS place/center the window.
+ *        Remembered bounds, when present, take precedence over this.
  */
 public record WindowConfig(
         WindowId id,
@@ -22,12 +25,18 @@ public record WindowConfig(
         int minWidth,
         int minHeight,
         boolean startMaximized,
-        boolean rememberBounds) {
+        boolean rememberBounds,
+        Optional<Position> position) {
+
+    /** Top-left window position in logical screen coordinates. */
+    public record Position(int x, int y) {
+    }
 
     public WindowConfig {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(title, "title");
         Objects.requireNonNull(entry, "entry");
+        Objects.requireNonNull(position, "position");
         if (width < 1 || height < 1 || width > 32767 || height > 32767) {
             throw new JDeskException(ErrorCode.INVALID_REQUEST, "Window size out of range");
         }
@@ -42,7 +51,14 @@ public record WindowConfig(
 
     public WindowConfig(WindowId id, String title, int width, int height,
             boolean resizable, URI entry) {
-        this(id, title, width, height, resizable, entry, 0, 0, false, false);
+        this(id, title, width, height, resizable, entry, 0, 0, false, false, Optional.empty());
+    }
+
+    public WindowConfig(WindowId id, String title, int width, int height,
+            boolean resizable, URI entry, int minWidth, int minHeight,
+            boolean startMaximized, boolean rememberBounds) {
+        this(id, title, width, height, resizable, entry, minWidth, minHeight,
+                startMaximized, rememberBounds, Optional.empty());
     }
 
     public static Builder builder() {
@@ -60,6 +76,7 @@ public record WindowConfig(
         private int minHeight;
         private boolean startMaximized;
         private boolean rememberBounds;
+        private Optional<Position> position = Optional.empty();
 
         private Builder() {
         }
@@ -99,6 +116,16 @@ public record WindowConfig(
         }
 
         /**
+         * Initial top-left position in logical screen coordinates. Useful to place
+         * windows side by side (e.g. two instances for multiplayer testing). Remembered
+         * bounds, when present, win over this.
+         */
+        public Builder position(int x, int y) {
+            this.position = Optional.of(new Position(x, y));
+            return this;
+        }
+
+        /**
          * Persists this window's size/position across runs and restores them on open.
          * State lives under {@code ~/.jdesk/window-state/<applicationId>.properties}.
          */
@@ -120,7 +147,7 @@ public record WindowConfig(
                 throw new JDeskException(ErrorCode.INVALID_REQUEST, "Window entry is required");
             }
             return new WindowConfig(id, title, width, height, resizable, entry,
-                    minWidth, minHeight, startMaximized, rememberBounds);
+                    minWidth, minHeight, startMaximized, rememberBounds, position);
         }
     }
 }

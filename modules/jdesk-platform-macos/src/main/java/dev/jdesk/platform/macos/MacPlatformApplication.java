@@ -72,9 +72,32 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
             throw ObjC.rethrow(t);
         }
         ObjC.sendVoidBool(nsApp, "activateIgnoringOtherApps:", true);
+        applyProcessName(config.applicationId());
         this.dispatcher = new MacUiDispatcher(config.devMode());
         this.blockRegistry = new NativeCallbackRegistry("macos-app-blocks", Arena.ofShared());
         markOpen();
+    }
+
+    /**
+     * Sets the process display name so a non-bundled launch (dev {@code gradlew run})
+     * shows the app name in the menu bar and system permission dialogs instead of "java".
+     * A packaged {@code .app} already carries {@code CFBundleName}, which wins; this only
+     * matters for the raw-JVM dev/run paths. Derives a readable name from the last segment
+     * of the reverse-DNS application id (e.g. {@code dev.example.dragon7} -> "Dragon7").
+     */
+    private void applyProcessName(String applicationId) {
+        String segment = applicationId.substring(applicationId.lastIndexOf('.') + 1);
+        if (segment.isEmpty()) {
+            return;
+        }
+        String name = Character.toUpperCase(segment.charAt(0)) + segment.substring(1);
+        try {
+            MemorySegment processInfo = ObjC.send(ObjC.cls("NSProcessInfo"), "processInfo");
+            ObjC.sendVoid(processInfo, "setProcessName:", ObjC.nsString(name));
+        } catch (RuntimeException e) {
+            // Best-effort cosmetic; never block startup over the display name.
+            LOG.log(System.Logger.Level.DEBUG, "Could not set process name", e);
+        }
     }
 
     @Override

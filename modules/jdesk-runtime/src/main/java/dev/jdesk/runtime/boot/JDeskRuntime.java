@@ -287,17 +287,32 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
                 return lifecycle.closeRequested(launchConfig.id());
             });
             window.onClosed(() -> windowClosed(launchConfig.id()));
+            window.webView().navigate(launchConfig.entry());
+            window.show();
+            // Bounds are applied AFTER show() — on macOS setting the frame before the
+            // window is ordered in does not stick. Precedence: remembered bounds win;
+            // otherwise an explicit configured position places the window; otherwise the
+            // OS centers it.
+            boolean placed = false;
             if (launchConfig.rememberBounds()) {
                 // Clamp restored bounds to the declared minimum: state saved by an
                 // older version (smaller minimum) must not undercut this run's floor.
-                windowStateStore.load(launchConfig.id()).ifPresent(saved ->
-                        window.setBounds(new dev.jdesk.webview.spi.WindowBounds(
-                                saved.x(), saved.y(),
-                                Math.max(saved.width(), launchConfig.minWidth()),
-                                Math.max(saved.height(), launchConfig.minHeight()))));
+                java.util.Optional<dev.jdesk.webview.spi.WindowBounds> restored =
+                        windowStateStore.load(launchConfig.id());
+                if (restored.isPresent()) {
+                    dev.jdesk.webview.spi.WindowBounds saved = restored.get();
+                    window.setBounds(new dev.jdesk.webview.spi.WindowBounds(
+                            saved.x(), saved.y(),
+                            Math.max(saved.width(), launchConfig.minWidth()),
+                            Math.max(saved.height(), launchConfig.minHeight())));
+                    placed = true;
+                }
             }
-            window.webView().navigate(launchConfig.entry());
-            window.show();
+            if (!placed && launchConfig.position().isPresent()) {
+                WindowConfig.Position p = launchConfig.position().get();
+                window.setBounds(new dev.jdesk.webview.spi.WindowBounds(
+                        p.x(), p.y(), launchConfig.width(), launchConfig.height()));
+            }
             if (launchConfig.startMaximized()) {
                 window.setMaximized(true);
             }
@@ -319,7 +334,7 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
         return new WindowConfig(config.id(), config.title(), config.width(), config.height(),
                 config.resizable(), java.net.URI.create(spec.devServerUrl().get()),
                 config.minWidth(), config.minHeight(), config.startMaximized(),
-                config.rememberBounds());
+                config.rememberBounds(), config.position());
     }
 
     /** Best-effort bounds persistence; never lets state I/O affect closing. */

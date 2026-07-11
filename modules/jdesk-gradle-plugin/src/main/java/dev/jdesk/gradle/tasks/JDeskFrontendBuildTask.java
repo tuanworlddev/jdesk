@@ -46,6 +46,11 @@ public abstract class JDeskFrontendBuildTask extends DefaultTask {
     @Optional
     public abstract ListProperty<String> getBuildCommand();
 
+    /** When true, copy the frontend tree into dist instead of running the build command. */
+    @Input
+    @Optional
+    public abstract org.gradle.api.provider.Property<Boolean> getStaticCopy();
+
     @Internal
     public abstract DirectoryProperty getFrontendDirectory();
 
@@ -58,16 +63,21 @@ public abstract class JDeskFrontendBuildTask extends DefaultTask {
 
     @TaskAction
     public void buildFrontend() {
-        List<String> command = getBuildCommand().getOrElse(List.of());
-        if (command.isEmpty()) {
-            throw new GradleException("jdeskFrontendBuild: frontend sources were found"
-                    + " but jdesk.frontend.buildCommand is empty. Set it, e.g."
-                    + " buildCommand.set(listOf(\"npm\", \"run\", \"build\")).");
-        }
         if (!getFrontendDirectory().isPresent()) {
             throw new GradleException("jdeskFrontendBuild: jdesk.frontend.directory is"
                     + " not set. Point it at the frontend project, e.g."
                     + " directory.set(layout.projectDirectory.dir(\"ui\")).");
+        }
+        if (Boolean.TRUE.equals(getStaticCopy().getOrElse(false))) {
+            staticCopy();
+            return;
+        }
+        List<String> command = getBuildCommand().getOrElse(List.of());
+        if (command.isEmpty()) {
+            throw new GradleException("jdeskFrontendBuild: frontend sources were found"
+                    + " but jdesk.frontend.buildCommand is empty. Set it, e.g."
+                    + " buildCommand.set(listOf(\"npm\", \"run\", \"build\")), or enable"
+                    + " frontend { staticCopy() } for a no-bundler app.");
         }
         File workingDir = getFrontendDirectory().get().getAsFile();
         getLogger().lifecycle("jdeskFrontendBuild: {} (in {})", command, workingDir);
@@ -94,6 +104,21 @@ public abstract class JDeskFrontendBuildTask extends DefaultTask {
             throw new GradleException("jdeskFrontendBuild: the build command succeeded"
                     + " but did not create " + dist + ". Align"
                     + " jdesk.frontend.distDirectory with the tool's output directory.");
+        }
+    }
+
+    private void staticCopy() {
+        if (!getDistDirectory().isPresent()) {
+            throw new GradleException("jdeskFrontendBuild: staticCopy needs"
+                    + " jdesk.frontend.distDirectory set (default is directory/dist).");
+        }
+        java.nio.file.Path source = getFrontendDirectory().get().getAsFile().toPath();
+        java.nio.file.Path dist = getDistDirectory().get().getAsFile().toPath();
+        try {
+            dev.jdesk.gradle.internal.StaticCopy.copy(source, dist);
+            getLogger().lifecycle("jdeskFrontendBuild: static copy {} -> {}", source, dist);
+        } catch (java.io.IOException | RuntimeException e) {
+            throw new GradleException("jdeskFrontendBuild: static copy failed", e);
         }
     }
 }

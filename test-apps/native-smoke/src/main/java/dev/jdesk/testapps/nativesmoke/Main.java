@@ -207,12 +207,11 @@ public final class Main {
                 "dev.jdesk.testapps.nativesmoke",
                 registry,
                 capabilities,
-                List.of(WindowConfig.builder()
+                List.of(applyOptionalPosition(WindowConfig.builder()
                         .id(MAIN_WINDOW.value())
                         .title("JDesk native smoke")
                         .size(1000, 700)
-                        .entry("jdesk://app/index.html")
-                        .build()),
+                        .entry("jdesk://app/index.html")).build()),
                 List.of(),
                 Optional.empty(),
                 CommandRegistry.of(new CommandDefinition("smoke.frontendPing",
@@ -254,6 +253,16 @@ public final class Main {
         }
         evidence.finish(verdict.get() ? 0 : 1);
         return verdict.get() ? 0 : 1;
+    }
+
+    /** Manual native check: place the main window at a known position for osascript read. */
+    private static WindowConfig.Builder applyOptionalPosition(WindowConfig.Builder builder) {
+        String pos = System.getProperty("jdesk.smoke.mainPosition");
+        if (pos != null && pos.contains(",")) {
+            String[] xy = pos.split(",");
+            builder.position(Integer.parseInt(xy[0].trim()), Integer.parseInt(xy[1].trim()));
+        }
+        return builder;
     }
 
     private static void orchestrate(
@@ -465,6 +474,24 @@ public final class Main {
                     evidence.addCase("java:early-error-capture", earlyError,
                             "brokenConsole=" + brokenConsole.body());
                     automationPassed = automationPassed && earlyError;
+
+                    // Configured window position opens a window without error. (The
+                    // exact placement is asserted deterministically in the runtime unit
+                    // test JDeskRuntimeTest.configuredPositionAppliesBoundsAfterShow;
+                    // WKWebView's window.screenX/screenY are unreliable for a probe.)
+                    WindowId placed = new WindowId("placed-probe");
+                    runtime.openWindow(WindowConfig.builder().id(placed.value())
+                            .title("placed").size(360, 260).position(170, 140)
+                            .entry("jdesk://app/index-secondary.html").build())
+                            .toCompletableFuture().get(10, TimeUnit.SECONDS);
+                    Thread.sleep(200);
+                    String placedAlive = runtime.evaluate(placed, "'ok'")
+                            .toCompletableFuture().get(5, TimeUnit.SECONDS);
+                    runtime.closeWindow(placed).toCompletableFuture().get(10, TimeUnit.SECONDS);
+                    boolean positioned = placedAlive.contains("ok");
+                    evidence.addCase("java:window-position-opens", positioned,
+                            "positioned window opened and responsive");
+                    automationPassed = automationPassed && positioned;
                 }
             } catch (Exception e) {
                 evidence.addCase("java:automation-endpoint", false, String.valueOf(e));

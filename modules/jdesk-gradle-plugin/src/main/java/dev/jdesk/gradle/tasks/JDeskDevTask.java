@@ -55,6 +55,9 @@ public abstract class JDeskDevTask extends DefaultTask {
     public abstract ListProperty<String> getFrontendBuildCommand();
 
     @Internal
+    public abstract org.gradle.api.provider.Property<Boolean> getFrontendStaticCopy();
+
+    @Internal
     public abstract DirectoryProperty getFrontendDistDirectory();
 
     @Internal
@@ -107,9 +110,10 @@ public abstract class JDeskDevTask extends DefaultTask {
         // No devCommand + a buildCommand = static frontend mode: rebuild the UI on
         // change and let the app's dev-mode asset watcher reload the page. No Node,
         // no dev server.
+        boolean staticCopy = Boolean.TRUE.equals(getFrontendStaticCopy().getOrElse(false));
         boolean staticFrontend = getDevCommand().getOrElse(List.of()).isEmpty()
-                && !getFrontendBuildCommand().getOrElse(List.of()).isEmpty()
-                && getFrontendDirectory().isPresent();
+                && getFrontendDirectory().isPresent()
+                && (staticCopy || !getFrontendBuildCommand().getOrElse(List.of()).isEmpty());
 
         Process frontend = null;
         Process application = null;
@@ -289,6 +293,19 @@ public abstract class JDeskDevTask extends DefaultTask {
     }
 
     private boolean runFrontendBuild() throws InterruptedException {
+        // Static-copy mode has no build command: copy the frontend tree into dist here,
+        // the same way jdeskFrontendBuild does, so the app's asset watcher reloads it.
+        if (Boolean.TRUE.equals(getFrontendStaticCopy().getOrElse(false))) {
+            try {
+                dev.jdesk.gradle.internal.StaticCopy.copy(
+                        getFrontendDirectory().get().getAsFile().toPath(),
+                        getFrontendDistDirectory().get().getAsFile().toPath());
+                return true;
+            } catch (java.io.IOException | RuntimeException e) {
+                getLogger().warn("jdeskDev: static copy failed: {}", e.getMessage());
+                return false;
+            }
+        }
         Process process = startProcess(getFrontendBuildCommand().get(),
                 getFrontendDirectory().get().getAsFile(), "frontend-build");
         return process.waitFor() == 0;

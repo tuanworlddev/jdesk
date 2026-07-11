@@ -178,6 +178,16 @@ response. Keep it as narrow as your app allows — prefer explicit origins
 (`https://cdn.example.com`) over broad schemes (`https:`), and never widen `script-src`
 beyond `'self'` without a strong reason.
 
+To widen **one** directive without retyping (and accidentally weakening) the rest, use the
+per-directive `Csp` builder, which starts from the strict default:
+
+```java
+.contentSecurityPolicy(Csp.defaults()
+    .connectSrc("'self'", "wss://api.example.com")   // e.g. a WebSocket backend
+    .imgSrc("'self'", "data:", "https://cdn.example.com"))
+// object-src 'none', base-uri 'none', script-src 'self' … stay exactly as the default
+```
+
 Safety rails stay on: production launches (anything not started with `-Djdesk.dev=true`)
 screen the override and refuse to start if it contains `'unsafe-inline'`, `'unsafe-eval'`,
 or `'unsafe-hashes'`, unless you explicitly acknowledge the weakening with

@@ -36,6 +36,7 @@ Task-oriented how-tos for when you are building.
 - [Define a command](guides/defining-commands.md)
 - [Emit events to the frontend](guides/emitting-events.md)
 - [Stream binary data to the frontend](guides/streaming-binary-data.md)
+- [Build a networked / real-time app](guides/networked-and-realtime-apps.md)
 - [Store secrets in the OS credential store](guides/storing-secrets.md)
 - [Use native dialogs and printing](guides/dialogs-and-printing.md)
 - [Automate and E2E-test your app](guides/automation-and-e2e.md)

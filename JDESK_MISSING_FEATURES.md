@@ -37,6 +37,16 @@ paths but remain compile-verified only until runs on those operating systems.
 - **Automation `/evaluate` returns parsed JSON** under `result` (object/array/number), not just a string; new **`/input`** endpoint synthesizes DOM click/type/focus/hover/key (documented as DOM-level, not OS-level IME/hover).
 - **Earliest page errors captured**: the console-capture script now installs error listeners in the capture phase at document-start, so a module/parse/resource-load failure that crashes the page before any script runs is recorded in `/console` and the Java log (verified with a deliberately broken module page).
 
+### Batch 4 (2026-07-12, DX from the Dragon7 real-time-game friction report)
+
+- **Per-directive CSP builder** (`Csp.defaults().connectSrc(...).imgSrc(...)`): widen one directive without retyping (and risk weakening) the whole policy. `Builder.contentSecurityPolicy(Csp)` overload; validator unchanged.
+- **`WindowConfig.position(x, y)`**: place windows at an explicit top-left (e.g. two instances side by side for multiplayer testing); applied after show() so the native frame sticks. Verified natively at exactly 170,140 via System Events.
+- **Codegen always emits `JDeskCommands`**: previously only when a package had 2+ services, so a one-service app copied from a multi-service template failed with `cannot find symbol JDeskCommands`. Now emitted once per package with any service.
+- **`frontend { staticCopy() }`**: no-bundler apps drop `Build.java` — the frontend build recursively copies `ui/` → `dist/` (preserving structure so `/src/...` resolves), on both the production build and the dev-loop rebuild. Templates updated.
+- **Dev app identity**: on a raw-JVM launch (`gradlew run`) macOS now shows the app name (from the applicationId) in the menu bar and permission dialogs instead of "java" (`NSProcessInfo setProcessName:`). Packaged `.app` already had `CFBundleName`. **Window icon is still a gap.**
+- **Debug-flag discoverability + forwarding**: `./gradlew run` forwards any `-Djdesk.*` flag to the app, and the README quickstart + template `build.gradle.kts` now surface `-Djdesk.console.forward` and `-Djdesk.automation`. New guide `networked-and-realtime-apps.md` covers CSP `connect-src`, choosing a WS/HTTP lib, when NOT to use IPC, Web Audio, and multi-instance running.
+- **Cross-platform**: the friction report's "only macOS verified" caveat is now partly resolved — the full native-smoke + security + package suite runs on Windows (WebView2) and Linux (WebKitGTK) CI. Real-time specifics (autoplay/secure-context per engine) still merit per-engine attention.
+
 ## P0 — release blockers
 
 1. Named starter templates for Vanilla, React, Vue, and Svelte are absent. The CLI accepts only `basic` and `structured`; Maven is absent.

@@ -26,19 +26,13 @@ dependencies {
     compileOnly("com.fasterxml.jackson.core:jackson-databind:2.19.0")
 }
 
-val javaLauncher = javaToolchains.launcherFor {
-    languageVersion = JavaLanguageVersion.of(25)
-}
-
 jdesk {
     // Classpath (non-modular) app — no module-info.java, less ceremony for small apps.
     applicationId.set("@APP_ID@")
     mainClass.set("@PACKAGE@.Main")
     frontend {
         directory.set(layout.projectDirectory.dir("ui"))
-        buildCommand.set(javaLauncher.map {
-            listOf(it.executablePath.asFile.absolutePath, "Build.java")
-        })
+        staticCopy()  // plain HTML/CSS/JS: copy ui/ -> ui/dist, no bundler
         distDirectory.set(layout.projectDirectory.dir("ui/dist"))
     }
 }
@@ -49,6 +43,12 @@ application {
 
 // `./gradlew run` launches the app on this OS. It builds the frontend first and serves it
 // over jdesk://app/. Classpath apps grant native access to all code (ALL-UNNAMED).
+//
+// Debugging the WebView UI (pass on the command line, forwarded to the app below):
+//   -Djdesk.console.forward=true   forward the page's console.* + JS errors to this log
+//   -Djdesk.automation=true        expose a token-gated HTTP endpoint (/windows /evaluate
+//                                  /snapshot /console) to drive and inspect the app in tests
+// e.g. `./gradlew run -Djdesk.console.forward=true`. See docs/guides/automation-and-e2e.md.
 tasks.named<JavaExec>("run") {
     dependsOn("jdeskFrontendBuild")
     doNotTrackState("launches a desktop application")

@@ -49,9 +49,10 @@ import javax.tools.StandardLocation;
  * Compile-time discovery of {@code @DesktopCommand} methods (ADR-005; spec section 11).
  *
  * <p>For each public top-level service class it generates {@code <Service>Commands} with a
- * static {@code create(Service)} returning a {@link dev.jdesk.api.CommandRegistry}. When a
- * package declares more than one service, a constant {@code JDeskCommands.combine(...)}
- * aggregator is generated in that package. At the end of processing it emits the
+ * static {@code create(Service)} returning a {@link dev.jdesk.api.CommandRegistry}. A
+ * constant {@code JDeskCommands.combine(...)} aggregator is generated once per package
+ * that declares any service (even one), so single-service apps compile the same as
+ * multi-service ones. At the end of processing it emits the
  * TypeScript bindings ({@code types.ts}, {@code commands.ts}) to
  * {@code CLASS_OUTPUT/jdesk-ts/}, or to the directory given by
  * {@code -Ajdesk.ts.outputDir=...}.
@@ -79,8 +80,7 @@ public final class DesktopCommandProcessor extends AbstractProcessor {
     private final Map<String, String> tsNameToQualifiedName = new HashMap<>();
     /** Canonical names of records that already failed validation (avoids duplicate errors). */
     private final Set<String> invalidRecords = new HashSet<>();
-    /** Generated service registry count per package, to trigger the aggregator. */
-    private final Map<String, Integer> servicesPerPackage = new HashMap<>();
+    /** Packages that already have a generated JDeskCommands aggregator (emit once). */
     private final Set<String> aggregatorPackages = new HashSet<>();
     private boolean hadError;
     private boolean tsEmitted;
@@ -565,8 +565,10 @@ public final class DesktopCommandProcessor extends AbstractProcessor {
                 JavaEmitter.serviceRegistry(packageName, generatedSimpleName,
                         service.getQualifiedName().toString(), serviceCommands),
                 service);
-        int count = servicesPerPackage.merge(packageName, 1, Integer::sum);
-        if (count == 2 && aggregatorPackages.add(packageName)) {
+        // Always emit the JDeskCommands aggregator (once per package), even for a single
+        // service: a one-service app copied from a multi-service template would otherwise
+        // fail to compile with an unresolved JDeskCommands. The add() guard emits once.
+        if (aggregatorPackages.add(packageName)) {
             String aggregatorName =
                     packageName.isEmpty() ? "JDeskCommands" : packageName + ".JDeskCommands";
             writeJavaSource(aggregatorName, JavaEmitter.aggregator(packageName), service);

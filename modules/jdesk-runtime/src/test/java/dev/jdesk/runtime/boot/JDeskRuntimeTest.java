@@ -214,6 +214,8 @@ class JDeskRuntimeTest {
         final FakeWebView webView = new FakeWebView();
         volatile boolean shown;
         volatile boolean closed;
+        volatile WindowBounds lastBounds;
+        volatile boolean boundsSetAfterShow;
         volatile java.util.function.BooleanSupplier closeRequestedHandler;
         volatile Runnable closedHandler;
 
@@ -264,6 +266,8 @@ class JDeskRuntimeTest {
 
         @Override
         public void setBounds(WindowBounds bounds) {
+            this.lastBounds = bounds;
+            this.boundsSetAfterShow = shown;
         }
 
         @Override
@@ -464,6 +468,21 @@ class JDeskRuntimeTest {
     }
 
     // ---------------------------------------------------------------- tests
+
+    @Test
+    void configuredPositionAppliesBoundsAfterShow() throws Exception {
+        WindowConfig positioned = WindowConfig.builder().id("main").title("t").entry(ENTRY)
+                .size(360, 260).position(170, 140).build();
+        try (RunningRuntime running = new RunningRuntime(List.of(positioned))) {
+            running.awaitReady();
+            FakeWindow window = running.provider.app.windows.getFirst();
+            // Position placed the window at the requested top-left with the configured size.
+            assertThat(window.lastBounds)
+                    .isEqualTo(new WindowBounds(170, 140, 360, 260));
+            // Applied after show(): on macOS setting the frame before ordering-in is lost.
+            assertThat(window.boundsSetAfterShow).isTrue();
+        }
+    }
 
     @Test
     void runDrivesFullLifecycleAndWiresTheWindow() throws Exception {

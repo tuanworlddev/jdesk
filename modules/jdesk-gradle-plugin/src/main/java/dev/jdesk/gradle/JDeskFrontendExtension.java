@@ -3,6 +3,7 @@ package dev.jdesk.gradle;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
+import org.gradle.api.tasks.Internal;
 
 /**
  * Frontend configuration nested inside the {@code jdesk} extension (spec section 14):
@@ -44,4 +45,19 @@ public interface JDeskFrontendExtension {
      * processor. Default: {@code directory/src/generated}.
      */
     DirectoryProperty getTsOutputDir();
+
+    /**
+     * Static-copy mode: {@code jdeskFrontendBuild} recursively copies {@link #getDirectory()}
+     * into {@link #getDistDirectory()} (excluding {@code node_modules}/{@code .git}/the dist
+     * dir) instead of running {@link #getBuildCommand()}. Preserves the tree, so
+     * {@code /src/main.js}-style paths resolve — a plain HTML/CSS/JS app needs no bundler
+     * and no {@code Build.java}. Enable with {@code frontend { staticCopy() }}.
+     */
+    @Internal
+    Property<Boolean> getStaticCopy();
+
+    /** Enables {@linkplain #getStaticCopy() static-copy mode}. */
+    default void staticCopy() {
+        getStaticCopy().set(true);
+    }
 }

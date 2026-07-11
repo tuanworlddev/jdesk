@@ -110,6 +110,19 @@ public final class JDeskApplication {
         }
 
         /**
+         * Sets the Content-Security-Policy from a per-directive {@link Csp} builder, so a
+         * single directive can be widened without retyping the whole policy:
+         *
+         * <pre>{@code
+         * .contentSecurityPolicy(Csp.defaults().connectSrc("'self'", "ws://127.0.0.1:7777"))
+         * }</pre>
+         */
+        public Builder contentSecurityPolicy(Csp csp) {
+            Objects.requireNonNull(csp, "csp");
+            return contentSecurityPolicy(csp.build());
+        }
+
+        /**
          * Registers a Java-served asset route under {@code jdesk://app/<prefix>/...}.
          * Requests matching the prefix are answered by {@code route} through the
          * streaming asset pipeline (Range/206 included) — the efficient path for binary

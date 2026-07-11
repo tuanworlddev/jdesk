@@ -47,6 +47,17 @@ class WindowConfigTest {
     }
 
     @Test
+    void positionFlowsThroughBuilder() {
+        WindowConfig config = WindowConfig.builder()
+                .id("main").entry("jdesk://app/index.html")
+                .position(120, 80).build();
+        assertThat(config.position()).contains(new WindowConfig.Position(120, 80));
+        // Default is unset (OS places the window).
+        assertThat(WindowConfig.builder().id("m").entry("jdesk://app/i.html").build().position())
+                .isEmpty();
+    }
+
+    @Test
     void minSizeMaximizedAndRememberBoundsFlowThroughBuilder() {
         WindowConfig config = WindowConfig.builder()
                 .id("main")

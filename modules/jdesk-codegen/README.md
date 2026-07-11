@@ -16,10 +16,10 @@ generates, in the same package:
   `CommandDefinition` per command, sorted by wire name. Timeouts are always
   `Optional.empty()` (the runtime default applies; `@DesktopCommand` carries no timeout
   attribute).
-- `JDeskCommands` — generated once per package **only when that package declares more
-  than one service class**. It has
-  `public static CommandRegistry combine(CommandRegistry... registries)` so an app can
-  compose the per-service registries:
+- `JDeskCommands` — generated once per package that declares **any** service (even a
+  single one, so a one-service app copied from a multi-service template still compiles).
+  It has `public static CommandRegistry combine(CommandRegistry... registries)` so an app
+  can compose the per-service registries:
 
   ```java
   CommandRegistry registry = JDeskCommands.combine(

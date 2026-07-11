@@ -36,6 +36,7 @@ obtain a [`Builder`](#jdeskapplicationbuilder) from the static factory.
 | `Builder frontendEvents(CommandRegistry events)` | Event definitions accepted from JavaScript (`frontendEvent` envelopes). Default: empty. |
 | `Builder devServerUrl(String url)` | Development-only exact origin, e.g. `http://127.0.0.1:5173`. |
 | `Builder contentSecurityPolicy(String csp)` | Replaces the default strict CSP on every `jdesk://app/` response (e.g. to allow `media-src https:`). Blank throws `INVALID_REQUEST`. Production launches screen `'unsafe-*'` via `CspValidator` unless `-Djdesk.security.acknowledgeUnsafeCsp=true`. See [Serving assets](../guides/serving-assets.md). |
+| `Builder contentSecurityPolicy(Csp csp)` | As above, from a per-directive [`Csp`](#csp) builder so one directive can be widened without retyping the whole policy. |
 | `Builder assetRoute(String prefix, AssetRoute route)` | Registers a Java-served asset route under `jdesk://app/<prefix>/...` (see [`AssetRoute`](#assetroute)). Prefix must match `[a-z0-9-]` segments; duplicates throw `INVALID_REQUEST`. |
 | `Builder singleInstance(Consumer<List<String>> activationHandler)` | Enforces one running process per application id; later launches deliver their args to the handler. |
 | `ApplicationSpec buildSpec()` | Validates and builds the spec. Throws `INVALID_REQUEST` if `id` is null. |
@@ -159,6 +160,7 @@ persistence).
 | `Builder title(String title)` | Sets the window title. | `""` |
 | `Builder size(int width, int height)` | Sets width and height (pixels). | `800 × 600` |
 | `Builder minSize(int minWidth, int minHeight)` | Minimum content size, enforced for user **and** programmatic resizes (0 = none). | `0 × 0` |
+| `Builder position(int x, int y)` | Initial top-left position (logical coords); useful for placing windows side by side. Remembered bounds win over it. | OS-placed |
 | `Builder resizable(boolean resizable)` | Sets resizability. | `true` |
 | `Builder startMaximized(boolean startMaximized)` | Opens the window maximized. | `false` |
 | `Builder rememberBounds(boolean rememberBounds)` | Persists size/position across runs (per app id and window id, under `~/.jdesk/window-state/`, overridable via `-Djdesk.state.dir=`) and restores them on open. | `false` |
@@ -408,6 +410,20 @@ the frontend. The full enumeration, when each occurs, and which reach the fronte
 the [error codes reference](error-codes.md).
 
 ## Assets
+
+### `Csp`
+
+`dev.jdesk.api.Csp` — per-directive Content-Security-Policy builder for
+[`Builder.contentSecurityPolicy(Csp)`](#jdeskapplicationbuilder). Start from
+{@code Csp.defaults()} (the strict default) and override individual directives.
+
+| Member | Meaning |
+| --- | --- |
+| `static Csp defaults()` | The framework's strict default policy as a mutable builder. |
+| `static Csp empty()` | An empty policy to build from scratch. |
+| `Csp directive(String name, String... sources)` | Sets a directive by name (empty sources removes it). |
+| `Csp connectSrc/imgSrc/mediaSrc/scriptSrc/styleSrc/fontSrc/frameSrc/defaultSrc(String...)` | Convenience setters for common directives. |
+| `String build()` | Serializes to the header value (throws `INVALID_REQUEST` if empty). |
 
 ### `AssetRoute`
 
