@@ -30,17 +30,19 @@ Machine-generated evidence rules (Section 18) apply to every `VERIFIED-*` claim.
 ## Phase status
 
 ### Phase 0 — Repository and research lock
-Status: IN PROGRESS
+Status: DONE (2026-07-11, commit 20bc3bd)
 
 Gates:
-- [ ] Repository structure per Section 4
-- [ ] Gradle wrapper + Java 25 toolchain checked in
-- [ ] Module boundaries declared (all modules compile, `module-info.java` everywhere)
-- [ ] ADR-001..ADR-007 written under `docs/architecture/`
-- [ ] Dependency verification + version locks enabled
-- [ ] CI skeleton in `.github/workflows/`
-- [ ] `VERIFICATION.md` initialized to NOT STARTED
-- [ ] Clean build from fresh checkout (evidence: command + exit code)
+- [x] Repository structure per Section 4
+- [x] Gradle wrapper 9.6.1 + Java 25 toolchain checked in
+- [x] Module boundaries declared (all modules compile, `module-info.java` everywhere; `jdesk-gradle-plugin` non-JPMS per ADR-002; FFM package is `dev.jdesk.ffm` per ADR-001 because `native` is a Java keyword)
+- [x] ADR-001..ADR-007 written under `docs/architecture/`
+- [x] Dependency locking (per-project `gradle.lockfile`) + `gradle/verification-metadata.xml` (sha256, 65 components)
+- [x] CI skeleton in `.github/workflows/ci.yml` (real jobs only; native jobs intentionally absent until their phases — never fake-green)
+- [x] `VERIFICATION.md` initialized to NOT STARTED
+- [x] Clean build from fresh checkout: `git clone <repo> && ./gradlew build --no-build-cache` → BUILD SUCCESSFUL, 70 tasks executed, exit 0 (run 2026-07-11 on macOS arm64)
+
+No native functionality is claimed. Test-app mains exit 64 on purpose so a scaffold can never fake a pass.
 
 ### Phase 1 — Pure Java core
 Status: NOT STARTED
