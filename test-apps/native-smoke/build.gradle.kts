@@ -28,6 +28,10 @@ tasks.named<JavaExec>("run") {
     }
     // The Win32/AppKit UI thread must be the process main thread where required.
     // Gradle's JavaExec forks a fresh JVM whose main thread runs the app: OK.
+    // AppKit additionally requires main() to run on the process's first thread.
+    if (providers.gradleProperty("jdeskPlatform").orNull == "macos") {
+        jvmArgs("-XstartOnFirstThread")
+    }
 }
 
 tasks.register<JavaExec>("verifyEvidence") {

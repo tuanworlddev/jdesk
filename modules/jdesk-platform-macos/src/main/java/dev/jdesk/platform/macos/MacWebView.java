@@ -1,0 +1,730 @@
+package dev.jdesk.platform.macos;
+
+import dev.jdesk.api.Subscription;
+import dev.jdesk.ffm.NativeCallbackRegistry;
+import dev.jdesk.webview.spi.AssetRequest;
+import dev.jdesk.webview.spi.AssetResponse;
+import dev.jdesk.webview.spi.NativeWindowConfig;
+import dev.jdesk.webview.spi.NavigationDecision;
+import dev.jdesk.webview.spi.NavigationListener;
+import dev.jdesk.webview.spi.NavigationRequest;
+import dev.jdesk.webview.spi.PlatformWebView;
+import dev.jdesk.webview.spi.WebViewDiagnostics;
+import dev.jdesk.webview.spi.WebViewProcessFailure;
+import dev.jdesk.webview.spi.WebViewSnapshot;
+import java.io.IOException;
+import java.io.InputStream;
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
+import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.MemorySegment;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.net.URI;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
+
+import static java.lang.foreign.ValueLayout.ADDRESS;
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
+import static java.lang.foreign.ValueLayout.JAVA_DOUBLE;
+import static java.lang.foreign.ValueLayout.JAVA_LONG;
+
+/**
+ * One WKWebView for one window. All calls are main-thread only; the runtime marshals
+ * through {@link dev.jdesk.api.UiDispatcher}. {@code jdesk://app} requests are served
+ * through a {@code WKURLSchemeHandler} backed by the runtime
+ * {@link dev.jdesk.webview.spi.AssetHandler} — no sockets anywhere. Only public,
+ * documented WebKit/AppKit APIs are used.
+ */
+final class MacWebView implements PlatformWebView {
+    private static final Logger LOG = System.getLogger(MacWebView.class.getName());
+
+    /**
+     * Uniform bridge contract shared by all adapters: window.__jdesk.post(string) sends;
+     * incoming strings arrive as 'jdesk-message' CustomEvents on document. Envelopes
+     * posted by the host before this document-start script ran (a commit-time race) are
+     * parked in window.__jdeskPending by {@link #postJson} and drained here.
+     */
+    static final String INIT_SCRIPT = """
+            (function () {
+              if (window.__jdesk) return;
+              window.__jdesk = {
+                nonce: null,
+                post: function (s) { window.webkit.messageHandlers.jdesk.postMessage(String(s)); },
+                _deliver: function (data) {
+                  // The nonce control envelope can arrive before page scripts attach
+                  // their listeners; capture it here so it is never lost.
+                  try {
+                    var m = JSON.parse(data);
+                    if (m && m.kind === 'nonce' && typeof m.nonce === 'string') {
+                      window.__jdesk.nonce = m.nonce;
+                    }
+                  } catch (err) { }
+                  document.dispatchEvent(new CustomEvent('jdesk-message', { detail: data }));
+                }
+              };
+              var pending = window.__jdeskPending;
+              delete window.__jdeskPending;
+              if (pending && pending.length) {
+                for (var i = 0; i < pending.length; i++) {
+                  try { window.__jdesk._deliver(pending[i]); } catch (err) { }
+                }
+              }
+            })();
+            """;
+
+    private static final long WK_USER_SCRIPT_AT_DOCUMENT_START = 0; // WKUserScript.h
+    private static final long WK_NAVIGATION_POLICY_CANCEL = 0;      // WKNavigationDelegate.h
+    private static final long WK_NAVIGATION_POLICY_ALLOW = 1;
+    private static final long NS_BITMAP_FILE_TYPE_PNG = 4;          // NSBitmapImageRep.h
+    private static final int CHUNK_SIZE = 64 * 1024;
+
+    // - initWithFrame:configuration:
+    private static final FunctionDescriptor INIT_WEBVIEW_DESC = FunctionDescriptor.of(ADDRESS,
+            ADDRESS, ADDRESS, ObjC.NSRECT, ADDRESS);
+    // - initWithSource:injectionTime:forMainFrameOnly:
+    private static final FunctionDescriptor INIT_USER_SCRIPT_DESC = FunctionDescriptor.of(ADDRESS,
+            ADDRESS, ADDRESS, ADDRESS, JAVA_LONG, JAVA_BYTE);
+    // - initWithURL:statusCode:HTTPVersion:headerFields:
+    private static final FunctionDescriptor INIT_HTTP_RESPONSE_DESC = FunctionDescriptor.of(
+            ADDRESS, ADDRESS, ADDRESS, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS);
+    // + errorWithDomain:code:userInfo:
+    private static final FunctionDescriptor ERROR_WITH_DOMAIN_DESC = FunctionDescriptor.of(
+            ADDRESS, ADDRESS, ADDRESS, ADDRESS, JAVA_LONG, ADDRESS);
+    // + dataWithBytes:length:
+    private static final FunctionDescriptor DATA_WITH_BYTES_DESC = FunctionDescriptor.of(
+            ADDRESS, ADDRESS, ADDRESS, ADDRESS, JAVA_LONG);
+    // + dictionaryWithCapacity:
+    private static final FunctionDescriptor DICT_WITH_CAPACITY_DESC = FunctionDescriptor.of(
+            ADDRESS, ADDRESS, ADDRESS, JAVA_LONG);
+    // - CGImageForProposedRect:context:hints:
+    private static final FunctionDescriptor CGIMAGE_DESC = FunctionDescriptor.of(
+            ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS);
+    // - representationUsingType:properties:
+    private static final FunctionDescriptor REPRESENTATION_DESC = FunctionDescriptor.of(
+            ADDRESS, ADDRESS, ADDRESS, JAVA_LONG, ADDRESS);
+
+    /** Delegate/handler instance address -> web view peer. */
+    private static final Map<Long, MacWebView> PEERS = new ConcurrentHashMap<>();
+    private static final Object CLASS_LOCK = new Object();
+    private static MemorySegment scriptMessageHandlerClass;
+    private static MemorySegment schemeHandlerClass;
+    private static MemorySegment navigationDelegateClass;
+
+    private final MacPlatformApplication app;
+    private final MacWindow window;
+    private final NativeCallbackRegistry registry;
+    private final MemorySegment webView;               // owned (+1 from alloc)
+    private final MemorySegment userContentController; // retained (+1); shared with the live view
+    private final MemorySegment scriptMessageHandler;  // owned (+1); also retained by the controller
+    private final MemorySegment schemeHandler;         // owned (+1); also retained by the configuration
+    private final MemorySegment navigationDelegate;    // owned (+1); navigationDelegate is weak
+    private final List<Consumer<String>> messageListeners = new CopyOnWriteArrayList<>();
+    private final List<NavigationListener> navigationListeners = new CopyOnWriteArrayList<>();
+    private final List<Consumer<URI>> committedListeners = new CopyOnWriteArrayList<>();
+    private final List<Consumer<WebViewProcessFailure>> failureListeners =
+            new CopyOnWriteArrayList<>();
+    private volatile boolean closed;
+
+    MacWebView(MacPlatformApplication app, MacWindow window, NativeWindowConfig config) {
+        this.app = app;
+        this.window = window;
+        this.registry = window.callbackRegistry();
+        ensureClasses();
+
+        MemorySegment configuration = ObjC.send(
+                ObjC.send(ObjC.cls("WKWebViewConfiguration"), "alloc"), "init");
+        try {
+            this.userContentController =
+                    ObjC.retain(ObjC.send(configuration, "userContentController"));
+            this.scriptMessageHandler =
+                    newPeerInstance(scriptMessageHandlerClass, "scriptMessageHandler");
+            ObjC.sendVoid(userContentController, "addScriptMessageHandler:name:",
+                    scriptMessageHandler, ObjC.nsString("jdesk"));
+
+            MemorySegment userScript;
+            try {
+                userScript = (MemorySegment) ObjC.msgSend(INIT_USER_SCRIPT_DESC).invokeExact(
+                        ObjC.send(ObjC.cls("WKUserScript"), "alloc"),
+                        ObjC.sel("initWithSource:injectionTime:forMainFrameOnly:"),
+                        ObjC.nsString(INIT_SCRIPT), WK_USER_SCRIPT_AT_DOCUMENT_START, (byte) 1);
+            } catch (Throwable t) {
+                throw ObjC.rethrow(t);
+            }
+            ObjC.sendVoid(userContentController, "addUserScript:", userScript);
+            ObjC.release(userScript);
+
+            this.schemeHandler = newPeerInstance(schemeHandlerClass, "urlSchemeHandler");
+            ObjC.sendVoid(configuration, "setURLSchemeHandler:forURLScheme:",
+                    schemeHandler, ObjC.nsString("jdesk"));
+
+            MemorySegment view;
+            try (Arena confined = Arena.ofConfined()) {
+                MemorySegment frame = confined.allocate(ObjC.NSRECT);
+                frame.set(JAVA_DOUBLE, 16, config.width());
+                frame.set(JAVA_DOUBLE, 24, config.height());
+                view = (MemorySegment) ObjC.msgSend(INIT_WEBVIEW_DESC).invokeExact(
+                        ObjC.send(ObjC.cls("WKWebView"), "alloc"),
+                        ObjC.sel("initWithFrame:configuration:"), frame, configuration);
+            } catch (Throwable t) {
+                throw ObjC.rethrow(t);
+            }
+            if (view.equals(MemorySegment.NULL)) {
+                throw new IllegalStateException("WKWebView initialization failed");
+            }
+            this.webView = view;
+        } catch (RuntimeException e) {
+            ObjC.release(configuration);
+            throw e;
+        }
+        ObjC.release(configuration); // the view holds its own reference
+
+        this.navigationDelegate = newPeerInstance(navigationDelegateClass, "navigationDelegate");
+        ObjC.sendVoid(webView, "setNavigationDelegate:", navigationDelegate);
+
+        if (config.devToolsEnabled()
+                && ObjC.sendBool(webView, "respondsToSelector:", ObjC.sel("setInspectable:"))) {
+            // Public API since macOS 13.3; enables Safari Web Inspector attachment.
+            ObjC.sendVoidBool(webView, "setInspectable:", true);
+        }
+    }
+
+    private MemorySegment newPeerInstance(MemorySegment cls, String name) {
+        MemorySegment instance = ObjC.send(ObjC.send(cls, "alloc"), "init");
+        if (instance.equals(MemorySegment.NULL)) {
+            throw new IllegalStateException("Failed to instantiate " + name);
+        }
+        PEERS.put(instance.address(), this);
+        registry.register(new NativeCallbackRegistry.Registration(
+                name, this, MethodHandles.constant(Object.class, null), instance, null,
+                () -> PEERS.remove(instance.address())));
+        return instance;
+    }
+
+    private static void ensureClasses() {
+        synchronized (CLASS_LOCK) {
+            if (scriptMessageHandlerClass != null) {
+                return;
+            }
+            FunctionDescriptor v3 = FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS);
+            FunctionDescriptor v4 = FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS, ADDRESS);
+            FunctionDescriptor v5 =
+                    FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS);
+            MethodType mt3 = MethodType.methodType(void.class, MemorySegment.class,
+                    MemorySegment.class, MemorySegment.class);
+            MethodType mt4 = MethodType.methodType(void.class, MemorySegment.class,
+                    MemorySegment.class, MemorySegment.class, MemorySegment.class);
+            MethodType mt5 = MethodType.methodType(void.class, MemorySegment.class,
+                    MemorySegment.class, MemorySegment.class, MemorySegment.class,
+                    MemorySegment.class);
+            try {
+                MethodHandles.Lookup lookup = MethodHandles.lookup();
+                scriptMessageHandlerClass = new ObjCClassBuilder("JDeskScriptMessageHandler")
+                        .protocol("WKScriptMessageHandler")
+                        .method("userContentController:didReceiveScriptMessage:", "v@:@@", v4,
+                                lookup.findStatic(MacWebView.class,
+                                        "impDidReceiveScriptMessage", mt4))
+                        .register();
+                schemeHandlerClass = new ObjCClassBuilder("JDeskURLSchemeHandler")
+                        .protocol("WKURLSchemeHandler")
+                        .method("webView:startURLSchemeTask:", "v@:@@", v4,
+                                lookup.findStatic(MacWebView.class, "impStartUrlSchemeTask", mt4))
+                        .method("webView:stopURLSchemeTask:", "v@:@@", v4,
+                                lookup.findStatic(MacWebView.class, "impStopUrlSchemeTask", mt4))
+                        .register();
+                navigationDelegateClass = new ObjCClassBuilder("JDeskNavigationDelegate")
+                        .protocol("WKNavigationDelegate")
+                        .method("webView:decidePolicyForNavigationAction:decisionHandler:",
+                                "v@:@@@?", v5,
+                                lookup.findStatic(MacWebView.class, "impDecidePolicy", mt5))
+                        .method("webView:didCommitNavigation:", "v@:@@", v4,
+                                lookup.findStatic(MacWebView.class, "impDidCommitNavigation", mt4))
+                        .method("webViewWebContentProcessDidTerminate:", "v@:@", v3,
+                                lookup.findStatic(MacWebView.class,
+                                        "impContentProcessDidTerminate", mt3))
+                        .register();
+            } catch (NoSuchMethodException | IllegalAccessException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+    }
+
+    MemorySegment nsView() {
+        return webView;
+    }
+
+    // ---- IMP bodies (main thread; copy data, never block, never throw across FFM) ----
+
+    @SuppressWarnings("unused") // IMP upcall
+    static void impDidReceiveScriptMessage(MemorySegment self, MemorySegment cmd,
+            MemorySegment controller, MemorySegment message) {
+        MacWebView peer = PEERS.get(self.address());
+        if (peer == null || !peer.registry.gate().enter()) {
+            return;
+        }
+        try {
+            MemorySegment body = ObjC.send(message, "body");
+            if (body.equals(MemorySegment.NULL)) {
+                return;
+            }
+            String text = ObjC.sendBool(body, "isKindOfClass:", ObjC.cls("NSString"))
+                    ? ObjC.javaString(body)
+                    : ObjC.javaString(ObjC.send(body, "description"));
+            if (text == null) {
+                return;
+            }
+            LOG.log(Level.INFO, "bridge<- {0} chars", text.length());
+            for (Consumer<String> listener : peer.messageListeners) {
+                listener.accept(text);
+            }
+        } catch (Throwable t) {
+            LOG.log(Level.ERROR, "Script message handling failed", t);
+        } finally {
+            peer.registry.gate().exit();
+        }
+    }
+
+    @SuppressWarnings("unused") // IMP upcall
+    static void impStartUrlSchemeTask(MemorySegment self, MemorySegment cmd,
+            MemorySegment webView, MemorySegment task) {
+        MacWebView peer = PEERS.get(self.address());
+        if (peer == null || !peer.registry.gate().enter()) {
+            failTaskQuietly(task, "web view closed");
+            return;
+        }
+        try {
+            peer.serveTask(task);
+        } catch (Throwable t) {
+            LOG.log(Level.ERROR, "Asset interception failed", t);
+            failTaskQuietly(task, "asset interception failed");
+        } finally {
+            peer.registry.gate().exit();
+        }
+    }
+
+    @SuppressWarnings("unused") // IMP upcall
+    static void impStopUrlSchemeTask(MemorySegment self, MemorySegment cmd,
+            MemorySegment webView, MemorySegment task) {
+        // Tasks are served synchronously on the main thread inside start, so a stop can
+        // never interleave with an in-flight body stream; nothing to cancel here.
+        LOG.log(Level.DEBUG, "stopURLSchemeTask (already completed synchronously)");
+    }
+
+    @SuppressWarnings("unused") // IMP upcall
+    static void impDecidePolicy(MemorySegment self, MemorySegment cmd, MemorySegment webView,
+            MemorySegment action, MemorySegment decisionHandler) {
+        long policy = WK_NAVIGATION_POLICY_ALLOW;
+        MacWebView peer = PEERS.get(self.address());
+        if (peer != null && peer.registry.gate().enter()) {
+            try {
+                policy = peer.decidePolicy(action);
+            } catch (Throwable t) {
+                LOG.log(Level.ERROR, "Navigation policy decision failed; blocking", t);
+                policy = WK_NAVIGATION_POLICY_CANCEL;
+            } finally {
+                peer.registry.gate().exit();
+            }
+        }
+        try {
+            // The decision handler must be called exactly once on every path.
+            ObjCBlock.invokeWithLong(decisionHandler, policy);
+        } catch (Throwable t) {
+            LOG.log(Level.ERROR, "decisionHandler invocation failed", t);
+        }
+    }
+
+    @SuppressWarnings("unused") // IMP upcall
+    static void impDidCommitNavigation(MemorySegment self, MemorySegment cmd,
+            MemorySegment webView, MemorySegment navigation) {
+        MacWebView peer = PEERS.get(self.address());
+        if (peer == null || !peer.registry.gate().enter()) {
+            return;
+        }
+        try {
+            URI uri = peer.currentUrl();
+            LOG.log(Level.INFO, "didCommitNavigation url={0}", uri);
+            for (Consumer<URI> listener : peer.committedListeners) {
+                listener.accept(uri);
+            }
+        } catch (Throwable t) {
+            LOG.log(Level.ERROR, "didCommitNavigation handling failed", t);
+        } finally {
+            peer.registry.gate().exit();
+        }
+    }
+
+    @SuppressWarnings("unused") // IMP upcall
+    static void impContentProcessDidTerminate(MemorySegment self, MemorySegment cmd,
+            MemorySegment webView) {
+        MacWebView peer = PEERS.get(self.address());
+        if (peer == null || !peer.registry.gate().enter()) {
+            return;
+        }
+        try {
+            WebViewProcessFailure failure = new WebViewProcessFailure(
+                    WebViewProcessFailure.Kind.RENDER_PROCESS_EXITED,
+                    "webViewWebContentProcessDidTerminate");
+            LOG.log(Level.ERROR, "WKWebView process failure: {0}", failure);
+            for (Consumer<WebViewProcessFailure> listener : peer.failureListeners) {
+                listener.accept(failure);
+            }
+        } catch (Throwable t) {
+            LOG.log(Level.ERROR, "Process-failure handling failed", t);
+        } finally {
+            peer.registry.gate().exit();
+        }
+    }
+
+    private long decidePolicy(MemorySegment action) {
+        MemorySegment targetFrame = ObjC.send(action, "targetFrame");
+        if (targetFrame.equals(MemorySegment.NULL)) {
+            // New-window/popup target: denied by default (spec 12.2).
+            LOG.log(Level.WARNING, "Blocked popup/new-window navigation request");
+            return WK_NAVIGATION_POLICY_CANCEL;
+        }
+        boolean mainFrame = ObjC.sendBool(targetFrame, "isMainFrame");
+        String url = ObjC.javaString(
+                ObjC.send(ObjC.send(ObjC.send(action, "request"), "URL"), "absoluteString"));
+        // Best-effort flag (not a security boundary): link activation or form submission.
+        long navigationType = ObjC.sendLong(action, "navigationType");
+        boolean userInitiated = navigationType == 0 || navigationType == 1;
+        NavigationRequest request;
+        try {
+            request = new NavigationRequest(URI.create(url), mainFrame, userInitiated);
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "Blocked navigation to unparseable target");
+            return WK_NAVIGATION_POLICY_CANCEL;
+        }
+        for (NavigationListener listener : navigationListeners) {
+            if (listener.onNavigate(request) == NavigationDecision.BLOCK) {
+                LOG.log(Level.INFO, "decidePolicy BLOCK main={0} uri={1}", mainFrame, url);
+                return WK_NAVIGATION_POLICY_CANCEL;
+            }
+        }
+        LOG.log(Level.INFO, "decidePolicy ALLOW main={0} uri={1}", mainFrame, url);
+        return WK_NAVIGATION_POLICY_ALLOW;
+    }
+
+    private URI currentUrl() {
+        try {
+            String url = ObjC.javaString(
+                    ObjC.send(ObjC.send(webView, "URL"), "absoluteString"));
+            return url == null || url.isEmpty() ? URI.create("about:blank") : URI.create(url);
+        } catch (RuntimeException e) {
+            return URI.create("about:blank");
+        }
+    }
+
+    // ---- asset serving (WKURLSchemeHandler, spec section 9) ----
+
+    private void serveTask(MemorySegment task) {
+        MemorySegment request = ObjC.send(task, "request");
+        MemorySegment nsUrl = ObjC.send(request, "URL");
+        String url = ObjC.javaString(ObjC.send(nsUrl, "absoluteString"));
+        String method = ObjC.javaString(ObjC.send(request, "HTTPMethod"));
+        if (method == null || method.isEmpty()) {
+            method = "GET";
+        }
+
+        AssetResponse asset;
+        try {
+            asset = app.config().assetHandler().handle(new AssetRequest(URI.create(url), method));
+        } catch (RuntimeException e) {
+            LOG.log(Level.ERROR, "Asset handler failed for {0}", url, e);
+            failTaskQuietly(task, "asset resolution failed");
+            return;
+        }
+        LOG.log(Level.INFO, "asset {0} {1} -> {2}", method, url, asset.status());
+
+        Map<String, String> headers = new LinkedHashMap<>(asset.headers());
+        if (asset.contentLength() >= 0) {
+            headers.putIfAbsent("Content-Length", Long.toString(asset.contentLength()));
+        }
+        MemorySegment headerDict;
+        try {
+            headerDict = (MemorySegment) ObjC.msgSend(DICT_WITH_CAPACITY_DESC).invokeExact(
+                    ObjC.cls("NSMutableDictionary"), ObjC.sel("dictionaryWithCapacity:"),
+                    (long) headers.size());
+            for (Map.Entry<String, String> header : headers.entrySet()) {
+                ObjC.sendVoid(headerDict, "setObject:forKey:",
+                        ObjC.nsString(header.getValue()), ObjC.nsString(header.getKey()));
+            }
+        } catch (Throwable t) {
+            throw ObjC.rethrow(t);
+        }
+
+        MemorySegment response;
+        try {
+            response = (MemorySegment) ObjC.msgSend(INIT_HTTP_RESPONSE_DESC).invokeExact(
+                    ObjC.send(ObjC.cls("NSHTTPURLResponse"), "alloc"),
+                    ObjC.sel("initWithURL:statusCode:HTTPVersion:headerFields:"),
+                    nsUrl, (long) asset.status(), ObjC.nsString("HTTP/1.1"), headerDict);
+        } catch (Throwable t) {
+            throw ObjC.rethrow(t);
+        }
+        ObjC.sendVoid(task, "didReceiveResponse:", response);
+        ObjC.release(response);
+
+        // Stream the body in bounded chunks (spec 9.1: never buffer whole assets).
+        try (InputStream body = asset.body().get(); Arena confined = Arena.ofConfined()) {
+            MemorySegment nativeChunk = confined.allocate(CHUNK_SIZE);
+            byte[] chunk = new byte[CHUNK_SIZE];
+            int read;
+            while ((read = body.read(chunk)) > 0) {
+                MemorySegment.copy(MemorySegment.ofArray(chunk), 0, nativeChunk, 0, read);
+                MemorySegment data;
+                try {
+                    data = (MemorySegment) ObjC.msgSend(DATA_WITH_BYTES_DESC).invokeExact(
+                            ObjC.cls("NSData"), ObjC.sel("dataWithBytes:length:"),
+                            nativeChunk, (long) read);
+                } catch (Throwable t) {
+                    throw ObjC.rethrow(t);
+                }
+                ObjC.sendVoid(task, "didReceiveData:", data);
+            }
+            ObjC.sendVoid(task, "didFinish");
+        } catch (IOException e) {
+            LOG.log(Level.ERROR, "Asset body streaming failed for {0}", url, e);
+            failTaskQuietly(task, "asset body streaming failed");
+        }
+    }
+
+    private static void failTaskQuietly(MemorySegment task, String message) {
+        try {
+            MemorySegment error = (MemorySegment) ObjC.msgSend(ERROR_WITH_DOMAIN_DESC).invokeExact(
+                    ObjC.cls("NSError"), ObjC.sel("errorWithDomain:code:userInfo:"),
+                    ObjC.nsString("dev.jdesk"), 1L, MemorySegment.NULL);
+            ObjC.sendVoid(task, "didFailWithError:", error);
+        } catch (Throwable t) {
+            LOG.log(Level.DEBUG, "didFailWithError failed after: {0}", message);
+        }
+    }
+
+    // ---- PlatformWebView ----
+
+    @Override
+    public void navigate(URI uri) {
+        MemorySegment nsUrl = ObjC.send(ObjC.cls("NSURL"), "URLWithString:",
+                ObjC.nsString(uri.toString()));
+        MemorySegment request = ObjC.send(ObjC.cls("NSURLRequest"), "requestWithURL:", nsUrl);
+        MemorySegment unusedNavigation = ObjC.send(webView, "loadRequest:", request);
+    }
+
+    @Override
+    public void postJson(String json) {
+        if (closed) {
+            return;
+        }
+        LOG.log(Level.INFO, "bridge-> {0} chars", json.length());
+        String script = "(function(d){if(window.__jdesk&&window.__jdesk._deliver)"
+                + "{window.__jdesk._deliver(d);}"
+                + "else{(window.__jdeskPending=window.__jdeskPending||[]).push(d);}})("
+                + jsStringLiteral(json) + ");";
+        // Nil completion handler is public API; no per-message upcall stub is created.
+        ObjC.sendVoid(webView, "evaluateJavaScript:completionHandler:",
+                ObjC.nsString(script), MemorySegment.NULL);
+    }
+
+    @Override
+    public CompletionStage<String> evaluate(String script) {
+        CompletableFuture<String> future = new CompletableFuture<>();
+        MemorySegment completion = ObjCBlock.create2(app.blockRegistry(),
+                "evaluateJavaScriptCompletion", (block, result, error) -> {
+                    if (!error.equals(MemorySegment.NULL)) {
+                        future.completeExceptionally(new IllegalStateException(
+                                "evaluateJavaScript failed: " + describeError(error)));
+                        return;
+                    }
+                    future.complete(describeResult(result));
+                });
+        try {
+            ObjC.sendVoid(webView, "evaluateJavaScript:completionHandler:",
+                    ObjC.nsString(script), completion);
+        } catch (RuntimeException e) {
+            future.completeExceptionally(e);
+        }
+        return future;
+    }
+
+    private static String describeResult(MemorySegment result) {
+        if (result.equals(MemorySegment.NULL)) {
+            return "null";
+        }
+        if (ObjC.sendBool(result, "isKindOfClass:", ObjC.cls("NSString"))) {
+            return ObjC.javaString(result);
+        }
+        String description = ObjC.javaString(ObjC.send(result, "description"));
+        return description == null ? "null" : description;
+    }
+
+    private static String describeError(MemorySegment error) {
+        try {
+            String description = ObjC.javaString(ObjC.send(error, "localizedDescription"));
+            return description == null ? "unknown error" : description;
+        } catch (RuntimeException e) {
+            return "unknown error";
+        }
+    }
+
+    @Override
+    public Subscription onMessage(Consumer<String> listener) {
+        messageListeners.add(listener);
+        return () -> messageListeners.remove(listener);
+    }
+
+    @Override
+    public Subscription onNavigation(NavigationListener listener) {
+        navigationListeners.add(listener);
+        return () -> navigationListeners.remove(listener);
+    }
+
+    @Override
+    public Subscription onNavigationCommitted(Consumer<URI> listener) {
+        committedListeners.add(listener);
+        return () -> committedListeners.remove(listener);
+    }
+
+    /** Subscribes to engine process failures (spec section 13). */
+    Subscription onProcessFailure(Consumer<WebViewProcessFailure> listener) {
+        failureListeners.add(listener);
+        return () -> failureListeners.remove(listener);
+    }
+
+    @Override
+    public CompletionStage<WebViewSnapshot> snapshot() {
+        CompletableFuture<WebViewSnapshot> future = new CompletableFuture<>();
+        MemorySegment completion = ObjCBlock.create2(app.blockRegistry(),
+                "takeSnapshotCompletion", (block, image, error) -> {
+                    try {
+                        if (image.equals(MemorySegment.NULL)) {
+                            future.completeExceptionally(new IllegalStateException(
+                                    "takeSnapshot failed: " + describeError(error)));
+                            return;
+                        }
+                        future.complete(encodePng(image));
+                    } catch (Throwable t) {
+                        future.completeExceptionally(
+                                new IllegalStateException("snapshot conversion failed", t));
+                    }
+                });
+        try {
+            // nil configuration captures the visible viewport (documented default).
+            ObjC.sendVoid(webView, "takeSnapshotWithConfiguration:completionHandler:",
+                    MemorySegment.NULL, completion);
+        } catch (RuntimeException e) {
+            future.completeExceptionally(e);
+        }
+        return future;
+    }
+
+    /** NSImage -> CGImage -> NSBitmapImageRep -> PNG NSData -> Java bytes. */
+    private static WebViewSnapshot encodePng(MemorySegment image) {
+        MemorySegment cgImage;
+        try {
+            cgImage = (MemorySegment) ObjC.msgSend(CGIMAGE_DESC).invokeExact(
+                    image, ObjC.sel("CGImageForProposedRect:context:hints:"),
+                    MemorySegment.NULL, MemorySegment.NULL, MemorySegment.NULL);
+        } catch (Throwable t) {
+            throw ObjC.rethrow(t);
+        }
+        if (cgImage.equals(MemorySegment.NULL)) {
+            throw new IllegalStateException("Snapshot NSImage has no CGImage");
+        }
+        MemorySegment rep = ObjC.send(
+                ObjC.send(ObjC.cls("NSBitmapImageRep"), "alloc"), "initWithCGImage:", cgImage);
+        if (rep.equals(MemorySegment.NULL)) {
+            throw new IllegalStateException("NSBitmapImageRep creation failed");
+        }
+        try {
+            long width = ObjC.sendLong(rep, "pixelsWide");
+            long height = ObjC.sendLong(rep, "pixelsHigh");
+            MemorySegment properties = ObjC.send(ObjC.cls("NSDictionary"), "dictionary");
+            MemorySegment data;
+            try {
+                data = (MemorySegment) ObjC.msgSend(REPRESENTATION_DESC).invokeExact(
+                        rep, ObjC.sel("representationUsingType:properties:"),
+                        NS_BITMAP_FILE_TYPE_PNG, properties);
+            } catch (Throwable t) {
+                throw ObjC.rethrow(t);
+            }
+            if (data.equals(MemorySegment.NULL)) {
+                throw new IllegalStateException("PNG encoding failed");
+            }
+            MemorySegment bytes = ObjC.send(data, "bytes");
+            long length = ObjC.sendLong(data, "length");
+            byte[] png = new byte[Math.toIntExact(length)];
+            MemorySegment.copy(bytes.reinterpret(length), 0,
+                    MemorySegment.ofArray(png), 0, length);
+            return new WebViewSnapshot((int) width, (int) height, png);
+        } finally {
+            ObjC.release(rep);
+        }
+    }
+
+    @Override
+    public WebViewDiagnostics diagnostics() {
+        return new WebViewDiagnostics(Optional.empty(), Optional.empty(), Optional.empty());
+    }
+
+    /** Called from the window's willClose path; detaches and releases the pipeline. */
+    void destroyFromWindow() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        try {
+            ObjC.sendVoid(webView, "stopLoading");
+            ObjC.sendVoid(userContentController, "removeScriptMessageHandlerForName:",
+                    ObjC.nsString("jdesk"));
+            ObjC.sendVoid(userContentController, "removeAllUserScripts");
+            ObjC.sendVoid(webView, "setNavigationDelegate:", MemorySegment.NULL);
+            ObjC.release(userContentController);
+            // WebKit may still be delivering to these objects within the current event;
+            // defer the owning releases to the enclosing autorelease pool.
+            ObjC.autorelease(scriptMessageHandler);
+            ObjC.autorelease(schemeHandler);
+            ObjC.autorelease(navigationDelegate);
+            ObjC.autorelease(webView);
+        } catch (RuntimeException e) {
+            LOG.log(Level.ERROR, "WKWebView teardown failed", e);
+        }
+    }
+
+    @Override
+    public void close() {
+        // The window owns the teardown ordering; closing the WebView alone closes it too.
+        destroyFromWindow();
+    }
+
+    /** Escapes a string as a double-quoted JavaScript string literal. */
+    static String jsStringLiteral(String value) {
+        StringBuilder builder = new StringBuilder(value.length() + 16).append('"');
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '\\' -> builder.append("\\\\");
+                case '"' -> builder.append("\\\"");
+                case '\n' -> builder.append("\\n");
+                case '\r' -> builder.append("\\r");
+                case '\u2028' -> builder.append("\\u2028");
+                case '\u2029' -> builder.append("\\u2029");
+                default -> {
+                    if (c < 0x20) {
+                        builder.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        builder.append(c);
+                    }
+                }
+            }
+        }
+        return builder.append('"').toString();
+    }
+}
