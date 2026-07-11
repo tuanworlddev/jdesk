@@ -22,9 +22,9 @@ This file is updated **only from machine-generated reports** (spec sections 18, 
 
 | Platform | Status | Evidence |
 | --- | --- | --- |
-| Windows x64 | NOT STARTED | — |
-| macOS ARM64 | NOT STARTED | — |
-| Linux x64 | NOT STARTED | — |
+| Windows x64 | PASS | CI run 29140030589 job `security-windows-x64`, provider `windows-webview2`, artifact `security-windows-x64-evidence`, verifier green |
+| macOS ARM64 | PASS | Local run 1783744909-9ab8bd400421eeb1, provider `macos-wkwebview`, 22/22, archived |
+| Linux x64 | PASS | CI run 29140030589 job `security-linux-x64`, provider `linux-webkitgtk`, artifact `security-linux-x64-evidence`, verifier green |
 
 ## Stress / leak (section 17.5)
 
@@ -32,6 +32,7 @@ This file is updated **only from machine-generated reports** (spec sections 18, 
 | --- | --- | --- | --- |
 | Windows x64 | PASS (10,000 IPC round trips 0 mismatch in 5152 ms; 25/25 window cycles; pending counters zero) | CI run 29137919391 | 77,111,296 -> 181,665,792 bytes (recorded, no threshold yet) |
 | macOS ARM64 | PASS (10,000 IPC round trips 0 mismatch in 509 ms; 25/25 window cycles; pending counters zero) | Local run 1783741637-3a7dffd9377a2d6b | recorded in evidence environment.json (baseline only) |
+| Linux x64 | PASS (10,000 IPC round trips 0 mismatch in 6208 ms; 25/25 window cycles; pending counters zero) | CI run 29139086672 | 80.9 MB -> 373.6 MB (recorded, no threshold yet) |
 | Linux x64 | NOT STARTED | — | — |
 
 ## Unit / functional gates

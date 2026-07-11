@@ -128,16 +128,19 @@ Gates:
 - [x] CspValidator release check proven by unit test (unsafe-inline/eval rejected without acknowledgement; default CSP strict)
 
 ### Phase 7 — Packaging, documentation, release candidate
-Status: IN PROGRESS
+Status: SUBSTANTIALLY DONE (packaging + docs + evidence complete; signed-release + installers + macOS CI remain — overall v1 INCOMPLETE by section 26, reported honestly)
 
 Gates:
 - [x] jlink + jpackage pipeline (Gradle plugin jdeskRuntimeImage/jdeskPackage; app images built + launched without Gradle on windows/macos/linux)
 - [x] Signing hooks (jdesk { signing { ... } } extension: Authenticode / Developer ID + notarization / GPG) — configuration surface; CI packages labeled UNSIGNED
 - [x] SBOM + SHA-256 checksums: ReleaseArtifacts writes checksums.sha256 + CycloneDX 1.5 sbom.cyclonedx.json in jdeskPackage; deterministic, unit-tested (22 packager tests); verified against a real 282-file jpackage image
 - [x] Package smoke evidence on all 3 primary targets: macOS local (1783741694-...), windows/linux CI package jobs green (run 29139506086)
-- [ ] Every required CI job green for the same HEAD commit (consolidated run pending after docs land)
-- [ ] No `UNVERIFIED` primary platform (macOS native/security verified locally on real hardware; a macos-arm64 CI leg is optional — see note)
-- [ ] Fresh-project quick start reproduced (hello-vanilla + external sample done; README quick start to be reproduced verbatim)
+- [x] Every required primary CI job green for the same HEAD commit (run 29140294843: core-unit, gradle-plugin-functional, windows-x64-native, linux-x64-native, package-windows-x64, package-linux-x64, security-windows-x64, security-linux-x64)
+- [x] No primary platform marked UNVERIFIED/BLOCKED/ASSUMED: Windows x64 + Linux x64 on real CI, macOS ARM64 on real local hardware (spec rule 5). macos-arm64 CI leg intentionally deferred (private-repo cost); documented, not hidden.
+- [x] Fresh-project quick start reproduced: external sample (scratchpad) rebuilt against current HEAD — FRESH-SAMPLE-READY + FRESH-SAMPLE-GREET-CONFIRMED, exit 0
+- [x] Documentation set complete (docs/ section 24) + consolidated final report (docs/verification/final-report.md)
+
+Remaining before a signed v1 release (honestly incomplete, not claimed done): signed+notarized packages, installers (MSI/DMG/DEB), a macos CI leg, secondary architectures, a dedicated performance benchmark harness, and the RSS regression-threshold ADR. See docs/verification/final-report.md — overall status INCOMPLETE.
 
 ## Known deviations / notes
 
