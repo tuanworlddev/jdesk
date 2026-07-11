@@ -124,7 +124,13 @@ public final class JDeskRuntime implements AutoCloseable {
         window.webView().onNavigation(request -> navigationPolicy.decide(request));
         window.webView().onNavigationCommitted(uri -> {
             dispatcher.onNavigationCommitted();
-            windowRuntime.currentOrigin = originOf(uri.toString());
+            try {
+                windowRuntime.currentOrigin = originOf(uri.toString());
+            } catch (RuntimeException e) {
+                // Origin-less documents (about:blank) keep the previous origin; the
+                // capability engine still gates on it, so nothing widens.
+                LOG.log(Level.DEBUG, "No origin for committed navigation: {0}", uri);
+            }
             // The fresh document's init script is installed; hand it its session nonce.
             window.webView().postJson(dispatcher.currentNonceEnvelope());
         });

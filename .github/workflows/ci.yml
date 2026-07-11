@@ -68,7 +68,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-      - name: Fetch WebView2 loader (SDK 1.0.2903.40, license: BSD-style Microsoft.Web.WebView2)
+      - name: "Fetch WebView2 loader (SDK 1.0.2903.40; Microsoft.Web.WebView2 license documented in docs)"
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.2903.40" -OutFile wv2.zip
