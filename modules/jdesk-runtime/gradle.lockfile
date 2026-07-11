@@ -2,9 +2,27 @@
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
 # To regenerate this file, run: ./gradlew :modules:jdesk-runtime:dependencies --write-locks
+com.fasterxml.jackson.core:jackson-annotations:2.19.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.fasterxml.jackson.core:jackson-core:2.19.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.fasterxml.jackson.core:jackson-databind:2.19.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.fasterxml.jackson:jackson-bom:2.19.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.tngtech.archunit:archunit-junit5-api:1.4.1=testCompileClasspath,testRuntimeClasspath
+com.tngtech.archunit:archunit-junit5-engine-api:1.4.1=testRuntimeClasspath
+com.tngtech.archunit:archunit-junit5-engine:1.4.1=testRuntimeClasspath
+com.tngtech.archunit:archunit-junit5:1.4.1=testCompileClasspath,testRuntimeClasspath
+com.tngtech.archunit:archunit:1.4.1=testCompileClasspath,testRuntimeClasspath
 net.bytebuddy:byte-buddy:1.15.11=testCompileClasspath,testRuntimeClasspath
-org.apiguardian:apiguardian-api:1.1.2=testCompileClasspath
+net.jqwik:jqwik-api:1.9.3=testCompileClasspath,testRuntimeClasspath
+net.jqwik:jqwik-engine:1.9.3=testRuntimeClasspath
+net.jqwik:jqwik-time:1.9.3=testCompileClasspath,testRuntimeClasspath
+net.jqwik:jqwik-web:1.9.3=testCompileClasspath,testRuntimeClasspath
+net.jqwik:jqwik:1.9.3=testCompileClasspath,testRuntimeClasspath
+org.apiguardian:apiguardian-api:1.1.2=testCompileClasspath,testRuntimeClasspath
 org.assertj:assertj-core:3.27.3=testCompileClasspath,testRuntimeClasspath
+org.jacoco:org.jacoco.agent:0.8.14=jacocoAgent,jacocoAnt
+org.jacoco:org.jacoco.ant:0.8.14=jacocoAnt
+org.jacoco:org.jacoco.core:0.8.14=jacocoAnt
+org.jacoco:org.jacoco.report:0.8.14=jacocoAnt
 org.junit.jupiter:junit-jupiter-api:5.13.4=testCompileClasspath,testRuntimeClasspath
 org.junit.jupiter:junit-jupiter-engine:5.13.4=testRuntimeClasspath
 org.junit.jupiter:junit-jupiter-params:5.13.4=testCompileClasspath,testRuntimeClasspath
@@ -14,4 +32,8 @@ org.junit.platform:junit-platform-engine:1.13.4=testRuntimeClasspath
 org.junit.platform:junit-platform-launcher:1.13.4=testRuntimeClasspath
 org.junit:junit-bom:5.13.4=testCompileClasspath,testRuntimeClasspath
 org.opentest4j:opentest4j:1.3.0=testCompileClasspath,testRuntimeClasspath
-empty=annotationProcessor,compileClasspath,runtimeClasspath,testAnnotationProcessor
+org.ow2.asm:asm-commons:9.9=jacocoAnt
+org.ow2.asm:asm-tree:9.9=jacocoAnt
+org.ow2.asm:asm:9.9=jacocoAnt
+org.slf4j:slf4j-api:2.0.17=testCompileClasspath,testRuntimeClasspath
+empty=annotationProcessor,testAnnotationProcessor
