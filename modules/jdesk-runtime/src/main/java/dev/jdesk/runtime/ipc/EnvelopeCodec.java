@@ -25,6 +25,9 @@ public final class EnvelopeCodec {
     private static final Set<String> INVOKE_FIELDS = Set.of("v", "kind", "id", "command", "payload", "nonce");
     private static final Set<String> CANCEL_FIELDS = Set.of("v", "kind", "id", "nonce");
     private static final Set<String> EVENT_FIELDS = Set.of("v", "kind", "event", "payload", "nonce");
+    private static final Set<String> CONSOLE_FIELDS = Set.of("v", "kind", "level", "message", "nonce");
+    /** Generous bound for one forwarded console line (the page truncates at 8 KiB). */
+    private static final int MAX_CONSOLE_MESSAGE = 8704;
 
     private final ObjectMapper mapper;
     private final JsonCodec codec;
@@ -101,6 +104,13 @@ public final class EnvelopeCodec {
                         payload==null||payload.isNull()?Optional.empty():Optional.of(payload.toString()),
                         requireString(root,"nonce",128));
             }
+            case "console" -> {
+                rejectUnknownFields(root, CONSOLE_FIELDS);
+                yield new IncomingEnvelope.ConsoleLog(version,
+                        requireString(root, "level", 16),
+                        requireString(root, "message", MAX_CONSOLE_MESSAGE),
+                        requireString(root, "nonce", 128));
+            }
             default -> throw new ProtocolException(ErrorCode.INVALID_REQUEST,
                     "Unknown envelope kind");
         };
@@ -148,6 +158,11 @@ public final class EnvelopeCodec {
     }
 
     public String errorResult(String id, ErrorCode code, String publicMessage) {
+        return errorResult(id, code, publicMessage, null);
+    }
+
+    /** @param details optional public-safe structured data, serialized into {@code error.data} */
+    public String errorResult(String id, ErrorCode code, String publicMessage, Object details) {
         ObjectNode node = mapper.createObjectNode();
         node.put("v", PROTOCOL_VERSION);
         node.put("kind", "result");
@@ -156,6 +171,14 @@ public final class EnvelopeCodec {
         ObjectNode error = node.putObject("error");
         error.put("code", code.name());
         error.put("message", publicMessage);
+        if (details != null) {
+            try {
+                error.putRawValue("data", new RawValue(codec.encode(details)));
+            } catch (RuntimeException e) {
+                // Never let unserializable details break the terminal result.
+                error.remove("data");
+            }
+        }
         return node.toString();
     }
 

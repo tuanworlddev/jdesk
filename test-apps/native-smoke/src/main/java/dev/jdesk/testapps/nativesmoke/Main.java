@@ -102,7 +102,37 @@ public final class Main {
     public record Report(List<ReportCase> cases, boolean allPassed) {
     }
 
+    /** Forwarded page-console lines captured through the JUL bridge (console probe). */
+    private static final List<String> CONSOLE_LINES =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+    /** Strong reference so the configured logger is never GC-reclaimed mid-run. */
+    private static final java.util.logging.Logger PAGE_CONSOLE_JUL =
+            java.util.logging.Logger.getLogger("dev.jdesk.webview.console");
+
     public static void main(String[] args) throws Exception {
+        // Opt into production console forwarding so the console-bridge probe can assert
+        // that page console.error output reaches Java logging.
+        System.setProperty("jdesk.console.forward", "true");
+        // Live-drive the automation endpoint from inside the run (real loopback HTTP).
+        System.setProperty("jdesk.automation", "true");
+        System.setProperty("jdesk.automation.dir",
+                java.nio.file.Files.createTempDirectory("jdesk-smoke-automation").toString());
+        // Window-state persistence probe writes here instead of ~/.jdesk.
+        System.setProperty("jdesk.state.dir",
+                java.nio.file.Files.createTempDirectory("jdesk-smoke-state").toString());
+        PAGE_CONSOLE_JUL.setLevel(java.util.logging.Level.ALL);
+        PAGE_CONSOLE_JUL.addHandler(new java.util.logging.Handler() {
+            @Override public void publish(java.util.logging.LogRecord record) {
+                String message = record.getMessage();
+                if (record.getParameters() != null && message != null && message.contains("{0")) {
+                    message = java.text.MessageFormat.format(message, record.getParameters());
+                }
+                CONSOLE_LINES.add(String.valueOf(message));
+            }
+            @Override public void flush() { }
+            @Override public void close() { }
+        });
+
         Path evidenceBase = Path.of(System.getProperty("jdesk.evidence.dir", "build/evidence"));
         EvidenceRun evidence = EvidenceRun.start(evidenceBase,
                 System.getProperty("jdesk.evidence.category", "native"),
@@ -138,6 +168,27 @@ public final class Main {
         CapabilitySet capabilities = CapabilitySet.of(Set.of(
                 CapabilityGrant.forAllWindows("smoke:use")));
 
+        // App-defined asset route: /proxy/blob is deterministic bytes; /proxy/slow
+        // stalls 400 ms to prove route serving never blocks the main thread.
+        dev.jdesk.api.AssetRoute proxyRoute = request -> {
+            if (request.path().equals("blob")) {
+                return Optional.of(dev.jdesk.api.AssetRoute.Response.of(
+                        "route-payload-0123456789".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        "application/x-jdesk-probe"));
+            }
+            if (request.path().equals("slow")) {
+                try {
+                    Thread.sleep(400);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return Optional.of(dev.jdesk.api.AssetRoute.Response.of(
+                        "slow-done".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        "text/plain"));
+            }
+            return Optional.empty();
+        };
+
         ApplicationSpec spec = new ApplicationSpec(
                 "dev.jdesk.testapps.nativesmoke",
                 registry,
@@ -155,13 +206,20 @@ public final class Main {
                         (request, context) -> {
                             frontendEvent.set(((PingRequest) request).tag());
                             return CompletableFuture.completedFuture(null);
-                        })));
+                        })),
+                false,
+                ignored -> { },
+                Optional.empty(),
+                Map.of("proxy", proxyRoute));
 
+        // Customized CSP (DEFAULT + media-src): the JS probe asserts the custom policy
+        // is emitted on real native scheme responses — the movie-app CDN use case.
         RuntimeOptions options = new RuntimeOptions(
                 false,
                 new ClasspathAssetSource(Main.class.getModule(), "web"),
                 false,
-                Map.of("Content-Security-Policy", CspValidator.DEFAULT_CSP),
+                Map.of("Content-Security-Policy",
+                        CspValidator.DEFAULT_CSP + "; media-src 'self'"),
                 IpcLimits.DEFAULTS,
                 EventOverflowPolicy.REJECT,
                 Duration.ofMillis(100));
@@ -235,6 +293,132 @@ public final class Main {
             evidence.addCase("java:denied-handler-never-ran", !deniedRan.get(),
                     "deniedRan=" + deniedRan.get());
 
+            // Console bridge: the page emitted console.error("SMOKE-CONSOLE-PROBE ...");
+            // it must arrive through the injected capture script -> dispatcher -> logger.
+            boolean consoleSeen = false;
+            for (int i = 0; i < 50 && !consoleSeen; i++) {
+                consoleSeen = CONSOLE_LINES.stream()
+                        .anyMatch(line -> line.contains("SMOKE-CONSOLE-PROBE"));
+                if (!consoleSeen) {
+                    Thread.sleep(100);
+                }
+            }
+            evidence.addCase("java:console-bridge", consoleSeen,
+                    consoleSeen ? "page console.error reached Java logging"
+                            : "marker never arrived; captured=" + CONSOLE_LINES.size());
+
+            // Secret storage: real Keychain round trip (macOS) via the public API.
+            boolean secretsPassed = false;
+            try {
+                dev.jdesk.api.SecretStore secrets = runtime.secrets();
+                String key = "smoke-probe-" + evidence.runId();
+                secrets.put(key, "wb-api-key-줄기-🔐");
+                boolean roundTrip = secrets.get(key)
+                        .map("wb-api-key-줄기-🔐"::equals).orElse(false);
+                secrets.put(key, "rotated");
+                boolean updated = secrets.get(key).map("rotated"::equals).orElse(false);
+                secrets.delete(key);
+                boolean gone = secrets.get(key).isEmpty();
+                secretsPassed = roundTrip && updated && gone;
+                evidence.addCase("java:secret-store", secretsPassed,
+                        "roundTrip=" + roundTrip + " updated=" + updated + " deleted=" + gone);
+            } catch (RuntimeException e) {
+                evidence.addCase("java:secret-store", false, String.valueOf(e));
+            }
+
+            // Automation endpoint: real loopback HTTP against the running app.
+            boolean automationPassed = false;
+            try {
+                java.nio.file.Path descriptor = java.nio.file.Path.of(
+                        System.getProperty("jdesk.automation.dir"),
+                        "dev.jdesk.testapps.nativesmoke.json");
+                String json = java.nio.file.Files.readString(descriptor);
+                int port = Integer.parseInt(json.replaceAll(".*\"port\":(\\d+).*", "$1"));
+                String token = json.replaceAll(".*\"token\":\"([0-9a-f]+)\".*", "$1");
+                try (java.net.http.HttpClient http = java.net.http.HttpClient.newHttpClient()) {
+                    var windowsResponse = http.send(java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create("http://127.0.0.1:" + port + "/windows"))
+                            .header("Authorization", "Bearer " + token).GET().build(),
+                            java.net.http.HttpResponse.BodyHandlers.ofString());
+                    var unauthorized = http.send(java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create("http://127.0.0.1:" + port + "/windows"))
+                            .GET().build(),
+                            java.net.http.HttpResponse.BodyHandlers.ofString());
+                    var snapshotResponse = http.send(java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create(
+                                    "http://127.0.0.1:" + port + "/snapshot?window=main"))
+                            .header("Authorization", "Bearer " + token).GET().build(),
+                            java.net.http.HttpResponse.BodyHandlers.ofByteArray());
+                    byte[] png = snapshotResponse.body();
+                    boolean pngMagic = png.length > 8 && (png[0] & 0xFF) == 0x89
+                            && png[1] == 'P' && png[2] == 'N' && png[3] == 'G';
+                    var consoleResponse = http.send(java.net.http.HttpRequest.newBuilder()
+                            .uri(java.net.URI.create(
+                                    "http://127.0.0.1:" + port + "/console?window=main"))
+                            .header("Authorization", "Bearer " + token).GET().build(),
+                            java.net.http.HttpResponse.BodyHandlers.ofString());
+                    boolean consoleHasMarker =
+                            consoleResponse.body().contains("SMOKE-CONSOLE-PROBE");
+                    automationPassed = windowsResponse.statusCode() == 200
+                                    && windowsResponse.body().contains("main")
+                                    && unauthorized.statusCode() == 401
+                                    && snapshotResponse.statusCode() == 200 && pngMagic
+                                    && consoleResponse.statusCode() == 200 && consoleHasMarker;
+                    evidence.addCase("java:automation-endpoint", automationPassed,
+                            "windows=" + windowsResponse.statusCode()
+                                    + " unauthorized=" + unauthorized.statusCode()
+                                    + " snapshotPng=" + pngMagic + " (" + png.length + " bytes)"
+                                    + " consoleMarker=" + consoleHasMarker);
+                }
+            } catch (Exception e) {
+                evidence.addCase("java:automation-endpoint", false, String.valueOf(e));
+            }
+
+            // Window min-size + remembered bounds through real native windows.
+            boolean windowStatePassed = false;
+            try {
+                WindowId persist = new WindowId("persist-probe");
+                var opened = runtime.openWindow(WindowConfig.builder()
+                        .id(persist.value()).title("persist").size(600, 500)
+                        .minSize(400, 300).rememberBounds(true)
+                        .entry("jdesk://app/index-secondary.html").build())
+                        .toCompletableFuture().get(10, TimeUnit.SECONDS);
+                opened.setBounds(120, 120, 200, 150).toCompletableFuture()
+                        .get(5, TimeUnit.SECONDS);
+                Thread.sleep(300);
+                // Windows setBounds/minSize act on the OUTER frame (title bar +
+                // borders), so allow up to ~48px of frame delta vs. innerWidth there;
+                // macOS/Linux operate on content size and match exactly.
+                int frameTolerance = 48;
+                int clampedWidth = Integer.parseInt(runtime.evaluate(persist,
+                        "String(window.innerWidth)").toCompletableFuture()
+                        .get(5, TimeUnit.SECONDS));
+                boolean minEnforced = clampedWidth >= 400 - frameTolerance;
+                opened.setBounds(130, 130, 555, 444).toCompletableFuture()
+                        .get(5, TimeUnit.SECONDS);
+                Thread.sleep(300);
+                runtime.closeWindow(persist).toCompletableFuture().get(10, TimeUnit.SECONDS);
+                var reopened = runtime.openWindow(WindowConfig.builder()
+                        .id(persist.value()).title("persist").size(600, 500)
+                        .minSize(400, 300).rememberBounds(true)
+                        .entry("jdesk://app/index-secondary.html").build())
+                        .toCompletableFuture().get(10, TimeUnit.SECONDS);
+                Thread.sleep(300);
+                int restoredWidth = Integer.parseInt(runtime.evaluate(persist,
+                        "String(window.innerWidth)").toCompletableFuture()
+                        .get(5, TimeUnit.SECONDS));
+                runtime.closeWindow(persist).toCompletableFuture().get(10, TimeUnit.SECONDS);
+                windowStatePassed = minEnforced
+                        && restoredWidth >= 555 - frameTolerance && restoredWidth <= 555;
+                evidence.addCase("java:window-minsize-remembered-bounds", windowStatePassed,
+                        "clampedWidth=" + clampedWidth + " (min 400)"
+                                + " restoredWidth=" + restoredWidth
+                                + " (saved 555, frame tolerance " + frameTolerance + ")");
+            } catch (Exception e) {
+                evidence.addCase("java:window-minsize-remembered-bounds", false,
+                        String.valueOf(e));
+            }
+
             // Real engine snapshot of the PASS page.
             WebViewSnapshot snapshot = runtime.snapshot(MAIN_WINDOW)
                     .toCompletableFuture().get(30, TimeUnit.SECONDS);
@@ -258,7 +442,9 @@ public final class Main {
             evidence.addCase("java:single-window-open", windowCount == 1,
                     "open=" + windowCount);
 
-            verdict.set(report.allPassed() && !deniedRan.get() && png.valid() && pending == 0);
+            verdict.set(report.allPassed() && !deniedRan.get() && png.valid()
+                    && pending == 0 && consoleSeen && secretsPassed && automationPassed
+                    && windowStatePassed);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             evidence.addCase("orchestrator", false, "interrupted");
@@ -349,6 +535,13 @@ public final class Main {
                         Optional.empty(), (request, context) -> {
                     deniedRan.set(true); // must never happen
                     return CompletableFuture.completedFuture(new Ack(true));
+                }),
+
+                new CommandDefinition("smoke.failData", Optional.of("smoke:use"), Void.class,
+                        Optional.empty(), (request, context) -> {
+                    throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.INVALID_REQUEST,
+                            "upstream rejected",
+                            Map.of("httpStatus", 429, "retryAfterSeconds", 30), null);
                 }),
 
                 new CommandDefinition("smoke.deniedHandlerRan", Optional.of("smoke:use"), Void.class,

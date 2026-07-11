@@ -42,12 +42,16 @@ final class WindowsWindow extends NativeHandle implements PlatformWindow {
     private final WindowsWebView webView;
     private final List<BooleanSupplier> closeRequestedHandlers = new CopyOnWriteArrayList<>();
     private final List<Runnable> closedHandlers = new CopyOnWriteArrayList<>();
+    private final int minWidth;
+    private final int minHeight;
     private boolean destroyed;
 
     WindowsWindow(WindowsPlatformApplication app, NativeWindowConfig config) {
         super("WindowsWindow[" + config.id() + "]");
         this.app = app;
         this.id = config.id();
+        this.minWidth = config.minWidth();
+        this.minHeight = config.minHeight();
         this.registry = new NativeCallbackRegistry("window-" + config.id(), Arena.ofShared());
 
         ensureWindowClass();
@@ -132,6 +136,20 @@ final class WindowsWindow extends NativeHandle implements PlatformWindow {
                         window.webView.resizeToClientArea();
                     }
                     return 0;
+                }
+                case Win32.WM_GETMINMAXINFO -> {
+                    if (window.minWidth > 0 || window.minHeight > 0) {
+                        // MINMAXINFO*: ptMinTrackSize POINT at offset 24 (x=24, y=28).
+                        MemorySegment info = MemorySegment.ofAddress(lParam).reinterpret(40);
+                        if (window.minWidth > 0) {
+                            info.set(JAVA_INT, 24, window.minWidth);
+                        }
+                        if (window.minHeight > 0) {
+                            info.set(JAVA_INT, 28, window.minHeight);
+                        }
+                        return 0;
+                    }
+                    return Win32.defWindowProc(hwnd, msg, wParam, lParam);
                 }
                 case Win32.WM_DESTROY -> {
                     window.onDestroyed();
@@ -220,6 +238,20 @@ final class WindowsWindow extends NativeHandle implements PlatformWindow {
     public void setBounds(WindowBounds bounds) {
         requireOpen();
         Win32.setWindowPos(hwnd, bounds.x(), bounds.y(), bounds.width(), bounds.height(), 0);
+    }
+
+    @Override
+    public WindowBounds getBounds() {
+        requireOpen();
+        try (Arena confined = Arena.ofConfined()) {
+            MemorySegment rect = confined.allocate(Win32.RECT);
+            Win32.getWindowRect(hwnd, rect);
+            int left = rect.get(JAVA_INT, 0);
+            int top = rect.get(JAVA_INT, 4);
+            int right = rect.get(JAVA_INT, 8);
+            int bottom = rect.get(JAVA_INT, 12);
+            return new WindowBounds(left, top, right - left, bottom - top);
+        }
     }
 
     /** WM_DESTROY: notify listeners exactly once, then release the WebView pipeline. */

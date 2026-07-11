@@ -4,6 +4,7 @@ import dev.jdesk.api.ApplicationSpec;
 import dev.jdesk.api.ErrorCode;
 import dev.jdesk.api.JDeskBootstrap;
 import dev.jdesk.api.JDeskException;
+import dev.jdesk.runtime.assets.CspValidator;
 import dev.jdesk.webview.spi.PlatformProvider;
 import dev.jdesk.instance.SingleInstance;
 import dev.jdesk.instance.SingleInstanceException;
@@ -48,9 +49,27 @@ public final class RuntimeBootstrap implements JDeskBootstrap {
         }
         try (SingleInstanceSession session = instanceSession;
              JDeskRuntime runtime = new JDeskRuntime(spec, provider,
-                     RuntimeOptions.fromSystemProperties())) {
+                     optionsFor(spec))) {
             return runtime.run();
         }
+    }
+
+    /**
+     * Builds launch options, applying the application's CSP override when present.
+     * Production launches screen the override through {@link CspValidator} (spec 12.4);
+     * the {@code jdesk.security.acknowledgeUnsafeCsp} system property is the named opt-in.
+     */
+    static RuntimeOptions optionsFor(ApplicationSpec spec) {
+        RuntimeOptions options = RuntimeOptions.fromSystemProperties();
+        if (spec.contentSecurityPolicy().isEmpty()) {
+            return options;
+        }
+        String csp = spec.contentSecurityPolicy().get();
+        if (!options.devMode()) {
+            CspValidator.validateForRelease(csp,
+                    Boolean.getBoolean("jdesk.security.acknowledgeUnsafeCsp"));
+        }
+        return options.withSecurityHeader("Content-Security-Policy", csp);
     }
 
     /** Visible for tests: enforces the exactly-one-provider rule. */

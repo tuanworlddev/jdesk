@@ -65,6 +65,10 @@ final class WindowsPlatformApplication extends NativeHandle implements PlatformA
     @Override public void openExternal(URI uri) {
         requireOpen(); dispatcher.assertUiThread(); Win32.openExternal(uri.toString());
     }
+    @Override public dev.jdesk.api.SecretStore secrets(String applicationId) {
+        // DPAPI calls are thread-safe; no UI-thread assertion by design.
+        return new WindowsSecretStore(applicationId);
+    }
     @Override public String readClipboardText(){requireOpen();dispatcher.assertUiThread();return Win32.readClipboardText();}
     @Override public void writeClipboardText(String text){requireOpen();dispatcher.assertUiThread();Win32.writeClipboardText(text);}
     @Override public MessageDialogResult showMessageDialog(MessageDialog dialog){

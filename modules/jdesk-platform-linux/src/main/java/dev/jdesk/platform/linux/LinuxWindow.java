@@ -89,6 +89,10 @@ final class LinuxWindow extends NativeHandle implements PlatformWindow {
             Gtk.GTK_WINDOW_SET_DEFAULT_SIZE.invokeExact(window,
                     config.width(), config.height());
             Gtk.GTK_WINDOW_SET_RESIZABLE.invokeExact(window, config.resizable() ? 1 : 0);
+            if (config.minWidth() > 0 || config.minHeight() > 0) {
+                Gtk.GTK_WIDGET_SET_SIZE_REQUEST.invokeExact(window,
+                        Math.max(config.minWidth(), -1), Math.max(config.minHeight(), -1));
+            }
         } catch (Throwable t) {
             registry.close();
             throw Gtk.rethrow(t);
@@ -271,6 +275,24 @@ final class LinuxWindow extends NativeHandle implements PlatformWindow {
         try {
             Gtk.GTK_WINDOW_RESIZE.invokeExact(gtkWindow, bounds.width(), bounds.height());
             Gtk.GTK_WINDOW_MOVE.invokeExact(gtkWindow, bounds.x(), bounds.y());
+        } catch (Throwable t) {
+            throw Gtk.rethrow(t);
+        }
+    }
+
+    @Override
+    public WindowBounds getBounds() {
+        requireOpen();
+        try (Arena confined = Arena.ofConfined()) {
+            MemorySegment x = confined.allocate(JAVA_INT);
+            MemorySegment y = confined.allocate(JAVA_INT);
+            MemorySegment width = confined.allocate(JAVA_INT);
+            MemorySegment height = confined.allocate(JAVA_INT);
+            // Under Wayland the position is compositor-controlled and may read 0,0.
+            Gtk.GTK_WINDOW_GET_POSITION.invokeExact(gtkWindow, x, y);
+            Gtk.GTK_WINDOW_GET_SIZE.invokeExact(gtkWindow, width, height);
+            return new WindowBounds(x.get(JAVA_INT, 0), y.get(JAVA_INT, 0),
+                    width.get(JAVA_INT, 0), height.get(JAVA_INT, 0));
         } catch (Throwable t) {
             throw Gtk.rethrow(t);
         }

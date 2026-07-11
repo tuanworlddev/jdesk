@@ -40,6 +40,39 @@ class WindowConfigTest {
         assertThat(config.height()).isEqualTo(600);
         assertThat(config.resizable()).isTrue();
         assertThat(config.title()).isEmpty();
+        assertThat(config.minWidth()).isZero();
+        assertThat(config.minHeight()).isZero();
+        assertThat(config.startMaximized()).isFalse();
+        assertThat(config.rememberBounds()).isFalse();
+    }
+
+    @Test
+    void minSizeMaximizedAndRememberBoundsFlowThroughBuilder() {
+        WindowConfig config = WindowConfig.builder()
+                .id("main")
+                .entry("jdesk://app/index.html")
+                .size(1200, 800)
+                .minSize(600, 400)
+                .startMaximized(true)
+                .rememberBounds(true)
+                .build();
+
+        assertThat(config.minWidth()).isEqualTo(600);
+        assertThat(config.minHeight()).isEqualTo(400);
+        assertThat(config.startMaximized()).isTrue();
+        assertThat(config.rememberBounds()).isTrue();
+    }
+
+    @Test
+    void minSizeLargerThanInitialSizeIsRejected() {
+        WindowConfig.Builder builder = WindowConfig.builder()
+                .id("main")
+                .entry("jdesk://app/index.html")
+                .size(800, 600)
+                .minSize(900, 100);
+        org.assertj.core.api.Assertions.assertThatThrownBy(builder::build)
+                .isInstanceOf(JDeskException.class)
+                .hasMessageContaining("minimum size");
     }
 
     @Test

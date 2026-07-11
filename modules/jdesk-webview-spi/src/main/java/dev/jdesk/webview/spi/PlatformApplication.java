@@ -17,6 +17,18 @@ public interface PlatformApplication extends AutoCloseable {
 
     /** Opens an already policy-validated HTTP(S) URI in the OS default browser. */
     void openExternal(URI uri);
+
+    /**
+     * OS-backed secret storage scoped to {@code applicationId}. Unlike the other
+     * methods, implementations must be callable from any thread (they may block on the
+     * OS credential service). Adapters without a backend keep this default and fail
+     * loudly rather than fall back to plaintext.
+     */
+    default dev.jdesk.api.SecretStore secrets(String applicationId) {
+        throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                "Secret storage is not supported by this platform adapter");
+    }
+
     String readClipboardText();
     void writeClipboardText(String text);
     MessageDialogResult showMessageDialog(MessageDialog dialog);

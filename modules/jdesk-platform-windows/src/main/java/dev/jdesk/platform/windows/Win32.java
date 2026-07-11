@@ -41,6 +41,7 @@ final class Win32 {
     static final int WM_DESTROY = 0x0002;
     static final int WM_SIZE = 0x0005;
     static final int WM_CLOSE = 0x0010;
+    static final int WM_GETMINMAXINFO = 0x0024;
     static final int WM_APP_DISPATCH = 0x8000; // WM_APP
     static final int SW_SHOW = 5;
     static final int SW_HIDE = 0;
@@ -131,6 +132,8 @@ final class Win32 {
     private static final MethodHandle MESSAGE_BOX = down(USER32, "MessageBoxW",
             FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS, JAVA_INT));
     private static final MethodHandle GET_CLIENT_RECT = down(USER32, "GetClientRect",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
+    private static final MethodHandle GET_WINDOW_RECT = down(USER32, "GetWindowRect",
             FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
     private static final MethodHandle LOAD_CURSOR = down(USER32, "LoadCursorW",
             FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS));
@@ -319,6 +322,14 @@ final class Win32 {
             int ignored = (int) GET_CLIENT_RECT.invokeExact(hwnd, rect);
         } catch (Throwable t) {
             throw wrap("GetClientRect", t);
+        }
+    }
+
+    static void getWindowRect(MemorySegment hwnd, MemorySegment rect) {
+        try {
+            int ignored = (int) GET_WINDOW_RECT.invokeExact(hwnd, rect);
+        } catch (Throwable t) {
+            throw wrap("GetWindowRect", t);
         }
     }
 

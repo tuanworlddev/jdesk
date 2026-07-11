@@ -19,5 +19,21 @@ public interface AssetSource {
     @FunctionalInterface
     interface StreamSupplier {
         InputStream open() throws IOException;
+
+        /**
+         * Fresh stream positioned at {@code offset} bytes, for Range requests. The
+         * default opens from the start and skips; sources backed by seekable storage
+         * should override with a real seek.
+         */
+        default InputStream openAt(long offset) throws IOException {
+            InputStream in = open();
+            try {
+                in.skipNBytes(offset);
+            } catch (IOException | RuntimeException e) {
+                in.close();
+                throw e;
+            }
+            return in;
+        }
     }
 }

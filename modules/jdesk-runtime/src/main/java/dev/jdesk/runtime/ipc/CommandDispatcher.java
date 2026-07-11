@@ -57,6 +57,7 @@ public final class CommandDispatcher implements AutoCloseable {
     private volatile boolean closed;
     private volatile EventQueue eventQueue;
     private volatile StreamManager streams = new StreamManager();
+    private volatile java.util.function.BiConsumer<String, String> consoleListener;
 
     public CommandDispatcher(
             WindowId windowId,
@@ -177,8 +178,63 @@ public final class CommandDispatcher implements AutoCloseable {
             case IncomingEnvelope.Invoke invoke -> handleInvoke(invoke, origin);
             case IncomingEnvelope.Cancel cancel -> handleCancel(cancel);
             case IncomingEnvelope.FrontendEvent event -> handleFrontendEvent(event, origin);
+            case IncomingEnvelope.ConsoleLog console -> handleConsole(console);
             case IncomingEnvelope.UnsupportedVersion unsupported -> handleUnsupportedVersion(unsupported);
         }
+    }
+
+    /**
+     * Sink for validated page-console envelopes (level, sanitized message). Unset
+     * (the default) drops them, so production stays quiet unless explicitly enabled.
+     */
+    public void onConsole(java.util.function.BiConsumer<String, String> listener) {
+        this.consoleListener = listener;
+    }
+
+    /** Per-navigation ceiling on forwarded console lines (flood protection). */
+    private static final int MAX_CONSOLE_LINES_PER_NAVIGATION = 2000;
+    private final java.util.concurrent.atomic.AtomicInteger consoleLinesForwarded =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    private void handleConsole(IncomingEnvelope.ConsoleLog console) {
+        java.util.function.BiConsumer<String, String> listener = consoleListener;
+        if (listener == null) {
+            return;
+        }
+        if (!session.accepts(console.nonce())) {
+            return; // stale or spoofed nonce: not from the current document
+        }
+        // Deliberately no hello requirement: crash-before-handshake lines are exactly
+        // what the bridge exists to surface. The nonce proves the current document.
+        int forwarded = consoleLinesForwarded.incrementAndGet();
+        if (forwarded > MAX_CONSOLE_LINES_PER_NAVIGATION) {
+            if (forwarded == MAX_CONSOLE_LINES_PER_NAVIGATION + 1) {
+                listener.accept("warn", "(console forwarding suspended: more than "
+                        + MAX_CONSOLE_LINES_PER_NAVIGATION + " lines this navigation)");
+            }
+            return;
+        }
+        listener.accept(console.level(), sanitizeConsoleMessage(console.message()));
+    }
+
+    /**
+     * Page-controlled text: neutralize control characters so a page can never forge
+     * additional log records. Newlines/tabs become visible escapes — a multi-line stack
+     * trace stays one log line.
+     */
+    private static String sanitizeConsoleMessage(String message) {
+        StringBuilder out = new StringBuilder(message.length());
+        for (int i = 0; i < message.length(); i++) {
+            char c = message.charAt(i);
+            if (c == '\n') {
+                out.append("\\n");
+            } else if (c == '\t') {
+                out.append("\\t");
+            } else {
+                out.append(Character.isISOControl(c) ? ' ' : c);
+            }
+        }
+        return out.toString();
     }
 
     private void handleFrontendEvent(IncomingEnvelope.FrontendEvent event,String origin){
@@ -302,7 +358,8 @@ public final class CommandDispatcher implements AutoCloseable {
         } catch (Throwable failure) {
             JDeskException jde = failure instanceof JDeskException j ? j :
                     new JDeskException(ErrorCode.SERIALIZATION_ERROR, "Invalid stream request");
-            respond(current, envelopes.errorResult(invoke.id(), jde.code(), jde.publicMessage()));
+            respond(current, envelopes.errorResult(
+                    invoke.id(), jde.code(), jde.publicMessage(), jde.details()));
         }
     }
 
@@ -365,7 +422,7 @@ public final class CommandDispatcher implements AutoCloseable {
             return envelopes.errorResult(id, ErrorCode.CANCELLED, "Command was cancelled");
         }
         if (cause instanceof JDeskException jde) {
-            return envelopes.errorResult(id, jde.code(), jde.publicMessage());
+            return envelopes.errorResult(id, jde.code(), jde.publicMessage(), jde.details());
         }
         LOG.log(Level.ERROR, "Command {0} failed internally", id, cause);
         return envelopes.errorResult(id, ErrorCode.INTERNAL_ERROR, "Command failed");
@@ -441,6 +498,7 @@ public final class CommandDispatcher implements AutoCloseable {
         StreamManager oldStreams = streams;
         session = new NavigationSession();
         helloCompleted = false;
+        consoleLinesForwarded.set(0);
         eventQueue = newEventQueue(overflowPolicy);
         streams = new StreamManager();
         old.invalidate();

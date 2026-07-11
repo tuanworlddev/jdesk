@@ -36,11 +36,9 @@ jdesk {
     mainClass.set("@PACKAGE@.Main")
     frontend {
         directory.set(layout.projectDirectory.dir("ui"))
-        devCommand.set(listOf("npm", "run", "dev"))
         buildCommand.set(javaLauncher.map {
             listOf(it.executablePath.asFile.absolutePath, "Build.java")
         })
-        devUrl.set("http://127.0.0.1:5173")
         distDirectory.set(layout.projectDirectory.dir("ui/dist"))
     }
 }

@@ -137,6 +137,10 @@ class CommandDispatcherTest {
         CommandHandler failing = (request, context) -> {
             throw new JDeskException(ErrorCode.INVALID_REQUEST, "custom public failure");
         };
+        CommandHandler failingWithData = (request, context) -> {
+            throw new JDeskException(ErrorCode.INVALID_REQUEST, "upstream rejected",
+                    java.util.Map.of("httpStatus", 429, "retryAfterSeconds", 30), null);
+        };
         CommandHandler npe = (request, context) -> {
             throw new NullPointerException("secret internal detail");
         };
@@ -151,6 +155,8 @@ class CommandDispatcherTest {
                         Void.class, sleeperTimeout, sleeper),
                 new CommandDefinition("test.fail", Optional.of("test:use"),
                         Void.class, Optional.empty(), failing),
+                new CommandDefinition("test.failData", Optional.of("test:use"),
+                        Void.class, Optional.empty(), failingWithData),
                 new CommandDefinition("test.npe", Optional.of("test:use"),
                         Void.class, Optional.empty(), npe),
                 new CommandDefinition("other.secret", Optional.of("other:cap"),
@@ -206,6 +212,38 @@ class CommandDispatcherTest {
         node.put("id", id);
         node.put("nonce", nonce);
         return node.toString();
+    }
+
+    private String console(String level, String message, String nonce) {
+        ObjectNode node = plain.createObjectNode();
+        node.put("v", 1);
+        node.put("kind", "console");
+        node.put("level", level);
+        node.put("message", message);
+        node.put("nonce", nonce);
+        return node.toString();
+    }
+
+    @Test
+    void consoleEnvelopeForwardsSanitizedMessageToListener() {
+        List<String> lines = new ArrayList<>();
+        dispatcher.onConsole((level, message) -> lines.add(level + ":" + message));
+        dispatcher.onMessage(console("error", "boom\u0007bell", dispatcher.currentNonce()), ORIGIN);
+        assertThat(lines).containsExactly("error:boom bell");
+    }
+
+    @Test
+    void consoleEnvelopeWithStaleNonceIsDropped() {
+        List<String> lines = new ArrayList<>();
+        dispatcher.onConsole((level, message) -> lines.add(message));
+        dispatcher.onMessage(console("log", "spoofed", "not-the-nonce"), ORIGIN);
+        assertThat(lines).isEmpty();
+    }
+
+    @Test
+    void consoleEnvelopeWithoutListenerIsDroppedSilently() {
+        dispatcher.onMessage(console("log", "nobody listening", dispatcher.currentNonce()), ORIGIN);
+        assertThat(responder.count()).isZero();
     }
 
     /** Completes the handshake on {@code target} and returns the session nonce. */
@@ -558,6 +596,16 @@ class CommandDispatcherTest {
         JsonNode result = awaitResultFor("f-1", responder);
         assertError(result, ErrorCode.INVALID_REQUEST);
         assertThat(result.path("error").path("message").textValue()).isEqualTo("custom public failure");
+    }
+
+    @Test
+    void jdeskExceptionDetailsArriveAsStructuredErrorData() throws Exception {
+        String nonce = handshake(dispatcher, responder);
+        dispatcher.onMessage(invoke("fd-1", "test.failData", null, nonce), ORIGIN);
+        JsonNode result = awaitResultFor("fd-1", responder);
+        assertError(result, ErrorCode.INVALID_REQUEST);
+        assertThat(result.path("error").path("data").path("httpStatus").intValue()).isEqualTo(429);
+        assertThat(result.path("error").path("data").path("retryAfterSeconds").intValue()).isEqualTo(30);
     }
 
     @Test

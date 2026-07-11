@@ -267,6 +267,11 @@ class JDeskRuntimeTest {
         }
 
         @Override
+        public WindowBounds getBounds() {
+            return new WindowBounds(0, 0, config.width(), config.height());
+        }
+
+        @Override
         public void close() {
             closed = true;
         }

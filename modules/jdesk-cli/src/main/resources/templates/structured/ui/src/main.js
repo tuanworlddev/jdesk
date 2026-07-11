@@ -1,5 +1,3 @@
-import "./style.css";
-
 const result = document.querySelector("#result");
 let nonce;
 let nextId = 0;

@@ -177,9 +177,11 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
         if (method == null || method.isEmpty()) {
             method = "GET";
         }
+        Map<String, String> requestHeaders = readRangeHeader(request);
         AssetResponse asset;
         try {
-            asset = config.assetHandler().handle(new AssetRequest(URI.create(url), method));
+            asset = config.assetHandler().handle(
+                    new AssetRequest(URI.create(url), method, requestHeaders));
         } catch (RuntimeException e) {
             LOG.log(Level.ERROR, "Asset handler failed for {0}", url, e);
             failRequestQuietly(request, "asset resolution failed");
@@ -238,6 +240,27 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
         }
     }
 
+    /**
+     * Reads the Range request header when present (needed for 206 media seeking).
+     * Absence or any header-API failure is not an error: the resolver serves 200.
+     */
+    private static Map<String, String> readRangeHeader(MemorySegment request) {
+        try (Arena confined = Arena.ofConfined()) {
+            MemorySegment soupHeaders = (MemorySegment)
+                    Gtk.WEBKIT_URI_SCHEME_REQUEST_GET_HTTP_HEADERS.invokeExact(request);
+            if (soupHeaders.equals(MemorySegment.NULL)) {
+                return Map.of();
+            }
+            MemorySegment value = (MemorySegment) Gtk.SOUP_MESSAGE_HEADERS_GET_ONE
+                    .invokeExact(soupHeaders, confined.allocateFrom("Range"));
+            String range = Gtk.javaString(value);
+            return range == null || range.isEmpty() ? Map.of() : Map.of("Range", range);
+        } catch (Throwable t) {
+            LOG.log(Level.DEBUG, "Reading request headers failed; serving full body", t);
+            return Map.of();
+        }
+    }
+
     private static byte[] readFully(InputStream stream) throws IOException {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         stream.transferTo(buffer);
@@ -293,6 +316,10 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
             MemorySegment atom=(MemorySegment)Gtk.GDK_ATOM_INTERN_STATIC_STRING.invokeExact(arena.allocateFrom("CLIPBOARD"));
             return (MemorySegment)Gtk.GTK_CLIPBOARD_GET.invokeExact(atom);
         }
+    }
+    @Override public dev.jdesk.api.SecretStore secrets(String applicationId) {
+        // secret-tool subprocess is thread-safe; no UI-thread assertion by design.
+        return new LinuxSecretStore(applicationId);
     }
     @Override public String readClipboardText(){requireOpen();dispatcher.assertUiThread();try{
         MemorySegment text=(MemorySegment)Gtk.GTK_CLIPBOARD_WAIT_FOR_TEXT.invokeExact(clipboard());

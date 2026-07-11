@@ -1,5 +1,6 @@
 package dev.jdesk.runtime.assets;
 
+import dev.jdesk.api.AssetRoute;
 import dev.jdesk.webview.spi.AssetHandler;
 import dev.jdesk.webview.spi.AssetRequest;
 import dev.jdesk.webview.spi.AssetResponse;
@@ -9,7 +10,9 @@ import java.io.InputStream;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -36,17 +39,30 @@ public final class AssetResolver implements AssetHandler {
     private final AssetSource source;
     private final boolean spaFallback;
     private final Map<String, String> securityHeaders;
+    /** App-defined routes, longest prefix first so nested prefixes win. */
+    private final List<Map.Entry<String, AssetRoute>> routes;
+
+    public AssetResolver(AssetSource source, boolean spaFallback, Map<String, String> securityHeaders) {
+        this(source, spaFallback, securityHeaders, Map.of());
+    }
 
     /**
      * @param spaFallback serve {@code index.html} for extension-less misses; explicit
      *        opt-in for SPA routing
      * @param securityHeaders CSP and friends from runtime configuration; added to every
      *        response
+     * @param assetRoutes app-defined routes keyed by path prefix (checked before the
+     *        asset source; a route owns everything under its prefix)
      */
-    public AssetResolver(AssetSource source, boolean spaFallback, Map<String, String> securityHeaders) {
+    public AssetResolver(AssetSource source, boolean spaFallback,
+            Map<String, String> securityHeaders, Map<String, AssetRoute> assetRoutes) {
         this.source = source;
         this.spaFallback = spaFallback;
         this.securityHeaders = Map.copyOf(securityHeaders);
+        this.routes = assetRoutes.entrySet().stream()
+                .sorted(Comparator.comparingInt((Map.Entry<String, AssetRoute> e)
+                        -> e.getKey().length()).reversed())
+                .toList();
     }
 
     @Override
@@ -64,6 +80,10 @@ public final class AssetResolver implements AssetHandler {
                 return notFound(); // rejected path: deterministic 404, no echo of input
             }
             String path = normalized.get().isEmpty() ? "index.html" : normalized.get();
+            AssetResponse routed = tryRoutes(path, request);
+            if (routed != null) {
+                return routed;
+            }
             Optional<AssetSource.Asset> asset = source.find(path);
             if (asset.isEmpty() && spaFallback && !path.contains(".")) {
                 path = "index.html";
@@ -75,12 +95,57 @@ public final class AssetResolver implements AssetHandler {
             Map<String, String> headers = new HashMap<>(securityHeaders);
             headers.put("Content-Type", MimeTypes.forPath(path));
             headers.put("Cache-Control", cacheControlFor(path));
-            AssetSource.Asset found = asset.get();
-            return new AssetResponse(200, headers, found.size(), () -> openQuietly(found));
+            return respond(request, headers, asset.get());
         } catch (IOException | RuntimeException e) {
             LOG.log(Level.ERROR, "Asset resolution failed", e);
             return serverError();
         }
+    }
+
+    /** Serves {@code path} from an app-defined route, or returns null when none matches. */
+    private AssetResponse tryRoutes(String path, AssetRequest request) throws IOException {
+        for (Map.Entry<String, AssetRoute> entry : routes) {
+            String prefix = entry.getKey();
+            if (!path.equals(prefix) && !path.startsWith(prefix + "/")) {
+                continue;
+            }
+            String subPath = path.equals(prefix) ? "" : path.substring(prefix.length() + 1);
+            Optional<AssetRoute.Response> served = entry.getValue()
+                    .serve(new AssetRoute.Request(subPath, request.headers()));
+            if (served.isEmpty()) {
+                return notFound();
+            }
+            AssetRoute.Response response = served.get();
+            Map<String, String> headers = new HashMap<>(securityHeaders);
+            headers.put("Content-Type", response.contentType());
+            headers.put("Cache-Control", "no-cache");
+            headers.putAll(response.headers());
+            AssetSource.Asset asset =
+                    new AssetSource.Asset(response.contentLength(), response.body()::get);
+            return respond(request, headers, asset);
+        }
+        return null;
+    }
+
+    /** Success path shared by source assets and routes: Accept-Ranges + Range/206/416. */
+    private AssetResponse respond(AssetRequest request, Map<String, String> headers,
+            AssetSource.Asset found) {
+        headers.put("Accept-Ranges", "bytes");
+        Optional<String> range = request.header("range");
+        if (range.isPresent() && found.size() >= 0) {
+            ByteRanges.Result parsed = ByteRanges.parse(range.get(), found.size());
+            if (parsed.kind() == ByteRanges.Kind.UNSATISFIABLE) {
+                return rangeNotSatisfiable(found.size());
+            }
+            if (parsed.kind() == ByteRanges.Kind.PARTIAL) {
+                headers.put("Content-Range",
+                        "bytes " + parsed.start() + "-" + parsed.endInclusive()
+                                + "/" + found.size());
+                return new AssetResponse(206, headers, parsed.length(),
+                        () -> openSliceQuietly(found, parsed.start(), parsed.length()));
+            }
+        }
+        return new AssetResponse(200, headers, found.size(), () -> openQuietly(found));
     }
 
     private static InputStream openQuietly(AssetSource.Asset asset) {
@@ -90,6 +155,23 @@ public final class AssetResolver implements AssetHandler {
             LOG.log(Level.ERROR, "Asset stream open failed", e);
             return InputStream.nullInputStream();
         }
+    }
+
+    private static InputStream openSliceQuietly(AssetSource.Asset asset, long offset, long length) {
+        try {
+            return new LimitedInputStream(asset.open().openAt(offset), length);
+        } catch (IOException e) {
+            LOG.log(Level.ERROR, "Asset stream open failed", e);
+            return InputStream.nullInputStream();
+        }
+    }
+
+    private AssetResponse rangeNotSatisfiable(long totalSize) {
+        Map<String, String> headers = new HashMap<>(securityHeaders);
+        headers.put("Content-Type", "text/plain; charset=utf-8");
+        headers.put("Cache-Control", "no-cache");
+        headers.put("Content-Range", "bytes */" + totalSize);
+        return new AssetResponse(416, headers, 0, InputStream::nullInputStream);
     }
 
     private String cacheControlFor(String path) {

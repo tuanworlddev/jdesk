@@ -109,6 +109,15 @@ class DirectoryAssetSourceTest {
     }
 
     @Test
+    void openAtSeeksToOffset() throws IOException {
+        Files.writeString(root.resolve("video.bin"), "0123456789");
+        AssetSource.Asset asset = source().find("video.bin").orElseThrow();
+        try (InputStream in = asset.open().openAt(6)) {
+            assertThat(new String(in.readAllBytes(), StandardCharsets.UTF_8)).isEqualTo("6789");
+        }
+    }
+
+    @Test
     void constructorRejectsAFileAsRoot() throws IOException {
         Path file = root.resolve("not-a-dir.txt");
         Files.writeString(file, "x");

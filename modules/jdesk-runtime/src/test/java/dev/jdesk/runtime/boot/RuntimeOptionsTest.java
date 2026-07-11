@@ -62,6 +62,22 @@ class RuntimeOptionsTest {
     }
 
     @Test
+    void withSecurityHeaderReplacesAndKeepsOthers() {
+        RuntimeOptions base = RuntimeOptions.production(new MapAssetSource());
+        RuntimeOptions custom = base
+                .withSecurityHeader("X-Extra", "1")
+                .withSecurityHeader("Content-Security-Policy", "default-src 'self'; media-src https:");
+
+        assertThat(custom.securityHeaders())
+                .containsEntry("Content-Security-Policy", "default-src 'self'; media-src https:")
+                .containsEntry("X-Extra", "1");
+        // The original is untouched (record copy semantics).
+        assertThat(base.securityHeaders())
+                .containsEntry("Content-Security-Policy", CspValidator.DEFAULT_CSP)
+                .doesNotContainKey("X-Extra");
+    }
+
+    @Test
     void fromSystemPropertiesDefaultsToEmptyInMemorySource() {
         clearAll();
         try {

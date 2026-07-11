@@ -98,6 +98,17 @@ final class MacWindow extends NativeHandle implements PlatformWindow {
         ObjC.sendVoidBool(nsWindow, "setReleasedWhenClosed:", false);
         ObjC.sendVoid(nsWindow, "setTitle:", ObjC.nsString(config.title()));
         ObjC.sendVoid(nsWindow, "center");
+        if (config.minWidth() > 0 || config.minHeight() > 0) {
+            try (Arena confined = Arena.ofConfined()) {
+                MemorySegment minSize = confined.allocate(ObjC.NSSIZE);
+                minSize.set(JAVA_DOUBLE, 0, config.minWidth());
+                minSize.set(JAVA_DOUBLE, 8, config.minHeight());
+                ObjC.msgSend(SET_CONTENT_SIZE_DESC).invokeExact(
+                        nsWindow, ObjC.sel("setContentMinSize:"), minSize);
+            } catch (Throwable t) {
+                throw ObjC.rethrow(t);
+            }
+        }
 
         this.delegate = ObjC.send(ObjC.send(delegateClass, "alloc"), "init");
         PEERS.put(delegate.address(), this);
@@ -302,6 +313,38 @@ final class MacWindow extends NativeHandle implements PlatformWindow {
                 ObjC.msgSend(SET_TOP_LEFT_DESC).invokeExact(
                         nsWindow, ObjC.sel("setFrameTopLeftPoint:"), topLeft);
             }
+        } catch (Throwable t) {
+            throw ObjC.rethrow(t);
+        }
+    }
+
+    @Override
+    public WindowBounds getBounds() {
+        requireOpen();
+        try (Arena confined = Arena.ofConfined()) {
+            MemorySegment frame = (MemorySegment) ObjC.msgSend(FRAME_DESC).invokeExact(
+                    (SegmentAllocator) confined, nsWindow, ObjC.sel("frame"));
+            double frameX = frame.get(JAVA_DOUBLE, 0);
+            double frameY = frame.get(JAVA_DOUBLE, 8);
+            double frameH = frame.get(JAVA_DOUBLE, 24);
+            // Content size (what setBounds sets), not the frame size with title bar.
+            MemorySegment contentView = ObjC.send(nsWindow, "contentView");
+            MemorySegment content = (MemorySegment) ObjC.msgSend(FRAME_DESC).invokeExact(
+                    (SegmentAllocator) confined, contentView, ObjC.sel("frame"));
+            double width = content.get(JAVA_DOUBLE, 16);
+            double height = content.get(JAVA_DOUBLE, 24);
+            // Inverse of the setBounds flip: logical y measures from the screen top.
+            double y = 0;
+            MemorySegment screen = ObjC.send(ObjC.cls("NSScreen"), "mainScreen");
+            if (!screen.equals(MemorySegment.NULL)) {
+                MemorySegment screenFrame = (MemorySegment) ObjC.msgSend(FRAME_DESC)
+                        .invokeExact((SegmentAllocator) confined, screen, ObjC.sel("frame"));
+                double screenTop = screenFrame.get(JAVA_DOUBLE, 8)
+                        + screenFrame.get(JAVA_DOUBLE, 24);
+                y = screenTop - (frameY + frameH);
+            }
+            return new WindowBounds((int) Math.round(frameX), (int) Math.round(y),
+                    (int) Math.round(width), (int) Math.round(height));
         } catch (Throwable t) {
             throw ObjC.rethrow(t);
         }

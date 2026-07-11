@@ -5,6 +5,7 @@ module dev.jdesk.runtime {
     requires com.fasterxml.jackson.core;
     requires com.fasterxml.jackson.databind;
     requires dev.jdesk.instance;
+    requires jdk.httpserver; // opt-in automation endpoint (-Djdesk.automation=true)
 
     exports dev.jdesk.runtime.json;
     exports dev.jdesk.runtime.config;
@@ -15,6 +16,8 @@ module dev.jdesk.runtime {
     exports dev.jdesk.runtime.ipc to
             dev.jdesk.testapps.nativesmoke, dev.jdesk.testapps.securityprobe;
     opens dev.jdesk.runtime.ipc to com.fasterxml.jackson.databind;
+    // Automation endpoint DTOs (EvaluateRequest/ConsoleLine JSON binding).
+    opens dev.jdesk.runtime.boot to com.fasterxml.jackson.databind;
 
     uses dev.jdesk.webview.spi.PlatformProvider;
     provides dev.jdesk.api.JDeskBootstrap with dev.jdesk.runtime.boot.RuntimeBootstrap;

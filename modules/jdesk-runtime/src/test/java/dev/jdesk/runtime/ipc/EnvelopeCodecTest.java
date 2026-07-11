@@ -107,6 +107,44 @@ class EnvelopeCodecTest {
     }
 
     @Test
+    void errorResultCarriesStructuredDataWhenProvided() throws Exception {
+        String json = codec.errorResult("01JREQ", ErrorCode.INVALID_REQUEST,
+                "Upstream rejected", Map.of("httpStatus", 429, "retryAfterSeconds", 30));
+        JsonNode error = plain.readTree(json).get("error");
+        assertThat(error.get("code").asText()).isEqualTo("INVALID_REQUEST");
+        assertThat(error.get("message").asText()).isEqualTo("Upstream rejected");
+        assertThat(error.get("data").get("httpStatus").asInt()).isEqualTo(429);
+        assertThat(error.get("data").get("retryAfterSeconds").asInt()).isEqualTo(30);
+
+        JsonNode plainError = plain.readTree(
+                codec.errorResult("01JREQ", ErrorCode.INTERNAL_ERROR, "Command failed")).get("error");
+        assertThat(plainError.has("data")).isFalse();
+    }
+
+    @Test
+    void parsesValidConsoleLog() {
+        IncomingEnvelope envelope = codec.parse(
+                "{\"v\":1,\"kind\":\"console\",\"level\":\"error\","
+                        + "\"message\":\"boom at app.js:3\",\"nonce\":\"abc123\"}");
+        assertThat(envelope).isInstanceOfSatisfying(IncomingEnvelope.ConsoleLog.class, console -> {
+            assertThat(console.level()).isEqualTo("error");
+            assertThat(console.message()).isEqualTo("boom at app.js:3");
+            assertThat(console.nonce()).isEqualTo("abc123");
+        });
+    }
+
+    @Test
+    void consoleLogRejectsUnknownFieldsAndMissingMessage() {
+        assertThatThrownBy(() -> codec.parse(
+                "{\"v\":1,\"kind\":\"console\",\"level\":\"log\",\"message\":\"x\","
+                        + "\"nonce\":\"abc123\",\"extra\":true}"))
+                .isInstanceOf(ProtocolException.class);
+        assertThatThrownBy(() -> codec.parse(
+                "{\"v\":1,\"kind\":\"console\",\"level\":\"log\",\"nonce\":\"abc123\"}"))
+                .isInstanceOf(ProtocolException.class);
+    }
+
+    @Test
     void invokePayloadAbsentAndExplicitNullBothMapToEmpty() {
         ObjectNode absent = validInvoke();
         absent.remove("payload");

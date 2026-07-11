@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -42,6 +43,16 @@ public record RuntimeOptions(
         Objects.requireNonNull(limits, "limits");
         Objects.requireNonNull(overflowPolicy, "overflowPolicy");
         Objects.requireNonNull(navigationGrace, "navigationGrace");
+    }
+
+    /** Returns a copy with {@code name} set to {@code value} in {@link #securityHeaders()}. */
+    public RuntimeOptions withSecurityHeader(String name, String value) {
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(value, "value");
+        Map<String, String> headers = new HashMap<>(securityHeaders);
+        headers.put(name, value);
+        return new RuntimeOptions(devMode, assetSource, spaFallback, headers,
+                limits, overflowPolicy, navigationGrace);
     }
 
     public static RuntimeOptions production(AssetSource source) {

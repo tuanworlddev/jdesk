@@ -150,6 +150,37 @@ class JDeskApplicationPluginFunctionalTest {
         assertThat(third.task(":jdeskFrontendBuild").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
     }
 
+    // (c2) backend-only builds never trigger the frontend build; packaging does
+    @Test
+    void classesDoesNotTriggerFrontendBuildButJarDoes() throws IOException {
+        Path projectDir = tempDir.resolve("consumer");
+        writeSettings(projectDir);
+        writeFrontend(projectDir);
+        write(projectDir.resolve("build.gradle"), """
+                plugins { id 'dev.jdesk.application' }
+                dependencies { jdeskCodegen files() }
+                jdesk {
+                    applicationId = 'dev.example.app'
+                    mainClass = 'dev.example.App'
+                %s}
+                """.formatted(frontendBlock()));
+
+        BuildResult classes = runner(projectDir, "classes").build();
+        assertThat(classes.task(":jdeskFrontendBuild"))
+                .as("backend compile must not force a frontend build")
+                .isNull();
+
+        BuildResult jar = runner(projectDir, "jar").build();
+        assertThat(jar.task(":jdeskFrontendBuild").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+        assertThat(projectDir.resolve("ui/dist/app.js")).exists();
+        try (java.util.zip.ZipFile archive = new java.util.zip.ZipFile(
+                projectDir.resolve("build/libs/consumer.jar").toFile())) {
+            assertThat(archive.getEntry("web/app.js"))
+                    .as("built frontend must ship inside the jar under /web")
+                    .isNotNull();
+        }
+    }
+
     @Test
     void frontendBuildSkipsWithNoSourceWhenNoFrontendConfigured() throws IOException {
         Path projectDir = tempDir.resolve("consumer");

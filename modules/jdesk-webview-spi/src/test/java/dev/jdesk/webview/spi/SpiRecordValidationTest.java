@@ -16,7 +16,7 @@ class SpiRecordValidationTest {
     @Test
     void assetResponseAllowsOnlyKnownStatuses() {
         Map<String, String> headers = Map.of("Content-Type", "text/plain");
-        for (int status : new int[] {200, 404, 500}) {
+        for (int status : new int[] {200, 206, 404, 416, 500}) {
             assertThat(new AssetResponse(status, headers, 0, InputStream::nullInputStream).status())
                     .isEqualTo(status);
         }
@@ -40,6 +40,19 @@ class SpiRecordValidationTest {
         assertThatNullPointerException().isThrownBy(() -> new AssetRequest(null, "GET"));
         assertThatNullPointerException().isThrownBy(
                 () -> new AssetRequest(URI.create("jdesk://app/index.html"), null));
+        assertThatNullPointerException().isThrownBy(
+                () -> new AssetRequest(URI.create("jdesk://app/index.html"), "GET", null));
+    }
+
+    @Test
+    void assetRequestHeaderLookupIsCaseInsensitive() {
+        AssetRequest request = new AssetRequest(URI.create("jdesk://app/video.mp4"), "GET",
+                Map.of("Range", "bytes=0-1023"));
+        assertThat(request.header("range")).contains("bytes=0-1023");
+        assertThat(request.header("RANGE")).contains("bytes=0-1023");
+        assertThat(request.header("accept")).isEmpty();
+        // Two-arg convenience constructor means no headers.
+        assertThat(new AssetRequest(URI.create("jdesk://app/x"), "GET").headers()).isEmpty();
     }
 
     @Test

@@ -24,9 +24,11 @@ import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.ConfigurableFileTree;
 import org.gradle.api.file.ProjectLayout;
 import org.gradle.api.model.ObjectFactory;
+import org.gradle.api.plugins.ApplicationPlugin;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.provider.Provider;
+import org.gradle.api.tasks.JavaExec;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.TaskContainer;
@@ -35,7 +37,6 @@ import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.tasks.Jar;
 import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.jvm.toolchain.JavaToolchainService;
-import org.gradle.language.jvm.tasks.ProcessResources;
 
 /**
  * The {@code dev.jdesk.application} plugin (spec section 14). Registers the
@@ -151,14 +152,37 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
                 });
 
         // Ship the built frontend inside the jar under /web so packaged (classpath)
-        // apps can serve it; harmless no-op when no frontend is configured.
-        tasks.named(JavaPlugin.PROCESS_RESOURCES_TASK_NAME, ProcessResources.class, t -> {
+        // apps can serve it; harmless no-op when no frontend is configured. Wired to
+        // the jar rather than processResources so backend-only builds (classes, test)
+        // never trigger the frontend build.
+        tasks.named(JavaPlugin.JAR_TASK_NAME, Jar.class, t -> {
             t.dependsOn(frontendBuild);
             Provider<Object> dist = frontend.getDistDirectory()
                     .<Object>map(d -> d)
                     .orElse(Collections.emptyList());
             t.from(dist, spec -> spec.into("web"));
         });
+
+        // Classes-based launches no longer see /web on the classpath, so keep the
+        // conventional `run` task (application plugin) working: build the frontend and
+        // point jdesk.assets.dir at the dist unless the build already set it.
+        tasks.withType(JavaExec.class)
+                .matching(t -> t.getName().equals(ApplicationPlugin.TASK_RUN_NAME))
+                .configureEach(t -> {
+                    t.dependsOn(frontendBuild);
+                    Provider<File> dist = frontend.getDistDirectory()
+                            .map(directory -> directory.getAsFile());
+                    t.doFirst("jdeskAssetsDirFallback", task -> {
+                        JavaExec exec = (JavaExec) task;
+                        if (exec.getSystemProperties().containsKey("jdesk.assets.dir")) {
+                            return;
+                        }
+                        File distDir = dist.getOrNull();
+                        if (distDir != null && distDir.isDirectory()) {
+                            exec.systemProperty("jdesk.assets.dir", distDir.getAbsolutePath());
+                        }
+                    });
+                });
 
         tasks.register("jdeskDev", JDeskDevTask.class, t -> {
             t.setGroup(GROUP);
@@ -168,6 +192,10 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
             t.getDevCommand().set(frontend.getDevCommand());
             t.getFrontendDirectory().set(frontend.getDirectory());
             t.getDevUrl().set(frontend.getDevUrl());
+            // Static frontend mode inputs (used when no devCommand is configured).
+            t.getFrontendBuildCommand().set(frontend.getBuildCommand());
+            t.getFrontendDistDirectory().set(frontend.getDistDirectory());
+            t.getFrontendSources().from(frontendSources(objects, frontend));
             t.getMainClass().set(extension.getMainClass());
             t.getMainModule().set(extension.getMainModule());
             t.getJavaExecutable().set(javaExecutable);

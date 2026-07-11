@@ -108,6 +108,11 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
         if (!opened) throw new JDeskException(ErrorCode.ILLEGAL_STATE, "OS refused external URI");
     }
 
+    @Override public dev.jdesk.api.SecretStore secrets(String applicationId) {
+        // Keychain Services calls are thread-safe; no UI-thread assertion by design.
+        return new MacSecretStore(applicationId);
+    }
+
     @Override public String readClipboardText() {
         requireOpen(); dispatcher.assertUiThread();
         MemorySegment pasteboard=ObjC.send(ObjC.cls("NSPasteboard"),"generalPasteboard");

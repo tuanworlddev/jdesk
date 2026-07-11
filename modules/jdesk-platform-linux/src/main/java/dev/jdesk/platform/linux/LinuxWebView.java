@@ -2,6 +2,7 @@ package dev.jdesk.platform.linux;
 
 import dev.jdesk.api.Subscription;
 import dev.jdesk.ffm.NativeCallbackRegistry;
+import dev.jdesk.webview.spi.InitScripts;
 import dev.jdesk.webview.spi.NativeWindowConfig;
 import dev.jdesk.webview.spi.NavigationDecision;
 import dev.jdesk.webview.spi.NavigationListener;
@@ -183,13 +184,18 @@ final class LinuxWebView implements PlatformWebView {
             if (registered == 0) {
                 throw new IllegalStateException("script message handler registration failed");
             }
-            MemorySegment userScript = (MemorySegment) Gtk.WEBKIT_USER_SCRIPT_NEW.invokeExact(
-                    confined.allocateFrom(INIT_SCRIPT),
-                    Gtk.WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
-                    Gtk.WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START,
-                    MemorySegment.NULL, MemorySegment.NULL);
-            Gtk.WEBKIT_USER_CONTENT_MANAGER_ADD_SCRIPT.invokeExact(manager, userScript);
-            Gtk.WEBKIT_USER_SCRIPT_UNREF.invokeExact(userScript);
+            String[] userScripts = config.consoleCapture()
+                    ? new String[] {INIT_SCRIPT, InitScripts.CONSOLE_CAPTURE}
+                    : new String[] {INIT_SCRIPT};
+            for (String source : userScripts) {
+                MemorySegment userScript = (MemorySegment) Gtk.WEBKIT_USER_SCRIPT_NEW.invokeExact(
+                        confined.allocateFrom(source),
+                        Gtk.WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
+                        Gtk.WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START,
+                        MemorySegment.NULL, MemorySegment.NULL);
+                Gtk.WEBKIT_USER_CONTENT_MANAGER_ADD_SCRIPT.invokeExact(manager, userScript);
+                Gtk.WEBKIT_USER_SCRIPT_UNREF.invokeExact(userScript);
+            }
 
             if (config.devToolsEnabled()) {
                 MemorySegment settings = (MemorySegment)

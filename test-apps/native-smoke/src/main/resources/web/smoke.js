@@ -88,7 +88,8 @@
       pending.delete(msg.id);
       clearTimeout(entry.timer);
       if (msg.ok) entry.resolve(msg.value);
-      else { var e = new Error(msg.error.message); e.code = msg.error.code; entry.reject(e); }
+      else { var e = new Error(msg.error.message); e.code = msg.error.code;
+             e.data = msg.error.data; entry.reject(e); }
     } else if (msg.kind === "event") {
       var fn = eventListeners.get(msg.event);
       if (fn) fn(msg.payload);
@@ -268,6 +269,92 @@
                "status " + traversal.status);
       } catch (e) {
         record("asset-traversal", true, "request failed as rejection: " + e.message);
+      }
+
+      // 11b. HTTP Range: 206 slice with Content-Range, 416 beyond the asset
+      try {
+        var fullText = await (await fetch("jdesk://app/asset-present.txt")).text();
+        var part = await fetch("jdesk://app/asset-present.txt",
+                               { headers: { "Range": "bytes=2-5" } });
+        var partText = await part.text();
+        var contentRange = part.headers.get("Content-Range") || "";
+        record("asset-range-206",
+               part.status === 206 && partText === fullText.slice(2, 6)
+                 && contentRange.indexOf("bytes 2-5/") === 0
+                 && (part.headers.get("Accept-Ranges") || "") === "bytes",
+               "status " + part.status + " content-range=" + contentRange
+                 + " body=" + JSON.stringify(partText));
+        var beyond = await fetch("jdesk://app/asset-present.txt",
+                                 { headers: { "Range": "bytes=999999-1000000" } });
+        var beyondRange = beyond.headers.get("Content-Range") || "";
+        record("asset-range-416",
+               beyond.status === 416 && beyondRange.indexOf("bytes */") === 0,
+               "status " + beyond.status + " content-range=" + beyondRange);
+      } catch (e) {
+        record("asset-range-206", false, "range fetch failed: " + e.message);
+      }
+
+      // 11c. custom CSP from runtime configuration reaches native responses
+      try {
+        var cspResp = await fetch("jdesk://app/asset-present.txt");
+        var csp = cspResp.headers.get("Content-Security-Policy") || "";
+        record("custom-csp-header", csp.indexOf("media-src") >= 0,
+               "csp=" + csp.slice(0, 140));
+      } catch (e) {
+        record("custom-csp-header", false, "fetch failed: " + e.message);
+      }
+
+      // 11d. console bridge: emit a marker; Java asserts it arrived in its logging
+      console.error("SMOKE-CONSOLE-PROBE " + runId);
+      record("console-probe-emitted", true, "console.error marker emitted");
+
+      // 11e. app-defined asset route: Java-served bytes via jdesk://app/proxy/...
+      try {
+        var routeResp = await fetch("jdesk://app/proxy/blob");
+        var routeText = await routeResp.text();
+        record("asset-route",
+               routeResp.status === 200 && routeText === "route-payload-0123456789"
+                 && (routeResp.headers.get("Content-Type") || "")
+                     .indexOf("application/x-jdesk-probe") === 0,
+               "status " + routeResp.status + " type=" + routeResp.headers.get("Content-Type"));
+        var routeMiss = await fetch("jdesk://app/proxy/never-registered");
+        record("asset-route-404", routeMiss.status === 404, "status " + routeMiss.status);
+        var routePart = await fetch("jdesk://app/proxy/blob",
+                                    { headers: { "Range": "bytes=6-12" } });
+        var routePartText = await routePart.text();
+        record("asset-route-range", routePart.status === 206 && routePartText === "payload",
+               "status " + routePart.status + " body=" + JSON.stringify(routePartText));
+      } catch (e) { record("asset-route", false, "route fetch failed: " + e.message); }
+
+      // 11f. slow routes must not block the pipeline: while /proxy/slow stalls 400 ms,
+      // IPC round trips keep completing (async scheme serving off the main thread).
+      try {
+        var slowStart = performance.now();
+        var slowPromise = fetch("jdesk://app/proxy/slow").then(function (r) { return r.text(); });
+        var pingsDone = 0;
+        for (var pi = 0; pi < 5; pi++) {
+          await invoke("smoke.echo", { text: "during-slow-" + pi, number: pi });
+          pingsDone++;
+        }
+        var ipcElapsed = performance.now() - slowStart;
+        var slowText = await slowPromise;
+        var slowElapsed = performance.now() - slowStart;
+        record("asset-route-nonblocking",
+               pingsDone === 5 && ipcElapsed < 350 && slowText === "slow-done"
+                 && slowElapsed >= 380,
+               "5 IPC round trips in " + ipcElapsed.toFixed(1) + "ms while slow route took "
+                 + slowElapsed.toFixed(1) + "ms");
+      } catch (e) { record("asset-route-nonblocking", false, "failed: " + e.message); }
+
+      // 11g. structured errors: machine-readable error.data reaches the page
+      try {
+        await invoke("smoke.failData", null);
+        record("structured-error-data", false, "unexpectedly succeeded");
+      } catch (e) {
+        record("structured-error-data",
+               e.code === "INVALID_REQUEST" && e.data && e.data.httpStatus === 429
+                 && e.data.retryAfterSeconds === 30,
+               "code=" + e.code + " data=" + JSON.stringify(e.data));
       }
 
       // stress profile: 10,000 small IPC round trips in bounded concurrent batches

@@ -16,11 +16,14 @@ const HANDSHAKE_TIMEOUT_MS = 10_000;
 /** Error with a stable machine-readable code (a public ErrorCode name or a client code). */
 export class JDeskError extends Error {
   readonly code: string;
+  /** Structured error data supplied by the Java handler (error.data), if any. */
+  readonly data?: unknown;
 
-  constructor(code: string, message?: string) {
+  constructor(code: string, message?: string, data?: unknown) {
     super(message ?? code);
     this.name = "JDeskError";
     this.code = code;
+    this.data = data;
   }
 }
 
@@ -188,7 +191,7 @@ function handleResult(message: Envelope): void {
   const error = (message.error ?? {}) as Envelope;
   const code = typeof error.code === "string" ? error.code : "INTERNAL_ERROR";
   const text = typeof error.message === "string" ? error.message : code;
-  entry.reject(new JDeskError(code, text));
+  entry.reject(new JDeskError(code, text, error.data));
 }
 
 function handleEvent(message: Envelope): void {

@@ -1,4 +1,6 @@
 module dev.jdesk.testapps.nativesmoke {
+    requires java.logging; // captures the runtime's forwarded page-console records
+    requires java.net.http; // drives the automation endpoint over real loopback HTTP
     requires dev.jdesk.api;
     requires dev.jdesk.runtime;
     requires dev.jdesk.webview.spi;

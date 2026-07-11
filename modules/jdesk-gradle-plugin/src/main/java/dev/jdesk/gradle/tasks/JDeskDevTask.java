@@ -52,6 +52,15 @@ public abstract class JDeskDevTask extends DefaultTask {
     public abstract Property<String> getDevUrl();
 
     @Internal
+    public abstract ListProperty<String> getFrontendBuildCommand();
+
+    @Internal
+    public abstract DirectoryProperty getFrontendDistDirectory();
+
+    @Internal
+    public abstract ConfigurableFileCollection getFrontendSources();
+
+    @Internal
     public abstract Property<String> getMainClass();
 
     @Internal
@@ -95,12 +104,26 @@ public abstract class JDeskDevTask extends DefaultTask {
         }
         validateReloadSettings();
 
+        // No devCommand + a buildCommand = static frontend mode: rebuild the UI on
+        // change and let the app's dev-mode asset watcher reload the page. No Node,
+        // no dev server.
+        boolean staticFrontend = getDevCommand().getOrElse(List.of()).isEmpty()
+                && !getFrontendBuildCommand().getOrElse(List.of()).isEmpty()
+                && getFrontendDirectory().isPresent();
+
         Process frontend = null;
         Process application = null;
         Thread shutdownHook = null;
         AtomicReference<Process> applicationRef = new AtomicReference<>();
         try {
             frontend = startFrontend();
+            if (staticFrontend) {
+                getLogger().lifecycle("jdeskDev: static frontend mode (no devCommand);"
+                        + " UI changes rebuild and reload in the running app");
+                if (!runFrontendBuild()) {
+                    throw new GradleException("jdeskDev: initial frontend build failed");
+                }
+            }
             Process frontendRef = frontend;
             shutdownHook = new Thread(() -> {
                 Process activeApplication = applicationRef.get();
@@ -115,19 +138,39 @@ public abstract class JDeskDevTask extends DefaultTask {
 
             application = startApplication();
             applicationRef.set(application);
-            if (!getJavaReload().getOrElse(true)) {
+            boolean javaReload = getJavaReload().getOrElse(true);
+            if (!javaReload && !staticFrontend) {
                 requireSuccessfulExit(application);
                 return;
             }
 
-            String sourceState = sourceState();
+            String sourceState = javaReload ? sourceState() : "";
+            String frontendState = staticFrontend ? frontendSourceState() : "";
             while (application.isAlive()) {
                 Thread.sleep(POLL_MILLIS);
+                if (staticFrontend) {
+                    String nextFrontend = frontendSourceState();
+                    if (!frontendState.equals(nextFrontend)) {
+                        frontendState = awaitQuietState(nextFrontend, this::frontendSourceState);
+                        getLogger().lifecycle("jdeskDev: frontend change detected; rebuilding UI");
+                        if (runFrontendBuild()) {
+                            getLogger().lifecycle(
+                                    "jdeskDev: UI rebuilt; the app reloads it automatically");
+                        } else {
+                            getLogger().warn(
+                                    "jdeskDev: frontend build failed; keeping the previous UI");
+                        }
+                        continue;
+                    }
+                }
+                if (!javaReload) {
+                    continue;
+                }
                 String nextState = sourceState();
                 if (sourceState.equals(nextState)) {
                     continue;
                 }
-                sourceState = awaitQuietState(nextState);
+                sourceState = awaitQuietState(nextState, this::sourceState);
                 getLogger().lifecycle("jdeskDev: source change detected; rebuilding");
                 if (!runReloadCommand()) {
                     getLogger().warn("jdeskDev: rebuild failed; keeping the current app running");
@@ -218,6 +261,11 @@ public abstract class JDeskDevTask extends DefaultTask {
         String devUrl = getDevUrl().getOrNull();
         if (devUrl != null) {
             command.add("-Djdesk.devUrl=" + devUrl);
+        } else if (getFrontendDistDirectory().isPresent()) {
+            // Static frontend mode: serve the built UI from disk so the runtime's
+            // dev-mode asset watcher can reload the page when the dist changes.
+            command.add("-Djdesk.assets.dir="
+                    + getFrontendDistDirectory().get().getAsFile().getAbsolutePath());
         }
         if (modular) {
             command.add("--module-path");
@@ -237,6 +285,12 @@ public abstract class JDeskDevTask extends DefaultTask {
     private boolean runReloadCommand() throws InterruptedException {
         Process process = startProcess(getReloadCommand().get(),
                 getReloadWorkingDirectory().get().getAsFile(), "reload");
+        return process.waitFor() == 0;
+    }
+
+    private boolean runFrontendBuild() throws InterruptedException {
+        Process process = startProcess(getFrontendBuildCommand().get(),
+                getFrontendDirectory().get().getAsFile(), "frontend-build");
         return process.waitFor() == 0;
     }
 
@@ -264,13 +318,14 @@ public abstract class JDeskDevTask extends DefaultTask {
         }
     }
 
-    private String awaitQuietState(String state) throws InterruptedException {
+    private String awaitQuietState(String state, java.util.function.Supplier<String> stateSupplier)
+            throws InterruptedException {
         long debounce = getReloadDebounceMillis().getOrElse(300);
         long lastChange = System.currentTimeMillis();
         String current = state;
         while (System.currentTimeMillis() - lastChange < debounce) {
             Thread.sleep(Math.min(POLL_MILLIS, Math.max(1L, debounce)));
-            String next = sourceState();
+            String next = stateSupplier.get();
             if (!current.equals(next)) {
                 current = next;
                 lastChange = System.currentTimeMillis();
@@ -280,10 +335,18 @@ public abstract class JDeskDevTask extends DefaultTask {
     }
 
     private String sourceState() {
+        return digestOf(getReloadSources().getFiles(), "reload sources");
+    }
+
+    private String frontendSourceState() {
+        return digestOf(getFrontendSources().getFiles(), "frontend sources");
+    }
+
+    private static String digestOf(Iterable<File> roots, String description) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             List<Path> files = new ArrayList<>();
-            for (File root : getReloadSources().getFiles()) {
+            for (File root : roots) {
                 Path path = root.toPath();
                 if (Files.isDirectory(path)) {
                     try (Stream<Path> stream = Files.walk(path)) {
@@ -301,7 +364,7 @@ public abstract class JDeskDevTask extends DefaultTask {
             }
             return HexFormat.of().formatHex(digest.digest());
         } catch (IOException | NoSuchAlgorithmException e) {
-            throw new GradleException("jdeskDev: failed to inspect reload sources", e);
+            throw new GradleException("jdeskDev: failed to inspect " + description, e);
         }
     }
 

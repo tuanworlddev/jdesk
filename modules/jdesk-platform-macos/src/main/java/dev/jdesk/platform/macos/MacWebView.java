@@ -2,6 +2,7 @@ package dev.jdesk.platform.macos;
 
 import dev.jdesk.api.Subscription;
 import dev.jdesk.ffm.NativeCallbackRegistry;
+import dev.jdesk.webview.spi.InitScripts;
 import dev.jdesk.webview.spi.AssetRequest;
 import dev.jdesk.webview.spi.AssetResponse;
 import dev.jdesk.webview.spi.NativeWindowConfig;
@@ -30,6 +31,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 import static java.lang.foreign.ValueLayout.ADDRESS;
@@ -85,7 +87,8 @@ final class MacWebView implements PlatformWebView {
     private static final long WK_NAVIGATION_POLICY_CANCEL = 0;      // WKNavigationDelegate.h
     private static final long WK_NAVIGATION_POLICY_ALLOW = 1;
     private static final long NS_BITMAP_FILE_TYPE_PNG = 4;          // NSBitmapImageRep.h
-    private static final int CHUNK_SIZE = 64 * 1024;
+    /** Async body streaming: sized to keep main-thread hops rare for large assets. */
+    private static final int ASYNC_CHUNK_SIZE = 256 * 1024;
 
     // - initWithFrame:configuration:
     private static final FunctionDescriptor INIT_WEBVIEW_DESC = FunctionDescriptor.of(ADDRESS,
@@ -132,6 +135,8 @@ final class MacWebView implements PlatformWebView {
     private final List<Consumer<URI>> committedListeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<WebViewProcessFailure>> failureListeners =
             new CopyOnWriteArrayList<>();
+    /** In-flight scheme tasks by task address; the flag is set by stopURLSchemeTask. */
+    private final Map<Long, AtomicBoolean> inflightTasks = new ConcurrentHashMap<>();
     private volatile boolean closed;
 
     MacWebView(MacPlatformApplication app, MacWindow window, NativeWindowConfig config) {
@@ -150,17 +155,22 @@ final class MacWebView implements PlatformWebView {
             ObjC.sendVoid(userContentController, "addScriptMessageHandler:name:",
                     scriptMessageHandler, ObjC.nsString("jdesk"));
 
-            MemorySegment userScript;
-            try {
-                userScript = (MemorySegment) ObjC.msgSend(INIT_USER_SCRIPT_DESC).invokeExact(
-                        ObjC.send(ObjC.cls("WKUserScript"), "alloc"),
-                        ObjC.sel("initWithSource:injectionTime:forMainFrameOnly:"),
-                        ObjC.nsString(INIT_SCRIPT), WK_USER_SCRIPT_AT_DOCUMENT_START, (byte) 1);
-            } catch (Throwable t) {
-                throw ObjC.rethrow(t);
+            String[] userScripts = config.consoleCapture()
+                    ? new String[] {INIT_SCRIPT, InitScripts.CONSOLE_CAPTURE}
+                    : new String[] {INIT_SCRIPT};
+            for (String source : userScripts) {
+                MemorySegment userScript;
+                try {
+                    userScript = (MemorySegment) ObjC.msgSend(INIT_USER_SCRIPT_DESC).invokeExact(
+                            ObjC.send(ObjC.cls("WKUserScript"), "alloc"),
+                            ObjC.sel("initWithSource:injectionTime:forMainFrameOnly:"),
+                            ObjC.nsString(source), WK_USER_SCRIPT_AT_DOCUMENT_START, (byte) 1);
+                } catch (Throwable t) {
+                    throw ObjC.rethrow(t);
+                }
+                ObjC.sendVoid(userContentController, "addUserScript:", userScript);
+                ObjC.release(userScript);
             }
-            ObjC.sendVoid(userContentController, "addUserScript:", userScript);
-            ObjC.release(userScript);
 
             this.schemeHandler = newPeerInstance(schemeHandlerClass, "urlSchemeHandler");
             ObjC.sendVoid(configuration, "setURLSchemeHandler:forURLScheme:",
@@ -301,7 +311,7 @@ final class MacWebView implements PlatformWebView {
             return;
         }
         try {
-            peer.serveTask(task);
+            peer.beginServeTask(task);
         } catch (Throwable t) {
             LOG.log(Level.ERROR, "Asset interception failed", t);
             failTaskQuietly(task, "asset interception failed");
@@ -313,9 +323,15 @@ final class MacWebView implements PlatformWebView {
     @SuppressWarnings("unused") // IMP upcall
     static void impStopUrlSchemeTask(MemorySegment self, MemorySegment cmd,
             MemorySegment webView, MemorySegment task) {
-        // Tasks are served synchronously on the main thread inside start, so a stop can
-        // never interleave with an in-flight body stream; nothing to cancel here.
-        LOG.log(Level.DEBUG, "stopURLSchemeTask (already completed synchronously)");
+        // Resolution/streaming runs on a background thread; flag the task so no further
+        // WKURLSchemeTask callback is issued for it (calling after stop would throw).
+        MacWebView peer = PEERS.get(self.address());
+        if (peer != null) {
+            AtomicBoolean cancelled = peer.inflightTasks.get(task.address());
+            if (cancelled != null) {
+                cancelled.set(true);
+            }
+        }
     }
 
     @SuppressWarnings("unused") // IMP upcall
@@ -424,26 +440,127 @@ final class MacWebView implements PlatformWebView {
     }
 
     // ---- asset serving (WKURLSchemeHandler, spec section 9) ----
+    //
+    // Resolution and body streaming run on a virtual thread so slow handlers (disk,
+    // app-defined proxy routes doing network I/O) never block the main thread; every
+    // WKURLSchemeTask callback is marshalled back to the main thread and skipped once
+    // the engine has stopped the task.
 
-    private void serveTask(MemorySegment task) {
+    /** Reads request facts on the main thread, then hands off to a virtual thread. */
+    private void beginServeTask(MemorySegment task) {
         MemorySegment request = ObjC.send(task, "request");
         MemorySegment nsUrl = ObjC.send(request, "URL");
         String url = ObjC.javaString(ObjC.send(nsUrl, "absoluteString"));
-        String method = ObjC.javaString(ObjC.send(request, "HTTPMethod"));
-        if (method == null || method.isEmpty()) {
-            method = "GET";
-        }
+        String method0 = ObjC.javaString(ObjC.send(request, "HTTPMethod"));
+        String method = method0 == null || method0.isEmpty() ? "GET" : method0;
+        // Forward the Range header so the resolver can serve 206 partial content —
+        // required for media seeking (AVFoundation issues ranged requests).
+        String range = ObjC.javaString(
+                ObjC.send(request, "valueForHTTPHeaderField:", ObjC.nsString("Range")));
+        Map<String, String> requestHeaders =
+                range == null || range.isEmpty() ? Map.of() : Map.of("Range", range);
 
-        AssetResponse asset;
+        ObjC.retain(task);
+        ObjC.retain(nsUrl);
+        AtomicBoolean cancelled = new AtomicBoolean();
+        inflightTasks.put(task.address(), cancelled);
+        Thread.ofVirtual().name("jdesk-asset-task").start(() ->
+                serveTaskAsync(task, nsUrl, url, method, requestHeaders, cancelled));
+    }
+
+    private void serveTaskAsync(MemorySegment task, MemorySegment nsUrl, String url,
+            String method, Map<String, String> requestHeaders, AtomicBoolean cancelled) {
         try {
-            asset = app.config().assetHandler().handle(new AssetRequest(URI.create(url), method));
-        } catch (RuntimeException e) {
-            LOG.log(Level.ERROR, "Asset handler failed for {0}", url, e);
-            failTaskQuietly(task, "asset resolution failed");
-            return;
-        }
-        LOG.log(Level.INFO, "asset {0} {1} -> {2}", method, url, asset.status());
+            AssetResponse asset;
+            try {
+                asset = app.config().assetHandler().handle(
+                        new AssetRequest(URI.create(url), method, requestHeaders));
+            } catch (RuntimeException e) {
+                LOG.log(Level.ERROR, "Asset handler failed for {0}", url, e);
+                onMain(task, cancelled, () -> failTaskQuietly(task, "asset resolution failed"));
+                return;
+            }
+            LOG.log(Level.INFO, "asset {0} {1} -> {2}", method, url, asset.status());
 
+            if (!onMain(task, cancelled, () -> deliverResponseHeader(task, nsUrl, asset))) {
+                return;
+            }
+            // Stream the body in bounded chunks (spec 9.1: never buffer whole assets).
+            // Deliveries are joined one at a time, so the single shared-arena buffer is
+            // never touched concurrently and a slow consumer naturally paces the reader.
+            try (Arena bodyArena = Arena.ofShared(); InputStream body = asset.body().get()) {
+                MemorySegment nativeChunk = bodyArena.allocate(ASYNC_CHUNK_SIZE);
+                byte[] chunk = new byte[ASYNC_CHUNK_SIZE];
+                int read;
+                while ((read = body.read(chunk)) > 0) {
+                    int length = read;
+                    MemorySegment.copy(MemorySegment.ofArray(chunk), 0, nativeChunk, 0, length);
+                    if (!onMain(task, cancelled, () -> deliverChunk(task, nativeChunk, length))) {
+                        return;
+                    }
+                }
+            } catch (IOException | RuntimeException e) {
+                // RuntimeException covers unchecked failures from app-supplied bodies,
+                // e.g. UncheckedIOException out of AssetRoute.Response.of(Path).
+                LOG.log(Level.ERROR, "Asset body streaming failed for {0}", url, e);
+                onMain(task, cancelled, () -> failTaskQuietly(task, "asset body streaming failed"));
+                return;
+            }
+            onMain(task, cancelled, () -> ObjC.sendVoid(task, "didFinish"));
+        } finally {
+            releaseTaskQuietly(task, nsUrl);
+        }
+    }
+
+    /** Releases the retained task refs on the main thread; a shutdown race only leaks. */
+    private void releaseTaskQuietly(MemorySegment task, MemorySegment nsUrl) {
+        try {
+            app.ui().execute(() -> {
+                inflightTasks.remove(task.address());
+                ObjC.release(nsUrl);
+                ObjC.release(task);
+            });
+        } catch (RuntimeException e) {
+            // UI dispatcher is gone (shutdown): the native refs cannot be released
+            // safely off the main thread; drop the tracking entry and accept the
+            // one-off leak instead of throwing on the streaming thread.
+            inflightTasks.remove(task.address());
+            LOG.log(Level.DEBUG, "Scheme task release skipped during shutdown", e);
+        }
+    }
+
+    /**
+     * Runs one WKURLSchemeTask callback on the main thread. Returns false — and issues
+     * nothing further — once the engine stopped the task or the view is closing;
+     * callbacks after stopURLSchemeTask would throw inside WebKit. A callback that
+     * itself throws fails the task (while it is still legal to do so) and stops the
+     * stream, so the page never waits forever on an abandoned request.
+     */
+    private boolean onMain(MemorySegment task, AtomicBoolean cancelled, Runnable action) {
+        try {
+            return app.ui().submit(() -> {
+                if (cancelled.get() || !registry.gate().enter()) {
+                    return false;
+                }
+                try {
+                    action.run();
+                    return true;
+                } catch (Throwable t) {
+                    LOG.log(Level.ERROR, "Scheme task callback failed", t);
+                    cancelled.set(true);
+                    failTaskQuietly(task, "asset delivery failed");
+                    return false;
+                } finally {
+                    registry.gate().exit();
+                }
+            }).toCompletableFuture().join();
+        } catch (RuntimeException e) {
+            return false; // dispatcher rejected the submit (shutdown)
+        }
+    }
+
+    private void deliverResponseHeader(MemorySegment task, MemorySegment nsUrl,
+            AssetResponse asset) {
         Map<String, String> headers = new LinkedHashMap<>(asset.headers());
         if (asset.contentLength() >= 0) {
             headers.putIfAbsent("Content-Length", Long.toString(asset.contentLength()));
@@ -472,29 +589,18 @@ final class MacWebView implements PlatformWebView {
         }
         ObjC.sendVoid(task, "didReceiveResponse:", response);
         ObjC.release(response);
+    }
 
-        // Stream the body in bounded chunks (spec 9.1: never buffer whole assets).
-        try (InputStream body = asset.body().get(); Arena confined = Arena.ofConfined()) {
-            MemorySegment nativeChunk = confined.allocate(CHUNK_SIZE);
-            byte[] chunk = new byte[CHUNK_SIZE];
-            int read;
-            while ((read = body.read(chunk)) > 0) {
-                MemorySegment.copy(MemorySegment.ofArray(chunk), 0, nativeChunk, 0, read);
-                MemorySegment data;
-                try {
-                    data = (MemorySegment) ObjC.msgSend(DATA_WITH_BYTES_DESC).invokeExact(
-                            ObjC.cls("NSData"), ObjC.sel("dataWithBytes:length:"),
-                            nativeChunk, (long) read);
-                } catch (Throwable t) {
-                    throw ObjC.rethrow(t);
-                }
-                ObjC.sendVoid(task, "didReceiveData:", data);
-            }
-            ObjC.sendVoid(task, "didFinish");
-        } catch (IOException e) {
-            LOG.log(Level.ERROR, "Asset body streaming failed for {0}", url, e);
-            failTaskQuietly(task, "asset body streaming failed");
+    private void deliverChunk(MemorySegment task, MemorySegment nativeChunk, int length) {
+        MemorySegment data;
+        try {
+            data = (MemorySegment) ObjC.msgSend(DATA_WITH_BYTES_DESC).invokeExact(
+                    ObjC.cls("NSData"), ObjC.sel("dataWithBytes:length:"),
+                    nativeChunk, (long) length);
+        } catch (Throwable t) {
+            throw ObjC.rethrow(t);
         }
+        ObjC.sendVoid(task, "didReceiveData:", data);
     }
 
     private static void failTaskQuietly(MemorySegment task, String message) {

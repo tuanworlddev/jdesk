@@ -37,6 +37,9 @@ public interface PlatformWindow extends AutoCloseable {
 
     void setBounds(WindowBounds bounds);
 
+    /** Current bounds in the same coordinate convention {@link #setBounds} accepts. */
+    WindowBounds getBounds();
+
     @Override
     void close();
 }

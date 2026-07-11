@@ -2,6 +2,7 @@ package dev.jdesk.platform.windows;
 
 import dev.jdesk.api.Subscription;
 import dev.jdesk.ffm.NativeCallbackRegistry;
+import dev.jdesk.webview.spi.InitScripts;
 import dev.jdesk.webview.spi.AssetRequest;
 import dev.jdesk.webview.spi.AssetResponse;
 import dev.jdesk.webview.spi.NativeWindowConfig;
@@ -127,7 +128,7 @@ final class WindowsWebView implements PlatformWebView {
 
         this.devToolsEnabled=config.devToolsEnabled();
         configureSettings(devToolsEnabled);
-        installInitScript();
+        installInitScript(config.consoleCapture());
         registerEventHandlers();
         registerResourceInterception();
         resizeToClientArea();
@@ -147,7 +148,14 @@ final class WindowsWebView implements PlatformWebView {
         }
     }
 
-    private void installInitScript() {
+    private void installInitScript(boolean consoleCapture) {
+        installDocumentStartScript(INIT_SCRIPT);
+        if (consoleCapture) {
+            installDocumentStartScript(InitScripts.CONSOLE_CAPTURE);
+        }
+    }
+
+    private void installDocumentStartScript(String script) {
         AtomicInteger done = new AtomicInteger(1);
         MemorySegment handler = ComCallback.hrPtrHandler(registry,
                 "AddScriptCompletedHandler", WebView2.IID_ADD_SCRIPT_COMPLETED_HANDLER,
@@ -158,7 +166,7 @@ final class WindowsWebView implements PlatformWebView {
         try (Arena confined = Arena.ofConfined()) {
             ComRuntime.invokeChecked(webView, WebView2.WV_ADD_SCRIPT_ON_DOCUMENT_CREATED,
                     "AddScriptToExecuteOnDocumentCreated", THIS_PTR_PTR,
-                    WideStrings.alloc(confined, INIT_SCRIPT), handler);
+                    WideStrings.alloc(confined, script), handler);
         }
         app.pumpUntil(() -> done.get() != 1, 30_000, "init script installation");
         Hresult.check(done.get(), "AddScriptToExecuteOnDocumentCreated completion");
@@ -329,10 +337,11 @@ final class WindowsWebView implements PlatformWebView {
             MemorySegment methodOut = confined.allocate(ADDRESS);
             ComRuntime.invoke(request, WebView2.WR_REQ_GET_METHOD, THIS_PTR, methodOut);
             String method = WideStrings.readAndFreeCoTaskMem(methodOut.get(ADDRESS, 0));
+            Map<String, String> requestHeaders = readRangeHeader(request, confined);
             ComRuntime.release(request);
 
             AssetResponse asset = app.config().assetHandler()
-                    .handle(new AssetRequest(URI.create(uri), method));
+                    .handle(new AssetRequest(URI.create(uri), method, requestHeaders));
             LOG.log(Level.INFO, "asset {0} {1} -> {2}", method, uri, asset.status());
 
             MemorySegment stream = streamFor(asset);
@@ -379,10 +388,44 @@ final class WindowsWebView implements PlatformWebView {
         return JavaIStream.create(app, body, asset.contentLength());
     }
 
+    /**
+     * Reads the Range request header when present. Absence (or any header-API failure)
+     * is not an error: the resolver simply serves the full body with 200.
+     */
+    private static Map<String, String> readRangeHeader(MemorySegment request, Arena confined) {
+        try {
+            MemorySegment headersOut = confined.allocate(ADDRESS);
+            int hr = (int) ComRuntime.invoke(request, WebView2.WR_REQ_GET_HEADERS,
+                    THIS_PTR, headersOut);
+            MemorySegment headers = headersOut.get(ADDRESS, 0);
+            if (hr != Hresult.S_OK || headers.equals(MemorySegment.NULL)) {
+                return Map.of();
+            }
+            try {
+                MemorySegment valueOut = confined.allocate(ADDRESS);
+                int getHr = (int) ComRuntime.invoke(headers,
+                        WebView2.HTTP_REQ_HEADERS_GET_HEADER, THIS_PTR_PTR,
+                        WideStrings.alloc(confined, "Range"), valueOut);
+                if (getHr != Hresult.S_OK) {
+                    return Map.of(); // header not present on this request
+                }
+                String range = WideStrings.readAndFreeCoTaskMem(valueOut.get(ADDRESS, 0));
+                return range == null || range.isEmpty() ? Map.of() : Map.of("Range", range);
+            } finally {
+                ComRuntime.release(headers);
+            }
+        } catch (RuntimeException e) {
+            LOG.log(Level.DEBUG, "Reading request headers failed; serving full body", e);
+            return Map.of();
+        }
+    }
+
     private static String reasonFor(int status) {
         return switch (status) {
             case 200 -> "OK";
+            case 206 -> "Partial Content";
             case 404 -> "Not Found";
+            case 416 -> "Range Not Satisfiable";
             default -> "Internal Error";
         };
     }

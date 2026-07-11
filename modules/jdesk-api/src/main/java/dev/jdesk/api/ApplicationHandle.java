@@ -16,6 +16,9 @@ public interface ApplicationHandle {
 
     UiDispatcher ui();
 
+    /** OS-backed secret storage scoped to this application id. */
+    SecretStore secrets();
+
     /** Opens an HTTP(S) URI without exposing a general shell execution primitive. */
     CompletionStage<Void> openExternal(URI uri);
     CompletionStage<String> readClipboardText();

@@ -124,6 +124,13 @@ final class Gtk {
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
     static final MethodHandle GTK_WINDOW_SET_DEFAULT_SIZE = dl("gtk_window_set_default_size",
             FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT, JAVA_INT));
+    static final MethodHandle GTK_WINDOW_GET_SIZE = dl("gtk_window_get_size",
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS));
+    static final MethodHandle GTK_WINDOW_GET_POSITION = dl("gtk_window_get_position",
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS));
+    // Size request acts as the minimum size for a toplevel window.
+    static final MethodHandle GTK_WIDGET_SET_SIZE_REQUEST = dl("gtk_widget_set_size_request",
+            FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT, JAVA_INT));
     static final MethodHandle GTK_WINDOW_RESIZE = dl("gtk_window_resize",
             FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT, JAVA_INT));
     static final MethodHandle GTK_WINDOW_MOVE = dl("gtk_window_move",
@@ -252,6 +259,10 @@ final class Gtk {
     static final MethodHandle WEBKIT_URI_SCHEME_REQUEST_GET_HTTP_METHOD = dl(
             "webkit_uri_scheme_request_get_http_method",
             FunctionDescriptor.of(ADDRESS, ADDRESS));
+    // Returns SoupMessageHeaders* (transfer none); available since WebKitGTK 2.36.
+    static final MethodHandle WEBKIT_URI_SCHEME_REQUEST_GET_HTTP_HEADERS = dl(
+            "webkit_uri_scheme_request_get_http_headers",
+            FunctionDescriptor.of(ADDRESS, ADDRESS));
     static final MethodHandle WEBKIT_URI_SCHEME_REQUEST_FINISH_WITH_RESPONSE = dl(
             "webkit_uri_scheme_request_finish_with_response",
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
@@ -283,6 +294,9 @@ final class Gtk {
             FunctionDescriptor.of(ADDRESS, JAVA_INT));
     static final MethodHandle SOUP_MESSAGE_HEADERS_APPEND = dl("soup_message_headers_append",
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS));
+    // Returns const char* (transfer none): do not free.
+    static final MethodHandle SOUP_MESSAGE_HEADERS_GET_ONE = dl("soup_message_headers_get_one",
+            FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS));
 
     // ---- cairo ----
     static final MethodHandle CAIRO_SURFACE_WRITE_TO_PNG_STREAM = dl(

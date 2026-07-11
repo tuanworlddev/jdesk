@@ -205,6 +205,157 @@ class AssetResolverTest {
         assertThat(response.status()).isEqualTo(200);
     }
 
+    private static AssetRequest getRange(String uri, String range) {
+        return new AssetRequest(URI.create(uri), "GET", Map.of("Range", range));
+    }
+
+    @Test
+    void successResponsesAdvertiseAcceptRanges() {
+        AssetResponse response = resolver(false).handle(get("jdesk://app/index.html"));
+        assertThat(response.headers()).containsEntry("Accept-Ranges", "bytes");
+    }
+
+    @Test
+    void rangeRequestGets206WithContentRangeAndSlicedBody() {
+        // "<html>home</html>" is 17 bytes; ask for bytes 6-9 = "home".
+        AssetResponse response = resolver(false)
+                .handle(getRange("jdesk://app/index.html", "bytes=6-9"));
+        assertThat(response.status()).isEqualTo(206);
+        assertThat(response.headers()).containsEntry("Content-Range", "bytes 6-9/17");
+        assertThat(response.contentLength()).isEqualTo(4);
+        assertThat(body(response)).isEqualTo("home");
+        assertSecurityHeaders(response);
+    }
+
+    @Test
+    void openEndedRangeServesToEndOfAsset() {
+        AssetResponse response = resolver(false)
+                .handle(getRange("jdesk://app/index.html", "bytes=6-"));
+        assertThat(response.status()).isEqualTo(206);
+        assertThat(response.headers()).containsEntry("Content-Range", "bytes 6-16/17");
+        assertThat(body(response)).isEqualTo("home</html>");
+    }
+
+    @Test
+    void suffixRangeServesLastBytes() {
+        AssetResponse response = resolver(false)
+                .handle(getRange("jdesk://app/index.html", "bytes=-7"));
+        assertThat(response.status()).isEqualTo(206);
+        assertThat(response.headers()).containsEntry("Content-Range", "bytes 10-16/17");
+        assertThat(body(response)).isEqualTo("</html>");
+    }
+
+    @Test
+    void rangeEndIsClampedToAssetSize() {
+        AssetResponse response = resolver(false)
+                .handle(getRange("jdesk://app/index.html", "bytes=6-99999"));
+        assertThat(response.status()).isEqualTo(206);
+        assertThat(response.headers()).containsEntry("Content-Range", "bytes 6-16/17");
+    }
+
+    @Test
+    void rangeBeyondAssetIs416WithTotalSize() {
+        AssetResponse response = resolver(false)
+                .handle(getRange("jdesk://app/index.html", "bytes=17-20"));
+        assertThat(response.status()).isEqualTo(416);
+        assertThat(response.headers()).containsEntry("Content-Range", "bytes */17");
+        assertThat(response.contentLength()).isZero();
+        assertSecurityHeaders(response);
+    }
+
+    @Test
+    void malformedOrMultiRangeHeadersServeFull200() {
+        AssetResolver resolver = resolver(false);
+        for (String bad : new String[] {"bytes=abc", "chunks=0-5", "bytes=5-2", "bytes=0-2,4-6"}) {
+            AssetResponse response = resolver.handle(getRange("jdesk://app/index.html", bad));
+            assertThat(response.status()).as("Range: %s", bad).isEqualTo(200);
+            assertThat(body(response)).isEqualTo("<html>home</html>");
+        }
+    }
+
+    @Test
+    void rangeOn404MissStays404() {
+        AssetResponse response = resolver(false)
+                .handle(getRange("jdesk://app/missing.mp4", "bytes=0-100"));
+        assertThat(response.status()).isEqualTo(404);
+    }
+
+    // ---- app-defined asset routes ----
+
+    private AssetResolver resolverWithRoute(String prefix, dev.jdesk.api.AssetRoute route) {
+        return new AssetResolver(source, false, SECURITY_HEADERS, Map.of(prefix, route));
+    }
+
+    @Test
+    void assetRouteServesUnderItsPrefix() {
+        AssetResolver resolver = resolverWithRoute("proxy/images", request ->
+                Optional.of(dev.jdesk.api.AssetRoute.Response.of(
+                        ("payload:" + request.path()).getBytes(StandardCharsets.UTF_8),
+                        "image/jpeg")));
+        AssetResponse response = resolver.handle(get("jdesk://app/proxy/images/p1.jpg"));
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(body(response)).isEqualTo("payload:p1.jpg");
+        assertThat(response.headers())
+                .containsEntry("Content-Type", "image/jpeg")
+                .containsEntry("Accept-Ranges", "bytes");
+        assertSecurityHeaders(response);
+    }
+
+    @Test
+    void assetRouteAnswersRangeRequestsWith206() {
+        AssetResolver resolver = resolverWithRoute("proxy", request ->
+                Optional.of(dev.jdesk.api.AssetRoute.Response.of(
+                        "0123456789".getBytes(StandardCharsets.UTF_8), "application/octet-stream")));
+        AssetResponse part = resolver.handle(getRange("jdesk://app/proxy/blob", "bytes=2-5"));
+        assertThat(part.status()).isEqualTo(206);
+        assertThat(part.headers()).containsEntry("Content-Range", "bytes 2-5/10");
+        assertThat(body(part)).isEqualTo("2345");
+    }
+
+    @Test
+    void assetRouteCanSetCacheHeaders() {
+        AssetResolver resolver = resolverWithRoute("proxy", request ->
+                Optional.of(new dev.jdesk.api.AssetRoute.Response("image/png", 1,
+                        java.io.InputStream::nullInputStream,
+                        Map.of("Cache-Control", "public, max-age=3600"))));
+        AssetResponse response = resolver.handle(get("jdesk://app/proxy/x"));
+        assertThat(response.headers()).containsEntry("Cache-Control", "public, max-age=3600");
+    }
+
+    @Test
+    void assetRouteEmptyIs404AndIoExceptionIs500() {
+        AssetResolver missing = resolverWithRoute("proxy", request -> Optional.empty());
+        assertThat(missing.handle(get("jdesk://app/proxy/nope")).status()).isEqualTo(404);
+
+        AssetResolver failing = resolverWithRoute("proxy", request -> {
+            throw new IOException("upstream at /secret/path exploded");
+        });
+        AssetResponse error = failing.handle(get("jdesk://app/proxy/x"));
+        assertThat(error.status()).isEqualTo(500);
+        assertThat(body(error)).doesNotContain("secret");
+    }
+
+    @Test
+    void assetRouteTakesPrecedenceOverAssetSourceUnderItsPrefix() {
+        // Source has img/logo.png; a route on "img" owns the whole prefix.
+        AssetResolver resolver = resolverWithRoute("img", request ->
+                Optional.of(dev.jdesk.api.AssetRoute.Response.of(
+                        "routed".getBytes(StandardCharsets.UTF_8), "text/plain")));
+        assertThat(body(resolver.handle(get("jdesk://app/img/logo.png")))).isEqualTo("routed");
+        // Outside the prefix the source still serves.
+        assertThat(resolver.handle(get("jdesk://app/index.html")).status()).isEqualTo(200);
+    }
+
+    @Test
+    void assetRoutePathIsNormalizedBeforeMatching() {
+        AssetResolver resolver = resolverWithRoute("proxy", request ->
+                Optional.of(dev.jdesk.api.AssetRoute.Response.of(
+                        request.path().getBytes(StandardCharsets.UTF_8), "text/plain")));
+        // Traversal shapes are rejected before any route sees them.
+        assertThat(resolver.handle(get("jdesk://app/proxy/%2e%2e/secret")).status())
+                .isEqualTo(404);
+    }
+
     @Test
     void emptyPathUriServesIndex() {
         // Some engines report "jdesk://app" with an empty path for the root document.

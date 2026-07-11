@@ -45,7 +45,18 @@ import java.util.function.Consumer;
  */
 public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
     private static final Logger LOG = System.getLogger(JDeskRuntime.class.getName());
+    /** Forwarded page console output; its own logger name so apps can filter/route it. */
+    private static final Logger PAGE_CONSOLE = System.getLogger("dev.jdesk.webview.console");
     public static final String APP_ORIGIN = "jdesk://app";
+
+    private static Level consoleLevel(String level) {
+        return switch (level) {
+            case "error" -> Level.ERROR;
+            case "warn" -> Level.WARNING;
+            case "debug" -> Level.DEBUG;
+            default -> Level.INFO;
+        };
+    }
 
     private final ApplicationSpec spec;
     private final PlatformProvider provider;
@@ -57,18 +68,27 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
     private final Map<WindowId, WindowRuntime> windows = new ConcurrentHashMap<>();
     private final Set<WindowId> windowIds = ConcurrentHashMap.newKeySet();
     private final AtomicInteger openWindows = new AtomicInteger();
+    private final WindowStateStore windowStateStore;
     private PlatformApplication platformApp;
+    private volatile AutomationServer automationServer;
 
     /** Per-window wiring: dispatcher plus the tracked current top-level origin. */
     private final class WindowRuntime implements WindowHandle {
         final PlatformWindow window;
         final CommandDispatcher dispatcher;
+        final boolean rememberBounds;
+        final int minWidth;
+        final int minHeight;
         volatile String currentOrigin;
 
-        WindowRuntime(PlatformWindow window, CommandDispatcher dispatcher, String initialOrigin) {
+        WindowRuntime(PlatformWindow window, CommandDispatcher dispatcher, String initialOrigin,
+                boolean rememberBounds, int minWidth, int minHeight) {
             this.window = window;
             this.dispatcher = dispatcher;
             this.currentOrigin = initialOrigin;
+            this.rememberBounds = rememberBounds;
+            this.minWidth = minWidth;
+            this.minHeight = minHeight;
         }
 
         @Override
@@ -89,8 +109,12 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
             return controlWindow(id(), w -> w.setTitle(title));
         }
         @Override public CompletionStage<Void> setBounds(int x, int y, int width, int height) {
+            // The configured minimum applies to programmatic resizes too, so a window
+            // can never end up smaller than its declared minimum on any path.
+            int clampedWidth = Math.max(width, minWidth);
+            int clampedHeight = Math.max(height, minHeight);
             return controlWindow(id(), w -> w.setBounds(
-                    new dev.jdesk.webview.spi.WindowBounds(x, y, width, height)));
+                    new dev.jdesk.webview.spi.WindowBounds(x, y, clampedWidth, clampedHeight)));
         }
         @Override public CompletionStage<Void> setMinimized(boolean value) {
             return controlWindow(id(), w -> w.setMinimized(value));
@@ -116,6 +140,7 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
         this.provider = provider;
         this.options = options;
         this.lifecycle = new LifecycleStateMachine(spec.lifecycleListeners());
+        this.windowStateStore = new WindowStateStore(spec.id());
 
         Set<String> allowedOrigins = new LinkedHashSet<>();
         allowedOrigins.add(APP_ORIGIN);
@@ -131,30 +156,66 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
     public int run() {
         lifecycle.starting();
         AssetResolver assetResolver = new AssetResolver(
-                options.assetSource(), options.spaFallback(), options.securityHeaders());
+                options.assetSource(), options.spaFallback(), options.securityHeaders(),
+                spec.assetRoutes());
         Optional<String> devOrigin = options.devMode()
                 ? spec.devServerUrl().map(OriginNormalizer::normalize)
                 : Optional.empty();
         platformApp = provider.createApplication(new PlatformApplicationConfig(
                 spec.id(), options.devMode(), devOrigin, assetResolver));
+        DevAssetWatcher assetWatcher = null;
         try {
+            // Start automation before any window exists so console output emitted
+            // during the initial page load is already captured in its buffer.
+            automationServer = AutomationServer.startIfEnabled(this, spec.id()).orElse(null);
             for (WindowConfig config : spec.windows()) {
                 windowIds.add(config.id());
                 createWindowOnUiThread(config);
             }
+            // Dev-mode edit-and-reload for directory-served assets: any change under the
+            // asset root reloads every window (no bundler or dev server required).
+            if (options.devMode()
+                    && options.assetSource() instanceof dev.jdesk.runtime.assets.DirectoryAssetSource dir) {
+                assetWatcher = DevAssetWatcher.start(dir.root(), this::reloadAllWindows);
+            }
             lifecycle.ready(this);
             platformApp.runEventLoop();
         } finally {
+            if (automationServer != null) {
+                automationServer.close();
+            }
+            if (assetWatcher != null) {
+                assetWatcher.close();
+            }
             shutdown();
         }
         return 0;
     }
 
+    /** Ids of currently open windows (automation endpoint). */
+    Set<WindowId> openWindowIds() {
+        return Set.copyOf(windows.keySet());
+    }
+
+    private void reloadAllWindows() {
+        LOG.log(Level.INFO, "Asset change detected; reloading {0} window(s)", windows.size());
+        for (WindowRuntime windowRuntime : windows.values()) {
+            platformApp.ui().submit(() -> {
+                windowRuntime.window.webView().evaluate("location.reload()");
+                return null;
+            });
+        }
+    }
+
     private void createWindowOnUiThread(WindowConfig config) {
         WindowConfig launchConfig = devWindowConfig(config);
+        boolean logConsole = options.devMode() || Boolean.getBoolean("jdesk.console.forward");
+        boolean automation = Boolean.getBoolean("jdesk.automation");
         PlatformWindow window = platformApp.createWindow(new NativeWindowConfig(
                 launchConfig.id(), launchConfig.title(), launchConfig.width(), launchConfig.height(),
-                launchConfig.resizable(), launchConfig.entry(), options.devMode()));
+                launchConfig.resizable(), launchConfig.entry(), options.devMode(),
+                launchConfig.minWidth(), launchConfig.minHeight(),
+                logConsole || automation));
         try {
             CommandDispatcher dispatcher = new CommandDispatcher(
                     launchConfig.id(), spec.commands(), spec.frontendEvents(), capabilityEngine,
@@ -166,8 +227,23 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
                         return null;
                     }), this);
 
+            if (logConsole || automation) {
+                dispatcher.onConsole((level, message) -> {
+                    if (logConsole) {
+                        PAGE_CONSOLE.log(consoleLevel(level), "[{0}] {1}",
+                                launchConfig.id(), message);
+                    }
+                    AutomationServer automationSink = automationServer;
+                    if (automationSink != null) {
+                        automationSink.recordConsole(launchConfig.id(), level, message);
+                    }
+                });
+            }
+
             String initialOrigin = originOfEntry(launchConfig);
-            WindowRuntime windowRuntime = new WindowRuntime(window, dispatcher, initialOrigin);
+            WindowRuntime windowRuntime = new WindowRuntime(window, dispatcher, initialOrigin,
+                    launchConfig.rememberBounds(), launchConfig.minWidth(),
+                    launchConfig.minHeight());
             windows.put(launchConfig.id(), windowRuntime);
             openWindows.incrementAndGet();
 
@@ -201,10 +277,27 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
                     window.close();
                 }
             });
-            window.onCloseRequested(() -> lifecycle.closeRequested(launchConfig.id()));
+            window.onCloseRequested(() -> {
+                if (launchConfig.rememberBounds()) {
+                    saveBoundsQuietly(launchConfig.id(), window);
+                }
+                return lifecycle.closeRequested(launchConfig.id());
+            });
             window.onClosed(() -> windowClosed(launchConfig.id()));
+            if (launchConfig.rememberBounds()) {
+                // Clamp restored bounds to the declared minimum: state saved by an
+                // older version (smaller minimum) must not undercut this run's floor.
+                windowStateStore.load(launchConfig.id()).ifPresent(saved ->
+                        window.setBounds(new dev.jdesk.webview.spi.WindowBounds(
+                                saved.x(), saved.y(),
+                                Math.max(saved.width(), launchConfig.minWidth()),
+                                Math.max(saved.height(), launchConfig.minHeight()))));
+            }
             window.webView().navigate(launchConfig.entry());
             window.show();
+            if (launchConfig.startMaximized()) {
+                window.setMaximized(true);
+            }
         } catch (RuntimeException e) {
             windowIds.remove(config.id());
             try {
@@ -221,7 +314,18 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
             return config;
         }
         return new WindowConfig(config.id(), config.title(), config.width(), config.height(),
-                config.resizable(), java.net.URI.create(spec.devServerUrl().get()));
+                config.resizable(), java.net.URI.create(spec.devServerUrl().get()),
+                config.minWidth(), config.minHeight(), config.startMaximized(),
+                config.rememberBounds());
+    }
+
+    /** Best-effort bounds persistence; never lets state I/O affect closing. */
+    private void saveBoundsQuietly(WindowId windowId, PlatformWindow window) {
+        try {
+            windowStateStore.save(windowId, window.getBounds());
+        } catch (RuntimeException e) {
+            LOG.log(Level.DEBUG, "Window bounds not saved for {0}", windowId, e);
+        }
     }
 
     private static String originOfEntry(WindowConfig config) {
@@ -279,6 +383,18 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
         return platformApp.ui().submit(() -> { platformApp.openExternal(uri); return null; });
     }
 
+    private dev.jdesk.api.SecretStore secretStore;
+
+    @Override
+    public synchronized dev.jdesk.api.SecretStore secrets() {
+        // One instance per runtime: platform stores synchronize their file access on
+        // the instance, so racing first callers must not each get their own copy.
+        if (secretStore == null) {
+            secretStore = platformApp.secrets(spec.id());
+        }
+        return secretStore;
+    }
+
     @Override public CompletionStage<String> readClipboardText() {
         return platformApp.ui().submit(platformApp::readClipboardText);
     }
@@ -308,6 +424,9 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
                     new JDeskException(ErrorCode.WINDOW_CLOSED, "Unknown or closed window"));
         }
         return platformApp.ui().submit(() -> {
+            if (windowRuntime.rememberBounds) {
+                saveBoundsQuietly(windowId, windowRuntime.window);
+            }
             windowRuntime.window.close();
             windowClosed(windowId);
             return null;
@@ -410,6 +529,9 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
         windowIds.clear();
         for (WindowRuntime windowRuntime : remaining.values()) {
             try {
+                if (windowRuntime.rememberBounds) {
+                    saveBoundsQuietly(windowRuntime.window.id(), windowRuntime.window);
+                }
                 windowRuntime.dispatcher.close();
                 windowRuntime.window.close();
             } catch (RuntimeException e) {

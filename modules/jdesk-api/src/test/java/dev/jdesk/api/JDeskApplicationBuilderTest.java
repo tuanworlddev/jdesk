@@ -31,6 +31,28 @@ class JDeskApplicationBuilderTest {
         assertThat(spec.windows()).containsExactly(main);
         assertThat(spec.lifecycleListeners()).containsExactly(listener);
         assertThat(spec.devServerUrl()).isEqualTo(Optional.of("http://127.0.0.1:5173"));
+        assertThat(spec.contentSecurityPolicy()).isEmpty();
+    }
+
+    @Test
+    void contentSecurityPolicyFlowsIntoSpec() {
+        String csp = "default-src 'self'; media-src 'self' https:";
+        ApplicationSpec spec = JDeskApplication.builder()
+                .id("dev.jdesk.example")
+                .window(window("main"))
+                .contentSecurityPolicy(csp)
+                .buildSpec();
+        assertThat(spec.contentSecurityPolicy()).contains(csp);
+    }
+
+    @Test
+    void blankContentSecurityPolicyThrowsInvalidRequest() {
+        JDeskApplication.Builder builder = JDeskApplication.builder();
+        JDeskException e = catchThrowableOfType(JDeskException.class,
+                () -> builder.contentSecurityPolicy("   "));
+        assertThat(e).isNotNull();
+        assertThat(e.code()).isEqualTo(ErrorCode.INVALID_REQUEST);
+        assertThat(e.publicMessage()).contains("contentSecurityPolicy");
     }
 
     @Test

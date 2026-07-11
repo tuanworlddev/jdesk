@@ -84,6 +84,10 @@ final class WebView2 {
     // ---- ICoreWebView2WebResourceRequest ----
     static final int WR_REQ_GET_URI = 3;
     static final int WR_REQ_GET_METHOD = 5;
+    static final int WR_REQ_GET_HEADERS = 9;
+
+    // ---- ICoreWebView2HttpRequestHeaders ----
+    static final int HTTP_REQ_HEADERS_GET_HEADER = 3;
 
     // ---- ICoreWebView2NewWindowRequestedEventArgs ----
     static final int NW_ARGS_PUT_HANDLED = 6; // get_Uri=3, get_NewWindow=4, put_NewWindow=5, put_Handled=6

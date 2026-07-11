@@ -21,6 +21,11 @@ public sealed interface IncomingEnvelope {
     record FrontendEvent(int version, String event, Optional<String> payloadJson, String nonce)
             implements IncomingEnvelope { }
 
+    /** Forwarded page console output / uncaught error (injected capture script). */
+    record ConsoleLog(int version, String level, String message, String nonce)
+            implements IncomingEnvelope {
+    }
+
     record UnsupportedVersion(int version, String kind, Optional<String> id, String nonce)
             implements IncomingEnvelope {
     }

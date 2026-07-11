@@ -1,6 +1,7 @@
 package dev.jdesk.api;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -16,7 +17,9 @@ public record ApplicationSpec(
         Optional<String> devServerUrl,
         CommandRegistry frontendEvents,
         boolean singleInstance,
-        Consumer<List<String>> activationHandler) {
+        Consumer<List<String>> activationHandler,
+        Optional<String> contentSecurityPolicy,
+        Map<String, AssetRoute> assetRoutes) {
 
     private static final Pattern APP_ID =
             Pattern.compile("[a-zA-Z][a-zA-Z0-9]*(\\.[a-zA-Z][a-zA-Z0-9-]*)+");
@@ -30,6 +33,12 @@ public record ApplicationSpec(
         Objects.requireNonNull(devServerUrl, "devServerUrl");
         Objects.requireNonNull(frontendEvents, "frontendEvents");
         Objects.requireNonNull(activationHandler, "activationHandler");
+        Objects.requireNonNull(contentSecurityPolicy, "contentSecurityPolicy");
+        if (contentSecurityPolicy.isPresent() && contentSecurityPolicy.get().isBlank()) {
+            throw new JDeskException(ErrorCode.INVALID_REQUEST,
+                    "contentSecurityPolicy must not be blank; omit it to keep the default policy");
+        }
+        assetRoutes = Map.copyOf(Objects.requireNonNull(assetRoutes, "assetRoutes"));
         if (!APP_ID.matcher(id).matches()) {
             throw new JDeskException(ErrorCode.INVALID_REQUEST,
                     "Application id must be reverse-DNS style, e.g. dev.jdesk.example");
@@ -47,13 +56,31 @@ public record ApplicationSpec(
             List<WindowConfig> windows, List<LifecycleListener> lifecycleListeners,
             Optional<String> devServerUrl) {
         this(id, commands, capabilities, windows, lifecycleListeners, devServerUrl,
-                CommandRegistry.of(), false, ignored -> { });
+                CommandRegistry.of(), false, ignored -> { }, Optional.empty(), Map.of());
     }
 
     public ApplicationSpec(String id, CommandRegistry commands, CapabilitySet capabilities,
             List<WindowConfig> windows, List<LifecycleListener> lifecycleListeners,
             Optional<String> devServerUrl, CommandRegistry frontendEvents) {
         this(id, commands, capabilities, windows, lifecycleListeners, devServerUrl,
-                frontendEvents, false, ignored -> { });
+                frontendEvents, false, ignored -> { }, Optional.empty(), Map.of());
+    }
+
+    public ApplicationSpec(String id, CommandRegistry commands, CapabilitySet capabilities,
+            List<WindowConfig> windows, List<LifecycleListener> lifecycleListeners,
+            Optional<String> devServerUrl, CommandRegistry frontendEvents,
+            boolean singleInstance, Consumer<List<String>> activationHandler) {
+        this(id, commands, capabilities, windows, lifecycleListeners, devServerUrl,
+                frontendEvents, singleInstance, activationHandler, Optional.empty(), Map.of());
+    }
+
+    public ApplicationSpec(String id, CommandRegistry commands, CapabilitySet capabilities,
+            List<WindowConfig> windows, List<LifecycleListener> lifecycleListeners,
+            Optional<String> devServerUrl, CommandRegistry frontendEvents,
+            boolean singleInstance, Consumer<List<String>> activationHandler,
+            Optional<String> contentSecurityPolicy) {
+        this(id, commands, capabilities, windows, lifecycleListeners, devServerUrl,
+                frontendEvents, singleInstance, activationHandler, contentSecurityPolicy,
+                Map.of());
     }
 }

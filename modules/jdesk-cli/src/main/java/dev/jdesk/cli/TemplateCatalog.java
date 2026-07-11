@@ -11,7 +11,7 @@ final class TemplateCatalog {
             "src/main/java/@PACKAGE_PATH@/Main.java",
             "src/main/java/@PACKAGE_PATH@/GreetingService.java",
             "src/main/resources/jdesk-capabilities.json",
-            "ui/package.json", "ui/Build.java", "ui/index.html", "ui/src/main.js", "ui/src/style.css");
+            "ui/Build.java", "ui/index.html", "ui/src/main.js", "ui/src/style.css");
     private static final List<String> BASIC_CORE = List.of(
             "gitignore", "README.md", "settings.gradle.kts", "build.gradle.kts",
             "src/main/java/@PACKAGE_PATH@/Main.java",
@@ -31,7 +31,7 @@ final class TemplateCatalog {
             "desktop/src/main/java/@PACKAGE_PATH@/desktop/Main.java",
             "desktop/src/main/java/@PACKAGE_PATH@/desktop/GreetingCommands.java",
             "desktop/src/main/resources/jdesk-capabilities.json",
-            "ui/package.json", "ui/Build.java", "ui/index.html", "ui/src/main.js", "ui/src/style.css");
+            "ui/Build.java", "ui/index.html", "ui/src/main.js", "ui/src/style.css");
 
     private TemplateCatalog() {
     }
