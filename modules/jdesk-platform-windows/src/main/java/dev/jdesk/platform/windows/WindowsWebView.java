@@ -459,7 +459,11 @@ final class WindowsWebView implements PlatformWebView {
                     if (hr < 0) {
                         future.completeExceptionally(new Hresult.ComException("ExecuteScript", hr));
                     } else {
-                        future.complete(WideStrings.read(resultJson)); // callee-owned: no free
+                        // WebView2 ExecuteScript returns the result JSON-encoded, so a JS
+                        // string comes back quoted ("x"). WKWebView and WebKitGTK return the
+                        // raw string. Unwrap a top-level JSON string so evaluate() is
+                        // consistent across platforms. (callee-owned result: no free.)
+                        future.complete(unwrapJsonString(WideStrings.read(resultJson)));
                     }
                     return Hresult.S_OK;
                 });
@@ -470,6 +474,46 @@ final class WindowsWebView implements PlatformWebView {
             future.completeExceptionally(e);
         }
         return future;
+    }
+
+    /**
+     * Decodes a top-level JSON string literal to its raw value (e.g. {@code "left"} to
+     * {@code left}), so evaluate() matches the raw-string result of WKWebView/WebKitGTK.
+     * Non-string JSON (numbers, objects, {@code null}) is returned unchanged.
+     */
+    static String unwrapJsonString(String json) {
+        if (json == null || json.length() < 2
+                || json.charAt(0) != '"' || json.charAt(json.length() - 1) != '"') {
+            return json;
+        }
+        StringBuilder out = new StringBuilder(json.length() - 2);
+        for (int i = 1; i < json.length() - 1; i++) {
+            char c = json.charAt(i);
+            if (c == '\\' && i + 1 < json.length() - 1) {
+                char next = json.charAt(++i);
+                switch (next) {
+                    case 'n' -> out.append('\n');
+                    case 't' -> out.append('\t');
+                    case 'r' -> out.append('\r');
+                    case 'b' -> out.append('\b');
+                    case 'f' -> out.append('\f');
+                    case '/' -> out.append('/');
+                    case '"' -> out.append('"');
+                    case '\\' -> out.append('\\');
+                    case 'u' -> {
+                        if (i + 4 < json.length() - 1) {
+                            out.append((char) Integer.parseInt(
+                                    json.substring(i + 1, i + 5), 16));
+                            i += 4;
+                        }
+                    }
+                    default -> out.append(next);
+                }
+            } else {
+                out.append(c);
+            }
+        }
+        return out.toString();
     }
 
     @Override
