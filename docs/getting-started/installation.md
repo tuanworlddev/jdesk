@@ -117,7 +117,7 @@ npx create-jdesk-app@latest my-app --template react --package com.acme.myapp
 ## Pre-alpha: consuming the framework today
 
 JDesk is **pre-alpha**. The `create-jdesk-app` CLI is on npm, and the `dev.jdesk:*` libraries
-and the `dev.jdesk.application` Gradle plugin are published to **GitHub Packages** (v0.1.0) —
+and the `dev.jdesk.application` Gradle plugin are published to **GitHub Packages** (v0.1.1) —
 but **not yet to Maven Central**. GitHub Packages requires authentication to consume, so a
 project scaffolded in the default "published" mode cannot resolve the artifacts anonymously
 yet. Three ways to build today:

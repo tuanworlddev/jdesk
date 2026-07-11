@@ -25,7 +25,7 @@ Vue, and Svelte.
 
 | Platform | WebView | Minimum target | Verification |
 | --- | --- | --- | --- |
-| Windows x64 | WebView2 | Windows 10 1809 | Core native, package, security, and stress tests pass on a real CI runner. Two new advanced-window features (multi-window event routing, full window controls) are **not yet verified on Windows** — they pass on macOS + Linux. |
+| Windows x64 | WebView2 | Windows 10 1809 | Native, package, security, and stress tests on a real CI runner |
 | macOS ARM64 | WKWebView | macOS 13 | Native, package, security, and stress tests on real Apple Silicon hardware |
 | Linux x64 | WebKitGTK 4.1 | Ubuntu 22.04 | Native, package, security, and stress tests on a real CI runner |
 
@@ -230,9 +230,9 @@ See [packaging and signing](docs/packaging/packaging-and-signing.md).
 
 JDesk is pre-alpha and under active development. The core runtime and primary platform
 adapters are implemented and tested. The `create-jdesk-app` CLI is published to npm, and the
-`dev.jdesk:*` artifacts are published to GitHub Packages (v0.1.0). Maven Central publishing
-(for anonymous consumption), signed/notarized releases, full Windows advanced-window support,
-secondary CPU architectures, and a macOS CI job are still pending.
+`dev.jdesk:*` artifacts are published to GitHub Packages (v0.1.1). Maven Central publishing
+(for anonymous consumption), signed/notarized releases, secondary CPU architectures, and a
+macOS CI job are still pending.
 
 See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and the
 [implementation report](docs/verification/final-report.md) for the detailed status.

@@ -6,7 +6,7 @@ This file is updated **only from machine-generated reports** (spec sections 18, 
 
 | Platform | Status | Evidence | WebView version |
 | --- | --- | --- | --- |
-| Windows x64 | PARTIAL — 26/28 (core PASS; the two new advanced-window probes `multi-window-routing` and `window-controls` FAIL on Windows) | CI run 29145264938 job `windows-x64-native`, artifact `windows-x64-native-evidence`, provider `windows-webview2`. Earlier 22-probe suite was fully green (runs 29137796715 + 29137919391 stress). The two failing probes PASS on macOS + Linux. | WebView2 Evergreen on Windows Server 2025 |
+| Windows x64 | PASS (28/28) | CI run 29151082737 job `windows-x64-native`, artifact `windows-x64-native-evidence`, provider `windows-webview2`, evidence verifier green | WebView2 Evergreen on Windows Server 2025 |
 | macOS ARM64 | PASS | Local real hardware (macOS 26.5.1 arm64), runs 1783741626-1b31e8d3bd4403a7 + 1783741637-3a7dffd9377a2d6b (stress), commit 9cd65d40c clean, verifier green, archived ~/JDesk-evidence-archive | WKWebView (system WebKit) |
 | Linux x64 | PASS | CI run 29139086672 (branch), provider `linux-webkitgtk`, evidence `1783743433-2f0db9f6f5b9b528`, verifier green | WebKitGTK 4.1 (libwebkit2gtk-4.1) |
 
@@ -14,7 +14,7 @@ This file is updated **only from machine-generated reports** (spec sections 18, 
 
 | Platform | Status | Evidence | Package checksum |
 | --- | --- | --- | --- |
-| Windows x64 | PARTIAL — packaged app launches and runs the smoke, but the same two new advanced-window probes fail (see native smoke) | CI run 29145264938 (`package-windows-x64`); jpackage app-image launched without Gradle, category `package` | — |
+| Windows x64 | PASS | CI run 29151082737 (`package-windows-x64`); jpackage app-image launched without Gradle, category `package`, evidence verifier green | — |
 | macOS ARM64 | PASS | jpackage app-image `JDeskSmoke.app` executed directly; run 1783741694-0ba04a314ebd5e40, category `package`, 21/21, exit 0 | — |
 | Linux x64 | PASS | CI run 29140603452 `package-linux-x64`: app-image launched without Gradle under Xvfb (category `package`) + DEB installer built (`jdesksmoke_1.0.0_amd64.deb`, sha256 2c12b580…, UNSIGNED) | — |
 

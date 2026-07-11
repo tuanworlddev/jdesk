@@ -103,7 +103,7 @@ GitHub Release.
 
 ```bash
 # cut a release
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.1.1 && git push origin v0.1.1
 ```
 
 GitHub Packages requires authentication to **consume**, so add the repository and a token
@@ -132,7 +132,7 @@ The BOM lets consumers align versions:
 
 ```kotlin
 dependencies {
-    implementation(platform("dev.jdesk:jdesk-bom:0.1.0"))
+    implementation(platform("dev.jdesk:jdesk-bom:0.1.1"))
     implementation("dev.jdesk:jdesk-api")      // version from the BOM
     implementation("dev.jdesk:jdesk-runtime")
 }

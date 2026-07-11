@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 
 /** Command-line project generator for JDesk applications. */
 public final class JDeskCli {
-    private static final String DEFAULT_VERSION = "0.1.0";
+    private static final String DEFAULT_VERSION = "0.1.1";
     private static final Pattern PACKAGE_NAME = Pattern.compile(
             "[a-z_][a-z0-9_]*(\\.[a-z_][a-z0-9_]*)+");
     private static final Set<String> TEMPLATES =
