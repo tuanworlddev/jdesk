@@ -41,10 +41,32 @@ See [VERIFICATION.md](VERIFICATION.md) for recorded evidence and
   - macOS: system WKWebView; no additional runtime installation is required.
   - Linux: WebKitGTK 4.1, for example `sudo apt-get install libwebkit2gtk-4.1-0`.
 
+## Quick Start
+
+Scaffold a new app with the published npm CLI — the same flow as `create-vite` /
+`create-next-app`:
+
+```bash
+npm create jdesk-app@latest my-app
+# or
+npx create-jdesk-app@latest my-app
+```
+
+It walks you through a guided setup (project name, package id, build system, template) and
+prints the commands to run. See [`create-jdesk-app` on npm](https://www.npmjs.com/package/create-jdesk-app).
+
+> **Building a scaffolded app (pre-alpha).** The `dev.jdesk:*` framework artifacts are not on
+> Maven Central yet — they are published to GitHub Packages (which requires authentication to
+> consume). So to build the generated project today, either scaffold with
+> `--jdesk-source /path/to/JDesk` (a local checkout, used as a Gradle composite build), run
+> `./gradlew publishToMavenLocal` from a checkout first, or configure the GitHub Packages
+> repository with a `read:packages` token. Anonymous `npx create-jdesk-app && ./gradlew run`
+> becomes fully turnkey once the artifacts reach Maven Central. See
+> [scaffolding and publishing](docs/development/scaffolding-and-publishing.md).
+
 ## Install From Source
 
-Public framework and CLI artifacts are not released yet. Use a local checkout for the
-current pre-alpha version.
+Alternatively, build the CLI from a local checkout of this repository:
 
 Build and test the framework:
 
@@ -82,35 +104,46 @@ jdesk.bat --help
 
 ## Create An Application
 
-Create a single-module application:
+Use the npm CLI (recommended). Run it with no arguments for a guided setup:
 
 ```bash
-jdesk create my-app \
-  --template basic \
-  --package com.example.myapp \
-  --jdesk-source "$JDESK_HOME"
+npx create-jdesk-app@latest
 ```
 
-Create a multi-module application with separate domain, application, infrastructure, and
-desktop modules:
+It asks for the project name, Java package (default `com.example.<name>`, press Enter to
+accept), build system (**Gradle** — full tooling, or **Maven** — build + run), and, for
+Gradle, a frontend template (arrow keys): `basic`, `vanilla`, `react`, `vue`, `svelte`, or
+`structured`. Or pass everything as flags:
 
 ```bash
-jdesk create my-suite \
-  --template structured \
-  --package com.example.mysuite \
-  --jdesk-source "$JDESK_HOME"
+npx create-jdesk-app@latest my-app --template react --package com.example.myapp
+npx create-jdesk-app@latest my-suite --template structured
+npx create-jdesk-app@latest my-app --maven          # Maven instead of Gradle
 ```
 
-`--jdesk-source` connects the generated project to the local framework checkout as a
-Gradle composite build. It can be omitted after JDesk artifacts are published.
+Then:
+
+```bash
+cd my-app
+./gradlew run          # launch the app on this OS (Gradle)
+./gradlew dev          # dev loop with frontend hot-reload
+```
+
+You can also use the bundled Java CLI from a source checkout
+(`jdesk create my-app --template basic --package com.example.myapp --jdesk-source "$JDESK_HOME"`);
+`--jdesk-source` wires the generated project to the local framework as a Gradle composite
+build (see the pre-alpha note under Quick Start).
 
 Each generated project includes:
 
-- A Gradle wrapper and JDK 25 toolchain configuration.
-- JPMS descriptors and platform-specific runtime dependency selection.
+- Gradle wrapper + JDK 25 toolchain (or a `pom.xml` for the Maven build system).
+- A short `run` task and aliases (`run`, `dev`, `doctor`, `bindings`, `pkg`).
 - A capability policy and a sample typed Java command.
-- A Vite frontend and a production asset builder.
+- A frontend (plain HTML/JS, or Vite + React/Vue/Svelte) and a production asset builder.
 - Development, packaging, and installer tasks from `dev.jdesk.application`.
+
+Single-module templates are classpath apps (no `module-info.java`); the `structured`
+template is modular.
 
 ## Development
 
@@ -196,8 +229,10 @@ See [packaging and signing](docs/packaging/packaging-and-signing.md).
 ## Project Status
 
 JDesk is pre-alpha and under active development. The core runtime and primary platform
-adapters are implemented and tested. Public artifact publication, signed/notarized
-releases, secondary CPU architectures, and a macOS CI job are still pending.
+adapters are implemented and tested. The `create-jdesk-app` CLI is published to npm, and the
+`dev.jdesk:*` artifacts are published to GitHub Packages (v0.1.0). Maven Central publishing
+(for anonymous consumption), signed/notarized releases, full Windows advanced-window support,
+secondary CPU architectures, and a macOS CI job are still pending.
 
 See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and the
 [implementation report](docs/verification/final-report.md) for the detailed status.

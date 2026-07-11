@@ -116,19 +116,28 @@ npx create-jdesk-app@latest my-app --template react --package com.acme.myapp
 
 ## Pre-alpha: consuming the framework today
 
-JDesk is **pre-alpha**. The `dev.jdesk:*` libraries and the `dev.jdesk.application` Gradle
-plugin are **not yet published to Maven Central**, so a project scaffolded in the default
-"published" mode cannot resolve them yet. Until publication lands, point the scaffolder at a
-local JDesk checkout with `--jdesk-source`, which wires the checkout in as a Gradle
-[composite build](https://docs.gradle.org/current/userguide/composite_builds.html) so the
-generated project compiles against your local sources:
+JDesk is **pre-alpha**. The `create-jdesk-app` CLI is on npm, and the `dev.jdesk:*` libraries
+and the `dev.jdesk.application` Gradle plugin are published to **GitHub Packages** (v0.1.0) —
+but **not yet to Maven Central**. GitHub Packages requires authentication to consume, so a
+project scaffolded in the default "published" mode cannot resolve the artifacts anonymously
+yet. Three ways to build today:
 
-```bash
-npx create-jdesk-app@latest my-app --jdesk-source /path/to/JDesk
-```
+1. **Local checkout (simplest).** Point the scaffolder at a JDesk checkout with
+   `--jdesk-source`, which wires it in as a Gradle
+   [composite build](https://docs.gradle.org/current/userguide/composite_builds.html):
 
-Alternatively, publish the artifacts to your local Maven repository
-(`./gradlew publishToMavenLocal` in the JDesk checkout) and consume them from `mavenLocal`.
+   ```bash
+   npx create-jdesk-app@latest my-app --jdesk-source /path/to/JDesk
+   ```
+
+2. **GitHub Packages.** Add the repository and a `read:packages` token to the generated
+   `settings.gradle.kts` (see [Scaffolding and publishing](../development/scaffolding-and-publishing.md)).
+
+3. **Local Maven repository.** Run `./gradlew publishToMavenLocal` in a JDesk checkout and
+   consume the artifacts from `mavenLocal`.
+
+Anonymous `npx create-jdesk-app && ./gradlew run` becomes fully turnkey once the artifacts
+reach Maven Central.
 The details and the exact publish/consume chain are in
 [Scaffolding and publishing](../development/scaffolding-and-publishing.md). For what is
 proven on which platform, see the [verification matrix](../../VERIFICATION.md).
