@@ -29,6 +29,10 @@ public final class OriginNormalizer {
         if (uri.getRawPath() != null && !uri.getRawPath().isEmpty() && !uri.getRawPath().equals("/")) {
             throw new JDeskException(ErrorCode.INVALID_REQUEST, "Origin must not contain a path");
         }
+        if (uri.getRawQuery() != null || uri.getRawFragment() != null) {
+            throw new JDeskException(ErrorCode.INVALID_REQUEST,
+                    "Origin must not contain a query or fragment");
+        }
         scheme = scheme.toLowerCase(Locale.ROOT);
         host = host.toLowerCase(Locale.ROOT);
         int port = uri.getPort();
