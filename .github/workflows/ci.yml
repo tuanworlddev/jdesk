@@ -127,18 +127,26 @@ jobs:
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       # Exact packages: libwebkit2gtk-4.1-0 (WebKitGTK 4.1 engine; pulls GTK 3, GLib,
-      # libsoup3, JavaScriptCore and cairo as dependencies) and xvfb (headless X server).
-      - name: Install WebKitGTK 4.1 and Xvfb
+      # libsoup3, JavaScriptCore and cairo as dependencies), xvfb (headless X server),
+      # plus gnome-keyring + libsecret-tools + dbus-x11 so the SecretStore probe can
+      # exercise a real freedesktop Secret Service (secret-tool) headlessly.
+      - name: Install WebKitGTK 4.1, Xvfb, and Secret Service
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-0 xvfb
-          apt-cache policy libwebkit2gtk-4.1-0 xvfb
+          sudo apt-get install -y libwebkit2gtk-4.1-0 xvfb gnome-keyring libsecret-tools dbus-x11
+          apt-cache policy libwebkit2gtk-4.1-0 xvfb gnome-keyring libsecret-tools
       - name: Run native smoke (real WebKitGTK under Xvfb)
         env:
           # GitHub-hosted runners have no DRM render node; WebKit's DMA-BUF renderer
           # fails/blanks under llvmpipe. Documented WebKitGTK environment switch.
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
-        run: xvfb-run -a --server-args="-screen 0 1280x800x24" ./gradlew --no-configuration-cache :test-apps:native-smoke:run "-PjdeskPlatform=linux" "-PjdeskStress=true" --stacktrace
+        run: |
+          xvfb-run -a --server-args="-screen 0 1280x800x24" bash -ceu '
+            export $(dbus-launch)
+            eval "$(echo -n "ci-keyring" | gnome-keyring-daemon --unlock --replace --components=secrets)"
+            export GNOME_KEYRING_CONTROL
+            secret-tool store --label=ci-probe service jdesk-ci key probe <<< "ok" && secret-tool lookup service jdesk-ci key probe
+            ./gradlew --no-configuration-cache :test-apps:native-smoke:run "-PjdeskPlatform=linux" "-PjdeskStress=true" --stacktrace'
       - name: Verify evidence (anti-fake)
         run: ./gradlew --no-configuration-cache :test-apps:native-smoke:verifyEvidence "-PjdeskPlatform=linux"
       - name: Upload evidence
