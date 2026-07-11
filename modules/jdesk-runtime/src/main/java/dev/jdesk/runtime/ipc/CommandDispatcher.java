@@ -241,13 +241,18 @@ public final class CommandDispatcher implements AutoCloseable {
         return envelopes.errorResult(id, ErrorCode.INTERNAL_ERROR, "Command failed");
     }
 
-    /** Sends the terminal result exactly once and releases tracking. */
-    private void terminate(InvocationTracker.Invocation invocation, String resultJson, boolean fromTimeout) {
-        if (fromTimeout) {
-            invocation.cancel();
-        }
+    /**
+     * Sends the terminal result exactly once and releases tracking. The terminal CAS is
+     * won BEFORE any interrupt: otherwise the interrupted worker could race in with a
+     * CANCELLED result and make a timeout non-deterministic.
+     */
+    private void terminate(InvocationTracker.Invocation invocation, String resultJson,
+            boolean interruptWorker) {
         if (!invocation.tryTerminate()) {
             return;
+        }
+        if (interruptWorker) {
+            invocation.cancel();
         }
         tracker.remove(invocation.id());
         respond(invocation.session(), resultJson);
@@ -258,10 +263,10 @@ public final class CommandDispatcher implements AutoCloseable {
         if (!current.accepts(cancel.nonce())) {
             return;
         }
-        InvocationTracker.Invocation invocation = tracker.cancel(cancel.id());
+        InvocationTracker.Invocation invocation = tracker.find(cancel.id());
         if (invocation != null) {
             terminate(invocation, envelopes.errorResult(cancel.id(), ErrorCode.CANCELLED,
-                    "Command was cancelled"), false);
+                    "Command was cancelled"), true);
         }
     }
 
