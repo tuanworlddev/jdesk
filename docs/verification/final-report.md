@@ -24,6 +24,33 @@ Date: 2026-07-11 (UTC)
   macOS Intel, Linux ARM64); a project-generator for the basic/structured templates; a
   dedicated performance benchmark harness.
 
+## BLOCKED items — smallest action required from the user
+
+These are the only Definition-of-Done items not satisfiable autonomously; each is blocked
+on a credential or a cost decision that only the account owner can supply. Nothing here is
+faked or worked around.
+
+1. **Signed + notarized release packages** (§16.3, §21 signed-release gate). The signing
+   hooks and installer builds exist; they produce `UNSIGNED` artifacts because no signing
+   identities are present. To reach a signed release, provide as CI secrets:
+   - Windows: an Authenticode code-signing certificate (`.pfx` + password) for `signtool`.
+   - macOS: a Developer ID Application + Developer ID Installer certificate, plus
+     notarization credentials (Apple ID, app-specific password, team id) for `notarytool`.
+   - Linux: a GPG key id for package/repository signing.
+   Then set `jdesk { signing { ... } }` and enable signing in the package/installer CI
+   steps. Attempted alternative: self-signed certs — rejected, they do not satisfy a real
+   signed-release gate and would be dishonest to label as signed.
+
+2. **macOS native/package CI leg** (§19). macOS is verified on **real local Apple Silicon
+   hardware** with archived, verifier-checked evidence, which satisfies §0 rule 5 (the
+   current machine can test macOS, so no CI runner is required). Enabling a private-repo
+   `macos-14` CI leg is a cost decision (≈10× runner minutes); the job can be added on
+   request. This item is therefore **verified on real hardware**, not blocked — listed here
+   only for transparency about the CI matrix.
+
+The remaining "deferred" items (secondary architectures, project generator, benchmark
+harness) are out of the section-26 v1 DoD and are genuine future work, not blockers.
+
 ## Real verification matrix
 
 | OS/arch | Native smoke | Package smoke | Security probes | Evidence / CI | WebView |
