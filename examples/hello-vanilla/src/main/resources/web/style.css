@@ -1,0 +1,88 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  background: Canvas;
+  color: CanvasText;
+}
+
+main {
+  max-width: 34rem;
+  padding: 2rem;
+}
+
+h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.6rem;
+}
+
+.subtitle {
+  margin: 0 0 1.5rem;
+  opacity: 0.75;
+}
+
+#greet-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+#name {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  font-size: 1rem;
+  border: 1px solid color-mix(in srgb, CanvasText 30%, transparent);
+  border-radius: 0.4rem;
+  background: Field;
+  color: FieldText;
+}
+
+#greet-button {
+  padding: 0.5rem 1.1rem;
+  font-size: 1rem;
+  border: none;
+  border-radius: 0.4rem;
+  background: #3560e0;
+  color: #fff;
+  cursor: pointer;
+}
+
+#greet-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.status {
+  min-height: 1.2rem;
+  font-size: 0.9rem;
+  opacity: 0.75;
+}
+
+.status.error {
+  color: #c0392b;
+  opacity: 1;
+}
+
+blockquote {
+  margin: 1rem 0 0;
+  padding: 1rem 1.25rem;
+  border-left: 4px solid #3560e0;
+  border-radius: 0 0.4rem 0.4rem 0;
+  background: color-mix(in srgb, #3560e0 8%, Canvas);
+}
+
+blockquote p {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+blockquote footer {
+  font-size: 0.8rem;
+  opacity: 0.65;
+}

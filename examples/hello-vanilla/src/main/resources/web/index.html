@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JDesk — hello-vanilla</title>
+  <!-- CSP-safe: external stylesheet and script only, no inline code. -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>JDesk hello-vanilla</h1>
+    <p class="subtitle">Java &#8596; system WebView over the JDesk bridge — no Node.js, no bundler.</p>
+
+    <form id="greet-form" autocomplete="off">
+      <input id="name" type="text" placeholder="Your name" aria-label="Your name">
+      <button id="greet-button" type="submit" disabled>Greet</button>
+    </form>
+
+    <p id="status" class="status">connecting to the JDesk bridge&#8230;</p>
+    <blockquote id="answer" hidden>
+      <p id="answer-message"></p>
+      <footer id="answer-meta"></footer>
+    </blockquote>
+  </main>
+  <script src="main.js"></script>
+</body>
+</html>
