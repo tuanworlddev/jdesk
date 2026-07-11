@@ -24,6 +24,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      # CUPS client provides `lp` so CupsPrintingTest exercises the real spooler path
+      # (a job to a bogus printer exits non-zero) rather than the lp-absent branch,
+      # matching the coverage the macOS dev machines produce.
+      - name: Install CUPS client (lp)
+        run: sudo apt-get update && sudo apt-get install -y cups-client
       - name: Build and unit test
         run: ./gradlew build --stacktrace
       - name: Generate and build real CLI templates

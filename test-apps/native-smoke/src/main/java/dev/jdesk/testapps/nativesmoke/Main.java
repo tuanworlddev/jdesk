@@ -481,22 +481,30 @@ public final class Main {
                             || String.valueOf(ex).contains("not readable")
                             || String.valueOf(ex).contains("does not exist");
                 }
-                // A real (tiny) PDF to a non-existent printer must be rejected by lp,
-                // proving the job reached the spooler rather than silently succeeding.
-                java.nio.file.Path pdf = java.nio.file.Files.createTempFile("jdesk-print", ".pdf");
-                java.nio.file.Files.writeString(pdf,
-                        "%PDF-1.1\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n");
-                boolean spoolerReached = false;
-                try {
-                    runtime.printFile(dev.jdesk.api.PrintJob.of(pdf.toString())
-                            .toPrinter("jdesk-nonexistent-printer"))
-                            .toCompletableFuture().get(25, TimeUnit.SECONDS);
-                } catch (Exception ex) {
-                    spoolerReached = true; // lp rejected the unknown printer
+                // On CUPS (macOS/Linux) submit a real PDF to a bogus printer: lp rejects
+                // it, proving the job reached the spooler rather than silently succeeding.
+                // Windows printFile uses ShellExecute "print", which needs a registered
+                // PDF handler and a default printer that headless CI may lack — so there
+                // we assert only the cross-platform missing-file rejection.
+                boolean cups = !System.getProperty("os.name", "").toLowerCase().contains("win");
+                boolean spoolerOutcome = true;
+                if (cups) {
+                    java.nio.file.Path pdf = java.nio.file.Files.createTempFile("jdesk-print", ".pdf");
+                    java.nio.file.Files.writeString(pdf,
+                            "%PDF-1.1\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n");
+                    spoolerOutcome = false;
+                    try {
+                        runtime.printFile(dev.jdesk.api.PrintJob.of(pdf.toString())
+                                .toPrinter("jdesk-nonexistent-printer"))
+                                .toCompletableFuture().get(25, TimeUnit.SECONDS);
+                    } catch (Exception ex) {
+                        spoolerOutcome = true; // lp rejected the unknown printer
+                    }
+                    java.nio.file.Files.deleteIfExists(pdf);
                 }
-                java.nio.file.Files.deleteIfExists(pdf);
-                evidence.addCase("java:print-file-plumbing", rejectsMissing && spoolerReached,
-                        "rejectsMissing=" + rejectsMissing + " spoolerReached=" + spoolerReached);
+                evidence.addCase("java:print-file-plumbing", rejectsMissing && spoolerOutcome,
+                        "cups=" + cups + " rejectsMissing=" + rejectsMissing
+                                + " spoolerReached=" + spoolerOutcome);
             } catch (Exception e) {
                 evidence.addCase("java:print-file-plumbing", false, String.valueOf(e));
             }

@@ -430,6 +430,13 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
     }
     @Override public CompletionStage<Void> printFile(dev.jdesk.api.PrintJob job) {
         java.util.Objects.requireNonNull(job, "job");
+        // Validate the file once, platform-agnostically, so every backend rejects a
+        // missing/unreadable file with the same INVALID_REQUEST (Windows ShellExecute
+        // would otherwise surface an opaque error code instead).
+        if (!java.nio.file.Files.isReadable(java.nio.file.Path.of(job.filePath()))) {
+            return CompletableFuture.failedFuture(new JDeskException(ErrorCode.INVALID_REQUEST,
+                    "Print file does not exist or is not readable"));
+        }
         // Printing shells out to the OS spooler (blocking) — run it on a virtual thread,
         // never the common ForkJoinPool where a blocked lp would starve other work.
         CompletableFuture<Void> future = new CompletableFuture<>();

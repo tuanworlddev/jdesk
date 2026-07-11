@@ -88,7 +88,7 @@ paths are therefore verified on all three platforms — no longer compile-only.
 
 ## Feature evidence — 2026-07-12 batch 3 (macOS ARM64, local real hardware)
 
-Runs 1783794278-2cd292914b96248c (45/45) and 1783794305-fa5b6399e5527fdd (stress+stream,
+Runs 1783794868-9b2701ced93788b0 (45/45) and 1783794305-fa5b6399e5527fdd (stress+stream,
 47/47); verifier green; archived under `evidence/`. Interactive native panels were driven
 by a `System Events` driver against a packaged `.app` (guarded to only send keystrokes
 when JDeskSmoke is frontmost, so nothing leaks to other apps).

@@ -20,12 +20,12 @@ public final class CupsPrinting {
     private CupsPrinting() {
     }
 
-    public static void printFile(PrintJob job) {
-        Path file = Path.of(job.filePath());
-        if (!Files.isReadable(file)) {
-            throw new JDeskException(ErrorCode.INVALID_REQUEST,
-                    "Print file does not exist or is not readable");
-        }
+    /**
+     * The {@code lp} argument vector for a job: {@code -d} printer, {@code -n} copies,
+     * {@code -o media=} paper size, then the absolute file path. Pure and deterministic
+     * (no I/O), so the option mapping is unit-testable on any platform.
+     */
+    static List<String> buildCommand(PrintJob job) {
         List<String> command = new ArrayList<>();
         command.add("lp");
         job.printerName().ifPresent(printer -> {
@@ -40,7 +40,17 @@ public final class CupsPrinting {
             command.add("-o");
             command.add("media=" + media);
         });
-        command.add(file.toAbsolutePath().toString());
+        command.add(Path.of(job.filePath()).toAbsolutePath().toString());
+        return command;
+    }
+
+    public static void printFile(PrintJob job) {
+        Path file = Path.of(job.filePath());
+        if (!Files.isReadable(file)) {
+            throw new JDeskException(ErrorCode.INVALID_REQUEST,
+                    "Print file does not exist or is not readable");
+        }
+        List<String> command = buildCommand(job);
         try {
             Process process = new ProcessBuilder(command)
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)

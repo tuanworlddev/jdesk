@@ -17,6 +17,18 @@ class CupsPrintingTest {
     Path dir;
 
     @Test
+    void buildCommandMapsAllOptionsDeterministically() {
+        // Full option set — covers every branch without spawning lp (portable).
+        assertThat(CupsPrinting.buildCommand(PrintJob.of("/tmp/a.pdf")
+                .toPrinter("Zebra").withCopies(3).withPaperSize("Custom.4x6in")))
+                .containsSubsequence("lp", "-d", "Zebra", "-n", "3", "-o",
+                        "media=Custom.4x6in", "/tmp/a.pdf");
+        // Defaults — no printer, single copy, no media: just lp + file.
+        assertThat(CupsPrinting.buildCommand(PrintJob.of("/tmp/b.pdf")))
+                .containsExactly("lp", "/tmp/b.pdf");
+    }
+
+    @Test
     void missingFileIsRejectedBeforeSpooling() {
         assertThatThrownBy(() -> CupsPrinting.printFile(PrintJob.of("/no/such/file.pdf")))
                 .isInstanceOfSatisfying(JDeskException.class,
