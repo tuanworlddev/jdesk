@@ -119,10 +119,13 @@ Gates:
 - [x] Packaged app image launches without Gradle: `package-linux-x64` CI job (jpackage app-image, launched directly under Xvfb) — see run below
 
 ### Phase 6 — Security hardening
-Status: NOT STARTED
+Status: DONE locally (macOS); CI legs running (run 29140030589)
 
 Gates:
-- [ ] All Section 17.6 probes pass on all primary platforms
+- [x] Per-window capability config, origin/nonce lifecycle, navigation/popup restrictions, threat model doc (docs/security/threat-model.md)
+- [x] security-probe app proves all Section 17.6 items on a real WebView: macOS run 1783744909-9ab8bd400421eeb1, category `native`, provider `macos-wkwebview`, 22/22 PASS, verifier green, archived. Windows + Linux legs run as `security-windows-x64` / `security-linux-x64` CI jobs.
+- [x] Evidence category hardened to `native` so the anti-fake verifier enforces real providers (probe found + fixed this in the probe app).
+- [x] CspValidator release check proven by unit test (unsafe-inline/eval rejected without acknowledgement; default CSP strict)
 
 ### Phase 7 — Packaging, documentation, release candidate
 Status: NOT STARTED
