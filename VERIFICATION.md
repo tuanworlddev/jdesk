@@ -59,10 +59,15 @@ buffer the requested window fully (bounded by the Range slice now, but not chunk
 
 ## Feature evidence — 2026-07-11 batch 2 (macOS ARM64, local real hardware)
 
-Runs 1783790415-eee98ce7bf762911 (41/41) and 1783790440-a59cf257978cee62 (stress+stream,
+Runs 1783791506-d5c10bf0667a4010 (41/41) and 1783791575-09e1e6d35ee29915 (stress+stream,
 43/43), security-probe 1783788948-01ce5170829275d3 (22/22); verifier green; archived
-under `evidence/`. Same worktree, commit pending. Windows/Linux code paths compile-only
-until CI/hardware runs.
+under `evidence/`. The same native-smoke suite also runs on the Windows and Linux CI
+lanes (real WebView2 / WebKitGTK): the SecretStore probe exercises DPAPI on Windows and a
+provisioned gnome-keyring on Linux, and the async-serving assertion is macOS-only (both
+other platforms still serve scheme requests synchronously — documented in
+`docs/guides/serving-assets.md`). The packaging lanes launch the jpackage image with
+`-Djdesk.smoke.fullProbes=false`, verifying the image runs the core + console + asset
+suite without provisioning a keyring/HTTP endpoint.
 
 | Capability | Status (macOS) | Evidence case |
 | --- | --- | --- |

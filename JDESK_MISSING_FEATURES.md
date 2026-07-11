@@ -20,7 +20,7 @@ paths but remain compile-verified only until runs on those operating systems.
 - **Template bugs fixed**: `import "./style.css"` removed (CSS now a `<link>`, `Build.java` rewrites the path); `jdeskFrontendBuild` decoupled from `classes` (now wired to `jar`), covered by TestKit functional test.
 - IPC latency instrumentation now recorded in stress runs (p50/p95/p99 in `js:ipc-stress-10000`).
 
-### Batch 2 (same day, runs 1783788877/1783788922/1783788948)
+### Batch 2 (same day, runs 1783791506/1783791575/1783788948; verified on Windows/Linux CI too)
 
 - **Debug/automation channel**: opt-in loopback automation endpoint (`-Djdesk.automation=true`; token-gated `GET /windows`, `POST /evaluate`, `GET /snapshot`, `GET /console`) for E2E tests, CI, and agents — verified live over real HTTP against the running app. See `docs/guides/automation-and-e2e.md`.
 - **App-defined asset routes** (`JDeskApplication.Builder.assetRoute`): Java-served binary content under `jdesk://app/<prefix>/` through the streaming pipeline (Range included) — replaces base64-over-IPC image proxying. macOS scheme serving is now fully asynchronous (background resolve/stream, main-thread-marshalled WKURLSchemeTask callbacks, stop handling); verified live that a stalled route does not block IPC. Windows/Linux still serve synchronously (documented).

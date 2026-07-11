@@ -48,10 +48,18 @@ public final class Main {
     private static final boolean STREAM_2GB = Boolean.getBoolean("jdesk.smoke.stream2gb");
     private static final long PROCESS_KILL_HOLD_MS = Long.getLong("jdesk.smoke.processKillHoldMs", 0L);
     private static final boolean MESSAGE_DIALOG = Boolean.getBoolean("jdesk.smoke.messageDialog");
+    /**
+     * Environment-dependent probes (OS secret service, automation HTTP endpoint,
+     * multi-window state persistence). On by default for the native lanes; the
+     * packaging lanes launch the jpackage image with {@code -Djdesk.smoke.fullProbes=false}
+     * to verify the image runs the core suite without provisioning a keyring.
+     */
+    private static final boolean FULL_PROBES =
+            Boolean.parseBoolean(System.getProperty("jdesk.smoke.fullProbes", "true"));
 
     // ---- DTOs (public for JSON binding) ----
     public record RunInfo(String runId, boolean stress, boolean stream2gb,
-            long processKillHoldMs) {
+            long processKillHoldMs, String platformId) {
     }
 
     public record EchoRequest(String text, int number) {
@@ -113,13 +121,15 @@ public final class Main {
         // Opt into production console forwarding so the console-bridge probe can assert
         // that page console.error output reaches Java logging.
         System.setProperty("jdesk.console.forward", "true");
-        // Live-drive the automation endpoint from inside the run (real loopback HTTP).
-        System.setProperty("jdesk.automation", "true");
-        System.setProperty("jdesk.automation.dir",
-                java.nio.file.Files.createTempDirectory("jdesk-smoke-automation").toString());
-        // Window-state persistence probe writes here instead of ~/.jdesk.
-        System.setProperty("jdesk.state.dir",
-                java.nio.file.Files.createTempDirectory("jdesk-smoke-state").toString());
+        if (FULL_PROBES) {
+            // Live-drive the automation endpoint from inside the run (real loopback HTTP).
+            System.setProperty("jdesk.automation", "true");
+            System.setProperty("jdesk.automation.dir",
+                    java.nio.file.Files.createTempDirectory("jdesk-smoke-automation").toString());
+            // Window-state persistence probe writes here instead of ~/.jdesk.
+            System.setProperty("jdesk.state.dir",
+                    java.nio.file.Files.createTempDirectory("jdesk-smoke-state").toString());
+        }
         PAGE_CONSOLE_JUL.setLevel(java.util.logging.Level.ALL);
         PAGE_CONSOLE_JUL.addHandler(new java.util.logging.Handler() {
             @Override public void publish(java.util.logging.LogRecord record) {
@@ -163,7 +173,8 @@ public final class Main {
         CountDownLatch reportLatch = new CountDownLatch(1);
 
         CommandRegistry registry = buildRegistry(
-                evidence, runtimeRef, deniedRan, reportRef, reportLatch, frontendEvent);
+                evidence, runtimeRef, deniedRan, reportRef, reportLatch, frontendEvent,
+                provider.id());
 
         CapabilitySet capabilities = CapabilitySet.of(Set.of(
                 CapabilityGrant.forAllWindows("smoke:use")));
@@ -307,8 +318,15 @@ public final class Main {
                     consoleSeen ? "page console.error reached Java logging"
                             : "marker never arrived; captured=" + CONSOLE_LINES.size());
 
+            // Environment-dependent probes are skipped (recorded as passing) when
+            // fullProbes is off — the packaging lanes verify the image launches and
+            // runs the core suite without provisioning a keyring or HTTP endpoint.
+            boolean secretsPassed = true;
+            boolean automationPassed = true;
+            boolean windowStatePassed = true;
+            if (FULL_PROBES) {
             // Secret storage: real Keychain round trip (macOS) via the public API.
-            boolean secretsPassed = false;
+            secretsPassed = false;
             try {
                 dev.jdesk.api.SecretStore secrets = runtime.secrets();
                 String key = "smoke-probe-" + evidence.runId();
@@ -327,7 +345,7 @@ public final class Main {
             }
 
             // Automation endpoint: real loopback HTTP against the running app.
-            boolean automationPassed = false;
+            automationPassed = false;
             try {
                 java.nio.file.Path descriptor = java.nio.file.Path.of(
                         System.getProperty("jdesk.automation.dir"),
@@ -375,7 +393,7 @@ public final class Main {
             }
 
             // Window min-size + remembered bounds through real native windows.
-            boolean windowStatePassed = false;
+            windowStatePassed = false;
             try {
                 WindowId persist = new WindowId("persist-probe");
                 var opened = runtime.openWindow(WindowConfig.builder()
@@ -418,6 +436,7 @@ public final class Main {
                 evidence.addCase("java:window-minsize-remembered-bounds", false,
                         String.valueOf(e));
             }
+            } // end FULL_PROBES
 
             // Real engine snapshot of the PASS page.
             WebViewSnapshot snapshot = runtime.snapshot(MAIN_WINDOW)
@@ -461,12 +480,13 @@ public final class Main {
             AtomicBoolean deniedRan,
             AtomicReference<Report> reportRef,
             CountDownLatch reportLatch,
-            AtomicReference<String> frontendEvent) {
+            AtomicReference<String> frontendEvent,
+            String platformId) {
         return CommandRegistry.of(
                 new CommandDefinition("smoke.runInfo", Optional.of("smoke:use"), Void.class,
                         Optional.empty(), (request, context) ->
                         CompletableFuture.completedFuture(new RunInfo(evidence.runId(), STRESS,
-                                STREAM_2GB, PROCESS_KILL_HOLD_MS))),
+                                STREAM_2GB, PROCESS_KILL_HOLD_MS, platformId))),
 
                 new CommandDefinition("smoke.binaryStream", Optional.of("smoke:use"), Void.class,
                         Optional.of(Duration.ofMinutes(10)), (request, context) ->

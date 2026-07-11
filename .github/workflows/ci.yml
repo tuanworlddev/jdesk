@@ -262,6 +262,7 @@ jobs:
             --java-options "--illegal-native-access=deny" \
             --java-options "-Djdesk.evidence.dir=$GITHUB_WORKSPACE/package-evidence" \
             --java-options "-Djdesk.evidence.category=package" \
+            --java-options "-Djdesk.smoke.fullProbes=false" \
             --dest build/jpackage
       - name: Launch packaged app (no Gradle) under Xvfb
         env:
@@ -321,6 +322,7 @@ jobs:
             --java-options "-Djdesk.windows.webview2loader=$($env:WEBVIEW2_LOADER -replace '\\','/')" `
             --java-options "-Djdesk.evidence.dir=$ws/package-evidence" `
             --java-options "-Djdesk.evidence.category=package" `
+            --java-options "-Djdesk.smoke.fullProbes=false" `
             --dest build/jpackage
       - name: Launch packaged app (no Gradle)
         shell: pwsh
