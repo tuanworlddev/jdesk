@@ -15,9 +15,14 @@ A lightweight desktop application framework: **Java 25 application core + web fr
 
 | Platform | Target | Verified |
 | --- | --- | --- |
-| Windows x64 (WebView2, Win 10 1809+) | v1 | see `VERIFICATION.md` |
-| macOS ARM64 (WKWebView, macOS 13+) | v1 | see `VERIFICATION.md` |
-| Linux x64 (WebKitGTK 4.1, Ubuntu 22.04+) | v1 | see `VERIFICATION.md` |
+| Windows x64 (WebView2, Win 10 1809+) | v1 | ✅ real GitHub Actions runner — native + package + security + 10k-IPC stress (`VERIFICATION.md`) |
+| macOS ARM64 (WKWebView, macOS 13+) | v1 | ✅ real local Apple Silicon hardware — native + package + security + stress (`VERIFICATION.md`) |
+| Linux x64 (WebKitGTK 4.1, Ubuntu 22.04+) | v1 | ✅ real GitHub Actions runner (Xvfb) — native + package + security + stress (`VERIFICATION.md`) |
+
+Verified through real system WebViews with machine-generated, checksum-validated evidence
+(anti-fake, spec §18). Not yet done: signed release packages, installers (MSI/DMG/DEB),
+and a macOS CI leg (macOS is verified on real local hardware). See
+[docs/verification/final-report.md](docs/verification/final-report.md).
 
 ## Repository layout
 
