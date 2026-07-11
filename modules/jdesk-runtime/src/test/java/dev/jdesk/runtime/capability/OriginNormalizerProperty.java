@@ -59,12 +59,18 @@ class OriginNormalizerProperty {
     @Provide
     Arbitrary<String> wellFormedOrigins() {
         Arbitrary<String> scheme = Arbitraries.of("http", "https", "HTTP", "HtTpS");
-        Arbitrary<String> label = Arbitraries.strings()
+        // java.net.URI requires the top (last) hostname label to start with a letter,
+        // so every generated label starts alphabetic.
+        Arbitrary<String> first = Arbitraries.strings()
+                .withCharRange('a', 'z')
+                .withCharRange('A', 'Z')
+                .ofLength(1);
+        Arbitrary<String> rest = Arbitraries.strings()
                 .withCharRange('a', 'z')
                 .withCharRange('A', 'Z')
                 .withCharRange('0', '9')
-                .ofMinLength(1)
-                .ofMaxLength(10);
+                .ofMaxLength(9);
+        Arbitrary<String> label = Combinators.combine(first, rest).as((f, r) -> f + r);
         Arbitrary<String> host = Combinators.combine(label, label)
                 .as((a, b) -> a + "." + b);
         Arbitrary<String> port = Arbitraries.of("", ":80", ":443", ":8080", ":5173", ":65535");
