@@ -32,7 +32,7 @@ adapter injects it as a document-start script over that platform's native messag
 `webkit.messageHandlers.jdesk` on WKWebView and WebKitGTK, `chrome.webview` on WebView2.
 The bridge exposes `window.__jdesk.post(string)` for outbound messages and dispatches
 inbound messages as a `jdesk-message` `CustomEvent` on `document`. The generated
-`@jdesk/client` runtime wraps this so application code calls `invoke(...)` and `on(...)`
+`jdesk-client` runtime wraps this so application code calls `invoke(...)` and `on(...)`
 instead of touching the raw primitive.
 
 The bridge primitive is visible to page script, and that is intentional — a channel the

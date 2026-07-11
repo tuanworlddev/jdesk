@@ -64,7 +64,7 @@ Exact, complete descriptions to look up while working.
 - [IPC protocol](architecture/ipc-protocol.md)
 - [`jdesk-capabilities.json`](reference/capabilities-json.md)
 - [Error codes](reference/error-codes.md)
-- [`@jdesk/client` (TypeScript)](../js/jdesk-client/README.md)
+- [`jdesk-client` (TypeScript)](../js/jdesk-client/README.md)
 
 ## Going deeper
 

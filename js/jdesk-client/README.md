@@ -1,4 +1,4 @@
-# @jdesk/client
+# jdesk-client
 
 Static TypeScript runtime for the JDesk IPC protocol v1
 (`docs/architecture/ipc-protocol.md`): nonce lifecycle, lazy `hello` handshake,

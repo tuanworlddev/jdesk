@@ -143,7 +143,7 @@ dependencies {
 Two npm packages ship the JS side:
 
 - **`create-jdesk-app`** — the scaffolder (bundles `jdesk-cli.jar`).
-- **`@jdesk/client`** — the runtime TypeScript IPC client (`js/jdesk-client`).
+- **`jdesk-client`** — the runtime TypeScript IPC client (`js/jdesk-client`).
 
 ```bash
 npm --prefix js/create-jdesk-app publish --access public

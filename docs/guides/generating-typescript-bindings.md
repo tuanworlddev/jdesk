@@ -110,7 +110,7 @@ One interface per DTO record, sorted by name, mapping Java types to TypeScript:
 ### `commands.ts` — the typed client
 
 A nested `commands` object built from the dot-separated wire names, each wired to `invoke`
-imported from `@jdesk/client`:
+imported from `jdesk-client`:
 
 ```ts
 import { commands } from "./generated/commands";
@@ -121,20 +121,20 @@ const response = await commands.greeting.greet({ name: "Tuan" });
 
 ## Use it from the frontend
 
-The generated `commands.ts` imports `invoke` from [`@jdesk/client`](../../js/jdesk-client/README.md),
+The generated `commands.ts` imports `invoke` from [`jdesk-client`](../../js/jdesk-client/README.md),
 so add that runtime to your frontend:
 
 ```bash
-npm install --prefix ui @jdesk/client
+npm install --prefix ui jdesk-client
 ```
 
-`@jdesk/client` performs the nonce/`hello` handshake lazily on the first `invoke`, assigns
+`jdesk-client` performs the nonce/`hello` handshake lazily on the first `invoke`, assigns
 unique request ids, enforces the 1 MiB client-side size limit, and supports per-call
 timeouts and `AbortSignal` cancellation. You call commands and `await` results:
 
 ```ts
 import { commands } from "./generated/commands";
-import { JDeskError } from "@jdesk/client";
+import { JDeskError } from "jdesk-client";
 
 try {
   const { message } = await commands.greeting.greet({ name: "Tuan" });

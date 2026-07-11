@@ -38,7 +38,7 @@ basic template) and `test-apps/native-smoke` / `security-probe` / `packaging-pro
 A command round trip from the web page to Java and back:
 
 ```
-JS  commands.greeting.greet({name})     // typed wrapper, @jdesk/client
+JS  commands.greeting.greet({name})     // typed wrapper, jdesk-client
       │  invoke envelope {v,kind:"invoke",id,command,payload,nonce}
       ▼
 Native WebView message channel  ──►  PlatformWebView.onMessage (UI thread)

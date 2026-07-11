@@ -33,7 +33,7 @@ class EnvelopeCodecTest {
         ObjectNode node = plain.createObjectNode();
         node.put("v", 1);
         node.put("kind", "hello");
-        node.put("client", "@jdesk/client");
+        node.put("client", "jdesk-client");
         node.put("clientVersion", "0.1.0");
         node.put("nonce", "abc123");
         return node;
@@ -78,7 +78,7 @@ class EnvelopeCodecTest {
         IncomingEnvelope envelope = codec.parse(validHello().toString());
         assertThat(envelope).isInstanceOfSatisfying(IncomingEnvelope.Hello.class, hello -> {
             assertThat(hello.version()).isEqualTo(1);
-            assertThat(hello.client()).isEqualTo("@jdesk/client");
+            assertThat(hello.client()).isEqualTo("jdesk-client");
             assertThat(hello.clientVersion()).isEqualTo("0.1.0");
             assertThat(hello.nonce()).isEqualTo("abc123");
         });

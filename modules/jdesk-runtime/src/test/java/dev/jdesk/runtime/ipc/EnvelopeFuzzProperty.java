@@ -136,7 +136,7 @@ class EnvelopeFuzzProperty {
         node.put("nonce", "0123456789abcdef0123456789abcdef");
         switch (kind) {
             case "hello" -> {
-                node.put("client", "@jdesk/client");
+                node.put("client", "jdesk-client");
                 node.put("clientVersion", "0.1.0");
             }
             case "invoke" -> {

@@ -181,7 +181,7 @@ design, never a fake fallback.
 
 ## 6. Call the command from the page
 
-With `@jdesk/client` and generated bindings, the call is fully typed:
+With `jdesk-client` and generated bindings, the call is fully typed:
 
 ```ts
 import { commands } from "./jdesk-ts/commands";

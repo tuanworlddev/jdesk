@@ -176,7 +176,7 @@ class CommandDispatcherTest {
         ObjectNode node = plain.createObjectNode();
         node.put("v", 1);
         node.put("kind", "hello");
-        node.put("client", "@jdesk/client");
+        node.put("client", "jdesk-client");
         node.put("clientVersion", "0.1.0");
         node.put("nonce", nonce);
         return node.toString();

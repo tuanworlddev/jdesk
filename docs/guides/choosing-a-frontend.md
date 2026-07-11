@@ -144,7 +144,7 @@ anything beyond a first command, switch to the generated typed client:
 - **Raw bridge** — good for learning the protocol and for the smallest possible frontend.
   You build envelopes and parse `jdesk-message` events yourself.
 - **Generated client** — `jdesk-codegen` emits `types.ts` and `commands.ts` at compile
-  time, and [`@jdesk/client`](../../js/jdesk-client/README.md) provides the `invoke`
+  time, and [`jdesk-client`](../../js/jdesk-client/README.md) provides the `invoke`
   runtime they call. You then write:
 
   ```ts

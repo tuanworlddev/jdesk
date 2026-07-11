@@ -157,11 +157,11 @@ const response = await commands.greeting.greet({ name: "Tuan" });
 console.log(response.message); // "Hello, Tuan!"
 ```
 
-If you are not using the generated bindings, call the untyped `invoke` from `@jdesk/client`
+If you are not using the generated bindings, call the untyped `invoke` from `jdesk-client`
 directly:
 
 ```ts
-import { invoke } from "@jdesk/client";
+import { invoke } from "jdesk-client";
 
 const response = await invoke("greeting.greet", { name: "Tuan" });
 ```

@@ -23,7 +23,7 @@ envelope. A stale or wrong nonce can never reach command execution:
 ### hello
 
 ```json
-{"v":1, "kind":"hello", "client":"@jdesk/client", "clientVersion":"0.1.0", "nonce":"<hex>"}
+{"v":1, "kind":"hello", "client":"jdesk-client", "clientVersion":"0.1.0", "nonce":"<hex>"}
 ```
 
 Required before any `invoke`. The runtime replies with `helloAck`. Unsupported `v`

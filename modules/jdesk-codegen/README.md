@@ -64,7 +64,7 @@ Mapping: `String`/`char` → `string`, numeric primitives/boxes → `number`, `b
 
 `commands.ts` exports a nested `commands` object built from the dot-separated wire names
 (`commands.greeting.greet(req)`), wired to `invoke(name, payload)` imported from
-`@jdesk/client` (the static runtime in `js/jdesk-client`).
+`jdesk-client` (the static runtime in `js/jdesk-client`).
 
 ## Determinism
 

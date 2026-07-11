@@ -40,10 +40,10 @@ release the registration when you are done.
 
 ## Subscribe on the JavaScript side
 
-Use `on(name, handler)` from `@jdesk/client`. It returns an unsubscribe function:
+Use `on(name, handler)` from `jdesk-client`. It returns an unsubscribe function:
 
 ```ts
-import { on } from "@jdesk/client";
+import { on } from "jdesk-client";
 
 const off = on("download.progress", (payload) => {
   const { pct } = payload as { pct: number };
@@ -62,7 +62,7 @@ event, its slot is released.
 ### Without the client library
 
 Events arrive as `jdesk-message` document events whose `detail` is the raw JSON envelope
-with `kind: "event"`. Subscribe directly if you are not using `@jdesk/client`:
+with `kind: "event"`. Subscribe directly if you are not using `jdesk-client`:
 
 ```js
 document.addEventListener("jdesk-message", function (event) {

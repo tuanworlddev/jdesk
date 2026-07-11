@@ -38,7 +38,7 @@ final class TsEmitter {
     /** Content of {@code commands.ts}; commands must already be sorted by wire name. */
     static String commandsTs(List<CommandModel> commands) {
         StringBuilder b = new StringBuilder(HEADER);
-        b.append("import { invoke } from \"@jdesk/client\";\n");
+        b.append("import { invoke } from \"jdesk-client\";\n");
         TreeSet<String> imports = new TreeSet<>();
         for (CommandModel command : commands) {
             imports.addAll(command.tsReferencedRecords());

@@ -101,7 +101,7 @@ its JS packages, the flows are:
 
 # The two npm packages:
 npm --prefix js/create-jdesk-app publish --access public   # the scaffolder
-npm --prefix js/jdesk-client publish --access public       # @jdesk/client runtime
+npm --prefix js/jdesk-client publish --access public       # jdesk-client runtime
 ```
 
 A signed Maven release adds an in-memory PGP key (`-PsigningKey=... -PsigningPassword=...`).

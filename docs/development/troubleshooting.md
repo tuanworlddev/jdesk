@@ -78,7 +78,7 @@ Each navigation session has a nonce. On navigation or window close the nonce is
 invalidated, new invokes are rejected, and in-flight calls are cancelled after a grace
 period; late results never reach the new document.
 
-- The `@jdesk/client` runtime handles this: in-flight calls reject with `NAVIGATION_RESET`
+- The `jdesk-client` runtime handles this: in-flight calls reject with `NAVIGATION_RESET`
   and the `hello` handshake is redone lazily. Do **not** cache and reuse an old nonce
   across a navigation — re-read `window.__jdesk.nonce` (or let the client re-handshake).
 - If you hand-roll the protocol (like the vanilla page), wait for the fresh `nonce`

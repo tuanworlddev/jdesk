@@ -1,7 +1,7 @@
 "use strict";
 // Minimal raw JDesk bridge client (same wire protocol as the framework's smoke page):
 // window.__jdesk.post(json) sends to Java, "jdesk-message" document events come back.
-// Vanilla JS on purpose — no npm, no bundler, no @jdesk/client dependency.
+// Vanilla JS on purpose — no npm, no bundler, no jdesk-client dependency.
 (function () {
   var pending = new Map();
   var nextId = 1;

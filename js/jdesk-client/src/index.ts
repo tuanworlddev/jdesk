@@ -1,4 +1,4 @@
-// @jdesk/client — static runtime for the JDesk IPC bridge (protocol v1).
+// jdesk-client — static runtime for the JDesk IPC bridge (protocol v1).
 //
 // Implements docs/architecture/ipc-protocol.md against the uniform platform bridge:
 // outgoing messages go through window.__jdesk.post(json); incoming messages arrive as
@@ -7,7 +7,7 @@
 // {"v":1,"kind":"nonce","nonce":"<hex>"} (and may also be pre-set on window.__jdesk.nonce).
 
 const PROTOCOL_VERSION = 1;
-const CLIENT_NAME = "@jdesk/client";
+const CLIENT_NAME = "jdesk-client";
 const CLIENT_VERSION = "0.1.0";
 const MAX_MESSAGE_BYTES = 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 30_000;
