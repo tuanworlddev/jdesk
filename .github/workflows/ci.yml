@@ -137,6 +137,86 @@ jobs:
           path: test-apps/native-smoke/build/evidence/**
           if-no-files-found: warn
 
+  security-windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      - name: "Fetch WebView2 loader (SDK 1.0.2903.40; Microsoft.Web.WebView2 license documented in docs)"
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.2903.40" -OutFile wv2.zip
+          Expand-Archive wv2.zip -DestinationPath wv2sdk
+          $loader = (Resolve-Path "wv2sdk/build/native/x64/WebView2Loader.dll").Path
+          echo "WEBVIEW2_LOADER=$loader" >> $env:GITHUB_ENV
+      - name: WebView2 runtime version present on runner
+        shell: pwsh
+        run: |
+          $paths = @(
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+            "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+          )
+          $found = $false
+          foreach ($p in $paths) {
+            if (Test-Path $p) { Get-ItemProperty $p | Select-Object pv; $found = $true }
+          }
+          if (-not $found) { Write-Host "WebView2 runtime not found; installing Evergreen bootstrapper"
+            Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile wv2setup.exe
+            Start-Process -FilePath wv2setup.exe -ArgumentList "/silent","/install" -Wait }
+      - name: Run security probes (real WebView2)
+        shell: pwsh
+        run: ./gradlew --no-configuration-cache :test-apps:security-probe:run "-PjdeskPlatform=windows" "-PjdeskWebView2Loader=$env:WEBVIEW2_LOADER" --stacktrace
+      - name: Verify evidence (anti-fake)
+        shell: pwsh
+        run: ./gradlew --no-configuration-cache :test-apps:security-probe:verifyEvidence "-PjdeskPlatform=windows"
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-windows-x64-evidence
+          path: test-apps/security-probe/build/evidence/**
+          if-no-files-found: warn
+
+  security-linux-x64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      # Exact packages: libwebkit2gtk-4.1-0 (WebKitGTK 4.1 engine; pulls GTK 3, GLib,
+      # libsoup3, JavaScriptCore and cairo as dependencies) and xvfb (headless X server).
+      - name: Install WebKitGTK 4.1 and Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-0 xvfb
+          apt-cache policy libwebkit2gtk-4.1-0 xvfb
+      - name: Run security probes (real WebKitGTK under Xvfb)
+        env:
+          # GitHub-hosted runners have no DRM render node; WebKit's DMA-BUF renderer
+          # fails/blanks under llvmpipe. Documented WebKitGTK environment switch.
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+        run: xvfb-run -a --server-args="-screen 0 1280x800x24" ./gradlew --no-configuration-cache :test-apps:security-probe:run "-PjdeskPlatform=linux" --stacktrace
+      - name: Verify evidence (anti-fake)
+        run: ./gradlew --no-configuration-cache :test-apps:security-probe:verifyEvidence "-PjdeskPlatform=linux"
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-linux-x64-evidence
+          path: test-apps/security-probe/build/evidence/**
+          if-no-files-found: warn
+
   package-linux-x64:
     runs-on: ubuntu-latest
     steps:

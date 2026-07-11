@@ -1,0 +1,9 @@
+  body { font-family: monospace; background: #2a1030; color: #f0e0f5; margin: 24px; }
+  h1 { font-size: 20px; }
+  .pass { color: #4ade80; }
+  .fail { color: #f87171; }
+  #status { font-size: 28px; font-weight: bold; margin: 16px 0; padding: 12px;
+            border: 3px solid #888; }
+  #status.ok { border-color: #4ade80; color: #4ade80; background: #052e16; }
+  #status.bad { border-color: #f87171; color: #f87171; background: #450a0a; }
+  li { margin: 2px 0; }

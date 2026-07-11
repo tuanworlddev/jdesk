@@ -22,8 +22,15 @@ not aspirational.
    authority by default.
 
 The security boundary is the **Java-side capability check**, evaluated on every invoke
-before payload deserialization and before user code (`CapabilityEngine`). The frontend
-is never trusted to enforce anything.
+before payload deserialization and before user code (`CapabilityEngine`, spec 12.1). The
+frontend is never trusted to enforce anything.
+
+This model maps directly onto the JDesk core framework spec: deny-by-default capabilities
+(§12.1), navigation/popup restrictions (§12.2), file-access token model (§12.3), CSP and
+release validation (§12.4), supply chain (§12.5), the IPC envelope and limits (§10), asset
+path normalization (§9.1), and crash-diagnostic redaction (§13). Every mitigation below is
+exercised on real system WebViews by `test-apps/security-probe` (§17.6) and recorded as
+anti-fake evidence (§18); exit 0 is written only when every probe passes.
 
 ## Adversary model and mitigations
 
@@ -61,13 +68,22 @@ is never trusted to enforce anything.
   are dropped and never delivered to the new document. Request IDs are unique within a
   session.
 
-### D. Subframes and embedded content
+### D. Subframes and embedded content (spec 12.2)
 
-- **Threat:** an `<iframe>` tries to invoke privileged commands.
-- **Mitigations:** subframes receive no native authority by default; capability
-  evaluation still gates every command on the window's granted set, so an ungranted
-  command is denied regardless of frame. Subframe navigations are policy-checked;
-  new-window requests are denied.
+- **Threat:** an `<iframe>` — sandboxed/opaque, or same-origin — tries to invoke
+  privileged commands or read the parent's session state.
+- **Mitigations:** the bridge world (`window.__jdesk`) is injected into the top frame only
+  on WKWebView/WebKitGTK (`forMainFrameOnly`), and the per-navigation nonce is delivered
+  to the top frame only on all engines. A sandboxed opaque-origin frame cannot read the
+  parent's nonce (cross-origin `SecurityError`) and cannot mint a valid invoke. Even a
+  **same-origin** subframe that reaches the bridge with the parent's *valid* nonce is still
+  gated: capability evaluation denies any command the window was not granted, and the
+  handler never runs.
+- **Probed:** `sandboxed-iframe-no-bridge` (opaque frame, forged nonce, `ranPrivileged`
+  stays false) and `same-origin-iframe-capability-denied` (same-origin frame reaches the
+  bridge with a valid nonce, invokes an ungranted command, receives `CAPABILITY_DENIED`,
+  `ranDenied` stays false). The latter honestly documents that the enforced boundary at the
+  IPC layer is the capability gate, not per-frame origin attestation (see residual risks).
 
 ### E. Malformed or oversized IPC
 
@@ -118,14 +134,61 @@ window in `jdesk-capabilities.json`:
   selections return opaque scoped tokens bound to a canonical target, allowed operations,
   window/session, and expiry (filesystem plugin; not part of the v1 core surface).
 
-## Known limitations (honest)
+## Residual risks (honest)
 
-- WKWebView does not grant custom schemes full HTTPS secure-context behavior; JDesk does
-  not use private selectors to work around this (ADR-004). Web features unavailable under
-  the production origin must be provided by native plugins or documented unsupported.
-- Bridge isolation into a separate script world is applied where the platform supports it
-  (e.g. WKContentWorld); on engines without it, isolation relies on CSP + capability
-  gating.
-- Subframe origin is not distinguished at the IPC layer in v1; the enforced control is
-  the capability gate plus deny-by-default subframe authority, not per-frame origin
-  attestation.
+These are known, accepted for v1, and documented rather than hidden.
+
+1. **Same-origin content inherits full app authority — by design.** Any script executing in
+   the top-level app-origin document (or a same-origin subframe it embeds) can reach the
+   bridge and call every capability that window holds. There is no in-document sandbox
+   distinguishing "the app's own code" from injected same-origin script, and — as the
+   `same-origin-iframe-capability-denied` probe shows — the IPC layer cannot tell a
+   same-origin subframe apart from the top frame once it presents a valid nonce. The
+   enforced control is therefore the **per-window capability gate**, not per-frame origin
+   attestation. XSS in the frontend is a capability-scoped compromise; the defenses are the
+   strict CSP (§12.4), minimizing granted capabilities per window (see the capability
+   guide), and shipping no dangerous default capabilities. Treat every granted capability as
+   reachable by any script that runs in that window.
+
+2. **WKWebView custom-scheme secure-context limitations.** WKWebView (and WebKitGTK) do not
+   grant the `jdesk://` custom scheme full HTTPS "secure context" behavior; some powerful web
+   features gate on secure contexts and may be unavailable. JDesk does not use private
+   selectors to work around this (ADR-003/ADR-004). Features unavailable under the production
+   origin must be provided by native plugins or documented as unsupported. Related: CSP
+   inheritance and sandbox semantics for `srcdoc`/opaque frames vary by engine, which is why
+   the sandboxed-iframe probe records *which* path executed rather than asserting one
+   engine's behavior.
+
+3. **The bridge primitive is visible to page JS — by design.** `window.__jdesk.post` and the
+   underlying platform primitive (`webkit.messageHandlers.jdesk` / `chrome.webview`) are
+   reachable from page script; the bridge must be callable. Security does not rest on hiding
+   the primitive — it rests on the nonce, capability, origin, and envelope checks at the
+   Java boundary. An attacker who can call `post` still cannot mint a valid privileged invoke
+   without the current nonce and a granted capability. Bridge isolation into a separate
+   script world (e.g. WKContentWorld) is applied where the platform supports it; where it is
+   not, isolation relies on CSP plus the capability gate.
+
+4. **No cryptographic signature on IPC messages.** Bridge messages are not signed or MACed.
+   Within a single process this is acceptable — the per-navigation nonce provides
+   unforgeability against cross-document replay, and there is no network transport to
+   intercept — but integrity depends entirely on the in-process boundary, not on message
+   authentication.
+
+5. **Subframe origin is not distinguished at the IPC layer in v1.** The dispatcher gates on
+   the window's committed top-level origin, not a per-message frame origin. If a future
+   platform exposes per-frame provenance for bridge messages, rejecting non-main-frame
+   senders would be a defense-in-depth improvement.
+
+6. **DevTools-off is config-level, not engine-asserted.** The probe verifies the production
+   `devMode=false` flag (from which adapters disable DevTools); it does not programmatically
+   prove the OS WebView exposes no DevTools affordance. Per-platform manual verification is
+   required and should be recorded in the release checklist.
+
+7. **Future filesystem/shell plugins are the next high-value boundary.** v1 ships none. When
+   added they must implement the §12.3 opaque-scoped-token model (canonical target, allowed
+   operations, window/session binding, expiry, optional single-use) and defend against
+   traversal, symlink escape, token replay, and TOCTOU. This threat model must be extended
+   when those plugins land.
+
+Out of scope for v1 (§2.3): a fully compromised host OS or JVM, physical access, malicious
+platform WebView binaries, and side channels within the OS WebView engine itself.
