@@ -1,0 +1,34 @@
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      gradle-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /js/jdesk-client
+    schedule:
+      interval: weekly
+    groups:
+      jdesk-client:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /js/create-jdesk-app
+    schedule:
+      interval: weekly
+    groups:
+      create-jdesk-app:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]

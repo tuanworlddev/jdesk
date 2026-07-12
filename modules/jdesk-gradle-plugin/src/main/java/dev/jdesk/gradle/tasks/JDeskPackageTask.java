@@ -121,7 +121,9 @@ public abstract class JDeskPackageTask extends DefaultTask {
         // jpackage refuses to overwrite an existing image.
         getFileSystemOperations().delete(spec -> spec.delete(
                 new File(destination, name),
-                new File(destination, name + ".app")));
+                new File(destination, name + ".app"),
+                new File(destination, "checksums.sha256"),
+                new File(destination, "sbom.cyclonedx.json")));
 
         boolean macOs = OsSupport.isMacOs();
         boolean windows = OsSupport.isWindows();
@@ -256,15 +258,22 @@ public abstract class JDeskPackageTask extends DefaultTask {
         // Release hygiene (spec 12.5, 16): SHA-256 checksums + CycloneDX SBOM over the
         // produced image. CI images are UNSIGNED and do not satisfy a signed-release gate.
         try {
-            Path imageRoot = new File(destination, macOs ? name + ".app" : name).toPath();
-            Path root = java.nio.file.Files.isDirectory(imageRoot)
-                    ? imageRoot : destination.toPath();
+            // The checksum file is written beside the image, so its paths must also be
+            // relative to that directory (for example enterprise.app/Contents/...).
+            // This keeps `sha256sum -c checksums.sha256` directly verifiable on every OS.
+            Path root = destination.toPath();
             List<dev.jdesk.packager.ReleaseArtifacts.Checksum> checksums =
                     dev.jdesk.packager.ReleaseArtifacts.writeChecksums(
                             root, destination.toPath().resolve("checksums.sha256"));
             dev.jdesk.packager.ReleaseArtifacts.writeSbom(
                     destination.toPath().resolve("sbom.cyclonedx.json"),
-                    getApplicationId().getOrElse(name), version, checksums);
+                    getApplicationId().getOrElse(name), version, checksums,
+                    dev.jdesk.packager.ReleaseArtifacts.inspectJars(
+                            java.util.stream.Stream.concat(
+                                    java.util.stream.Stream.of(mainJar.toPath()),
+                                    getRuntimeClasspathJars().getFiles().stream()
+                                            .filter(File::isFile).map(File::toPath))
+                                    .distinct().toList()));
             getLogger().lifecycle("jdeskPackage: wrote checksums.sha256 ({} files) and"
                     + " sbom.cyclonedx.json (UNSIGNED)", checksums.size());
         } catch (RuntimeException e) {

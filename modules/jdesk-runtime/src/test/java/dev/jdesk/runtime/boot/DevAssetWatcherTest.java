@@ -13,6 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 /** Dev-mode asset watcher: fires once per settled change, stops on close. */
 @Timeout(30)
+@SuppressWarnings("try")
 class DevAssetWatcherTest {
 
     @TempDir

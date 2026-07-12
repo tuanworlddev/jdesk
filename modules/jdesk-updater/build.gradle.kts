@@ -1,2 +1,6 @@
 plugins { id("jdesk.library-conventions") }
 description = "Signed JDesk update package verification and atomic staging."
+
+dependencies {
+    implementation(libs.jackson.databind)
+}

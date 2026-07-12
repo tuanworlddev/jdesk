@@ -112,6 +112,19 @@ anti-fake evidence (§18); exit 0 is written only when every probe passes.
   in-flight callbacks drain; a straggler leaks the arena rather than freeing under a live
   callback.
 
+### H. Update and diagnostic supply chain
+
+- **Threat:** a network or local attacker serves an old, altered or oversized update,
+  redirects a download, or mutates an activated payload.
+- **Mitigations:** strict signed manifest and package signatures, semantic-version
+  downgrade policy, HTTPS-only transport, no redirects or content encoding, exact size
+  and streaming limits, owner-only state, immutable version directories, SHA-256 before
+  every launch, pending health confirmation and atomic rollback.
+- **Threat:** a support archive leaks credentials or collects unrelated customer data.
+- **Mitigations:** support bundles are explicit and local-only, accept only named log
+  files, skip symlinks, enforce per-file and total limits, collect allowlisted system
+  metadata and redact common credential and path forms.
+
 ## Capability guide
 
 Capabilities are declared per command with `@RequiresCapability("name")` and granted per

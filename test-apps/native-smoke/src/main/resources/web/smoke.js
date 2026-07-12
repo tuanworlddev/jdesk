@@ -394,11 +394,14 @@
         var elapsed = performance.now() - t0;
         latencies.sort(function(a,b){return a-b;});
         function pct(p){return latencies[Math.min(latencies.length-1,Math.ceil(p*latencies.length)-1)];}
-        record("ipc-stress-10000", total === 10000 && wrong === 0,
+        var p50 = pct(.50), p95 = pct(.95), p99 = pct(.99);
+        record("ipc-stress-10000", total === 10000 && wrong === 0
+               && p95 <= info.maxIpcP95Ms && p99 <= info.maxIpcP99Ms,
                total + " round trips, " + wrong + " mismatches, " + elapsed.toFixed(1)
                + "ms, throughput=" + (total*1000/elapsed).toFixed(1) + "/s"
-               + ", p50=" + pct(.50).toFixed(3) + "ms, p95=" + pct(.95).toFixed(3)
-               + "ms, p99=" + pct(.99).toFixed(3) + "ms");
+               + ", p50=" + p50.toFixed(3) + "ms, p95=" + p95.toFixed(3)
+               + "ms (max " + info.maxIpcP95Ms + "), p99=" + p99.toFixed(3)
+               + "ms (max " + info.maxIpcP99Ms + ")");
       }
 
       if (stream2gb) {

@@ -10,6 +10,10 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
+import java.util.jar.JarFile;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -19,11 +23,17 @@ import java.util.stream.Stream;
  * {@code UNSIGNED} and never satisfy a signed-release gate.
  */
 public final class ReleaseArtifacts {
+    private static final Pattern JAR_NAME =
+            Pattern.compile("(.+)-([0-9][0-9A-Za-z.+-]*)\\.jar");
     private ReleaseArtifacts() {
     }
 
     /** One checksummed artifact. */
     public record Checksum(String relativePath, long sizeBytes, String sha256) {
+    }
+
+    /** One bundled software library discovered from a runtime JAR. */
+    public record SoftwareComponent(String name, String version, String purl, String sha256) {
     }
 
     /**
@@ -55,44 +65,126 @@ public final class ReleaseArtifacts {
     }
 
     /**
-     * Writes a minimal CycloneDX 1.5 JSON SBOM listing the application plus the
+     * Writes a CycloneDX 1.7 JSON SBOM listing the application plus the
      * checksummed artifacts as components. Deterministic: no timestamps or random ids
      * (a stable serial number derived from the application id and version is used).
      */
     public static void writeSbom(Path sbomFile, String applicationId, String version,
             List<Checksum> artifacts) {
+        writeSbom(sbomFile, applicationId, version, artifacts, List.of());
+    }
+
+    /**
+     * Writes CycloneDX 1.7 inventory including runtime libraries and an explicit
+     * dependency graph. Composition remains marked incomplete because jlink/JDK internals
+     * are not Maven components and must not be presented as a complete dependency graph.
+     */
+    public static void writeSbom(Path sbomFile, String applicationId, String version,
+            List<Checksum> artifacts, List<SoftwareComponent> libraries) {
         String serial = "urn:uuid:" + stableUuid(applicationId + "@" + version);
+        String appRef = "application:" + applicationId + "@" + version;
         StringBuilder json = new StringBuilder();
         json.append("{\n");
+        json.append("  \"$schema\": \"https://cyclonedx.org/schema/bom-1.7.schema.json\",\n");
         json.append("  \"bomFormat\": \"CycloneDX\",\n");
-        json.append("  \"specVersion\": \"1.5\",\n");
+        json.append("  \"specVersion\": \"1.7\",\n");
         json.append("  \"serialNumber\": \"").append(serial).append("\",\n");
         json.append("  \"version\": 1,\n");
         json.append("  \"metadata\": {\n");
         json.append("    \"component\": {\n");
         json.append("      \"type\": \"application\",\n");
-        json.append("      \"bom-ref\": \"").append(escape(applicationId)).append("\",\n");
+        json.append("      \"bom-ref\": \"").append(escape(appRef)).append("\",\n");
         json.append("      \"name\": \"").append(escape(applicationId)).append("\",\n");
-        json.append("      \"version\": \"").append(escape(version)).append("\"\n");
+        json.append("      \"version\": \"").append(escape(version)).append("\",\n");
+        json.append("      \"purl\": \"pkg:generic/").append(escape(applicationId))
+                .append("@").append(escape(version)).append("\"\n");
         json.append("    }\n");
         json.append("  },\n");
         json.append("  \"components\": [\n");
-        for (int i = 0; i < artifacts.size(); i++) {
-            Checksum artifact = artifacts.get(i);
+        int componentCount = artifacts.size() + libraries.size();
+        int componentIndex = 0;
+        for (Checksum artifact : artifacts) {
             json.append("    {\n");
             json.append("      \"type\": \"file\",\n");
+            json.append("      \"bom-ref\": \"file:")
+                    .append(escape(artifact.relativePath())).append("\",\n");
             json.append("      \"name\": \"").append(escape(artifact.relativePath())).append("\",\n");
             json.append("      \"hashes\": [ { \"alg\": \"SHA-256\", \"content\": \"")
-                    .append(artifact.sha256()).append("\" } ]\n");
-            json.append(i + 1 < artifacts.size() ? "    },\n" : "    }\n");
+                    .append(artifact.sha256()).append("\" } ],\n");
+            json.append("      \"properties\": [ { \"name\": \"jdesk:sizeBytes\", \"value\": \"")
+                    .append(artifact.sizeBytes()).append("\" } ]\n");
+            json.append(++componentIndex < componentCount ? "    },\n" : "    }\n");
         }
-        json.append("  ]\n");
+        for (SoftwareComponent library : libraries.stream()
+                .sorted(java.util.Comparator.comparing(SoftwareComponent::purl)).toList()) {
+            json.append("    {\n");
+            json.append("      \"type\": \"library\",\n");
+            json.append("      \"bom-ref\": \"").append(escape(library.purl())).append("\",\n");
+            json.append("      \"name\": \"").append(escape(library.name())).append("\",\n");
+            json.append("      \"version\": \"").append(escape(library.version())).append("\",\n");
+            json.append("      \"purl\": \"").append(escape(library.purl())).append("\",\n");
+            json.append("      \"hashes\": [ { \"alg\": \"SHA-256\", \"content\": \"")
+                    .append(library.sha256()).append("\" } ]\n");
+            json.append(++componentIndex < componentCount ? "    },\n" : "    }\n");
+        }
+        json.append("  ],\n");
+        json.append("  \"dependencies\": [\n");
+        json.append("    { \"ref\": \"").append(escape(appRef)).append("\", \"dependsOn\": [");
+        for (int i = 0; i < libraries.size(); i++) {
+            if (i > 0) {
+                json.append(", ");
+            }
+            json.append("\"").append(escape(libraries.get(i).purl())).append("\"");
+        }
+        json.append("] }\n");
+        json.append("  ],\n");
+        json.append("  \"compositions\": [ { \"aggregate\": \"incomplete\", \"assemblies\": [\"")
+                .append(escape(appRef)).append("\"] } ]\n");
         json.append("}\n");
         try {
             Files.writeString(sbomFile, json.toString(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** Reads stable component identity and hashes from runtime JARs. */
+    public static List<SoftwareComponent> inspectJars(List<Path> jars) {
+        List<SoftwareComponent> components = new ArrayList<>();
+        for (Path jar : jars.stream().filter(Files::isRegularFile).sorted().toList()) {
+            String fileName = jar.getFileName().toString();
+            String name = fileName.endsWith(".jar")
+                    ? fileName.substring(0, fileName.length() - 4) : fileName;
+            String version = "unknown";
+            try (JarFile file = new JarFile(jar.toFile())) {
+                if (file.getManifest() != null) {
+                    var attributes = file.getManifest().getMainAttributes();
+                    String moduleName = attributes.getValue("Automatic-Module-Name");
+                    String title = attributes.getValue("Implementation-Title");
+                    String implementationVersion = attributes.getValue("Implementation-Version");
+                    if (moduleName != null && !moduleName.isBlank()) {
+                        name = moduleName;
+                    } else if (title != null && !title.isBlank()) {
+                        name = title;
+                    }
+                    if (implementationVersion != null && !implementationVersion.isBlank()) {
+                        version = implementationVersion;
+                    }
+                }
+            } catch (IOException e) {
+                throw new UncheckedIOException("Could not inspect runtime JAR " + jar, e);
+            }
+            if ("unknown".equals(version)) {
+                Matcher matcher = JAR_NAME.matcher(fileName);
+                if (matcher.matches()) {
+                    name = matcher.group(1);
+                    version = matcher.group(2);
+                }
+            }
+            String purl = "pkg:generic/" + purl(name) + "@" + purl(version);
+            components.add(new SoftwareComponent(name, version, purl, sha256(jar)));
+        }
+        return List.copyOf(components);
     }
 
     private static long sizeOf(Path file) {
@@ -106,12 +198,34 @@ public final class ReleaseArtifacts {
     static String sha256(Path file) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(Files.readAllBytes(file)));
+            try (var input = Files.newInputStream(file)) {
+                byte[] buffer = new byte[128 * 1024];
+                for (int read; (read = input.read(buffer)) >= 0;) {
+                    if (read > 0) {
+                        digest.update(buffer, 0, read);
+                    }
+                }
+            }
+            return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    private static String purl(String value) {
+        StringBuilder encoded = new StringBuilder();
+        for (byte item : value.getBytes(StandardCharsets.UTF_8)) {
+            int c = Byte.toUnsignedInt(item);
+            if (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+                    || c >= '0' && c <= '9' || "-._~".indexOf(c) >= 0) {
+                encoded.append((char) c);
+            } else {
+                encoded.append('%').append(String.format(Locale.ROOT, "%02X", c));
+            }
+        }
+        return encoded.toString();
     }
 
     /** Deterministic name-based UUID (RFC 4122 v5-style over SHA-256, truncated). */

@@ -75,7 +75,7 @@ characters are safe. Logged environments are redacted (`(?i)(token|secret|passwo
 | `jdeskNativeSmokeTest` | Depends on `jdeskPackage`; launches the packaged app-image's real launcher with `--jdesk-smoke` and requires exit 0 within `timeoutSeconds` (default 180 s). The app must implement the flag as a genuine self-check. Missing launcher / non-zero exit / timeout each fail. | Implemented |
 | `jdeskVerifyEvidence` | Runs `dev.jdesk.testkit.evidence.VerifyMain` (classpath = `jdeskTestkit` configuration) against `evidenceDirectory` (default `build/evidence`): recomputes checksums, validates schemas, rejects fake providers. See [../verification/native-testing-and-evidence.md](../verification/native-testing-and-evidence.md). | Implemented |
 
-`jdeskPackage` writes SHA-256 checksums and a CycloneDX 1.5 SBOM through the packager's
+`jdeskPackage` writes directly verifiable SHA-256 checksums and a CycloneDX 1.7 SBOM through the packager's
 `ReleaseArtifacts` implementation. Installer signing remains opt-in.
 
 ## How `jdeskGenerateBindings` rides on `compileJava`

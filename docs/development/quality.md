@@ -14,6 +14,14 @@ requires a review comment explaining why.
 Native/package/integration categories are set only by the real native test harnesses;
 unit reports can never satisfy native gates (spec section 17.1).
 
+## Public API compatibility
+
+PublicApiBaselineTest snapshots every exported public or protected type, generic
+signature, constructor, method, field and declared annotation in dev.jdesk.api. Any change
+fails check. Intentional additions and breaks must regenerate the baseline with the
+jdesk.apiBaseline.update system property, review the baseline diff and add migration
+notes. This is an API-change gate, not merely a binary-break detector.
+
 ## Dependency hygiene
 
 - Versions centralized in `gradle/libs.versions.toml`.
@@ -22,3 +30,5 @@ unit reports can never satisfy native gates (spec section 17.1).
 - Checksum verification via `gradle/verification-metadata.xml`; regenerate with
   `./gradlew --write-verification-metadata sha256 build` and review the diff.
 - No dynamic versions, no Git dependencies.
+- Dependabot covers Gradle, both npm packages and GitHub Actions.
+- CodeQL and dependency review run from .github/workflows/codeql.yml.

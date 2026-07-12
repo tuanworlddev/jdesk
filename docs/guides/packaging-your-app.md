@@ -69,8 +69,8 @@ Alongside the image, `jdeskPackage` writes two release-hygiene files next to it:
 
 - **`checksums.sha256`** — SHA-256 for every file under the image, in GNU coreutils format,
   sorted for determinism;
-- **`sbom.cyclonedx.json`** — a CycloneDX 1.5 SBOM listing the application and each
-  checksummed artifact.
+- **`sbom.cyclonedx.json`** — a CycloneDX 1.7 SBOM listing the application, each
+  checksummed artifact, discovered runtime libraries, and the dependency graph.
 
 It logs `wrote checksums.sha256 (N files) and sbom.cyclonedx.json (UNSIGNED)`. The
 `UNSIGNED` label is expected here — signing is applied later and only when you supply an
@@ -120,11 +120,12 @@ evidence format.
 ## Honest status
 
 App-image packaging (`jdeskPackage`) is implemented and verified on all three primary
-targets; checksums and the SBOM are generated on every package. `jdeskInstaller` builds a
-real installer but produces **UNSIGNED** artifacts without a signing identity. A dedicated
-signed-release gate and an aggregate release task are still follow-ups. Confirm what is
-proven on your platform in the [verification matrix](../../VERIFICATION.md) and the
-[implementation status](../../IMPLEMENTATION_STATUS.md).
+targets; directly verifiable checksums and the SBOM are generated on every package.
+`jdeskInstaller` builds a real installer but produces **UNSIGNED** artifacts without a
+signing identity. The release workflow stages checksummed JARs and can add GitHub artifact
+attestations, but OS signing/notarization still requires the publisher's credentials.
+Confirm what is proven on your platform in the [verification matrix](../../VERIFICATION.md)
+and the [implementation status](../../IMPLEMENTATION_STATUS.md).
 
 ## Next steps
 

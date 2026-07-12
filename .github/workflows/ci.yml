@@ -1,7 +1,5 @@
-# JDesk CI (spec section 19).
-# Phase 0 skeleton: real unit/build jobs only. Native and package jobs are added by
-# their phases; they are intentionally ABSENT (not fake-green) until implemented.
-# Skipped/absent native jobs mean the release status is INCOMPLETE by definition.
+# JDesk CI (spec section 19): unit, security, native-engine, and target-OS package gates.
+# The release gate fails unless every required Windows, Linux, and macOS job succeeds.
 name: ci
 
 on:
@@ -283,6 +281,15 @@ jobs:
             --app-version 1.0.0 --dest build/installer
           ls -la build/installer
           sha256sum build/installer/*.deb | tee -a package-evidence/installer.sha256
+      - name: Validate and extract DEB payload
+        run: |
+          deb="$(find build/installer -maxdepth 1 -name '*.deb' -print -quit)"
+          test -n "$deb"
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb" > package-evidence/installer-contents.txt
+          mkdir -p build/deb-extracted
+          dpkg-deb --extract "$deb" build/deb-extracted
+          test -n "$(find build/deb-extracted -type f -name JDeskSmoke -perm -u+x -print -quit)"
       - name: Record package checksum
         run: sha256sum build/jpackage/JDeskSmoke/bin/JDeskSmoke | tee package-evidence/launcher.sha256
       - name: Verify evidence (anti-fake)
@@ -344,6 +351,18 @@ jobs:
             --app-version 1.0.0 --dest build/installer
           Get-ChildItem build/installer
           Get-FileHash build/installer/*.msi -Algorithm SHA256 | Format-List | Out-File -Append package-evidence/installer.sha256
+      - name: Validate and administratively extract MSI payload
+        shell: pwsh
+        run: |
+          $msi = (Get-ChildItem build/installer/*.msi | Select-Object -First 1).FullName
+          $target = Join-Path $pwd "build/msi-extracted"
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          $arguments = @("/a", $msi, "/qn", "TARGETDIR=$target")
+          $process = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "MSI extraction failed: $($process.ExitCode)" }
+          $payload = Get-ChildItem $target -Recurse -Filter JDeskSmoke.exe
+          if (-not $payload) { throw "MSI payload does not contain JDeskSmoke.exe" }
+          $payload.FullName | Out-File package-evidence/installer-contents.txt
       - name: Record package checksum
         shell: pwsh
         run: Get-FileHash build\jpackage\JDeskSmoke\JDeskSmoke.exe -Algorithm SHA256 | Format-List | Out-File -Append package-evidence/launcher.sha256
@@ -439,6 +458,15 @@ jobs:
           shasum -a 256 build/installer/*.dmg | tee -a package-evidence/installer.sha256
           shasum -a 256 build/jpackage/JDeskSmoke.app/Contents/MacOS/JDeskSmoke \
             | tee package-evidence/launcher.sha256
+      - name: Validate mounted DMG payload
+        run: |
+          mkdir -p build/dmg-mount
+          dmg="$(find build/installer -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$dmg"
+          hdiutil attach -nobrowse -readonly -mountpoint "$PWD/build/dmg-mount" "$dmg"
+          trap 'hdiutil detach "$PWD/build/dmg-mount" || true' EXIT
+          test -x build/dmg-mount/JDeskSmoke.app/Contents/MacOS/JDeskSmoke
+          find build/dmg-mount -maxdepth 3 -print > package-evidence/installer-contents.txt
       - name: Verify evidence (anti-fake)
         run: ./gradlew :test-apps:native-smoke:verifyEvidence "-PjdeskPlatform=macos" "-PjdeskEvidenceVerifyDir=$GITHUB_WORKSPACE/package-evidence"
       - name: Upload evidence

@@ -11,6 +11,11 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.AclEntry;
+import java.nio.file.attribute.AclEntryPermission;
+import java.nio.file.attribute.AclEntryType;
+import java.nio.file.attribute.AclFileAttributeView;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.UUID;
@@ -38,12 +43,14 @@ public final class UpdateTransaction {
             }
             Files.createDirectories(requested);
             root = requested.toRealPath(LinkOption.NOFOLLOW_LINKS);
+            restrictToOwner(root);
             Path versionDirectory = root.resolve("versions");
             if (Files.isSymbolicLink(versionDirectory)) {
                 throw new UpdateVerificationException("Versions directory must not be a symlink");
             }
             Files.createDirectories(versionDirectory);
             versions = versionDirectory.toRealPath(LinkOption.NOFOLLOW_LINKS);
+            restrictToOwner(versions);
         } catch (UpdateVerificationException e) {
             throw e;
         } catch (IOException e) {
@@ -65,13 +72,68 @@ public final class UpdateTransaction {
                 throw new UpdateVerificationException("No previous version to roll back to");
             }
             requireInstalledVersion(state.previous(), "Previous version is missing");
-            writeActivation(new Activation(state.previous(), state.current()));
+            writeActivation(new Activation(state.previous(), state.current(), false, 0));
             return state.previous();
         });
     }
 
     public String currentVersion() throws UpdateVerificationException {
         return withProcessLock(() -> readActivation().current());
+    }
+
+    /**
+     * Called by the launcher before starting the selected version. A pending version gets
+     * one launch attempt. If it did not confirm health, the next call atomically rolls
+     * back to the previous version.
+     */
+    public UpdateLaunch prepareLaunch() throws UpdateVerificationException {
+        return withProcessLock(() -> {
+            Activation state = readActivation();
+            if (state.current() == null) {
+                throw new UpdateVerificationException("No active version is installed");
+            }
+            requireInstalledVersion(state.current(), "Current version is missing");
+            if (!state.pending()) {
+                return launch(state.current(), false);
+            }
+            if (state.launchAttempts() == 0 || state.previous() == null) {
+                writeActivation(new Activation(state.current(), state.previous(), true,
+                        state.launchAttempts() + 1));
+                return launch(state.current(), false);
+            }
+            requireInstalledVersion(state.previous(), "Previous version is missing");
+            writeActivation(new Activation(state.previous(), state.current(), false, 0));
+            return launch(state.previous(), true);
+        });
+    }
+
+    /** Marks the running version healthy, preventing automatic rollback. */
+    public void confirmHealthy(String version) throws UpdateVerificationException {
+        requireVersion(version);
+        withProcessLock(() -> {
+            Activation state = readActivation();
+            if (!version.equals(state.current())) {
+                throw new UpdateVerificationException(
+                        "Cannot confirm a version that is not current");
+            }
+            requireInstalledVersion(version, "Current version is missing");
+            writeActivation(new Activation(state.current(), state.previous(), false, 0));
+            return null;
+        });
+    }
+
+    public void confirmHealthy(UpdateLaunch launch) throws UpdateVerificationException {
+        Objects.requireNonNull(launch, "launch");
+        confirmHealthy(launch.version());
+    }
+
+    public boolean isCurrentPending() throws UpdateVerificationException {
+        return withProcessLock(() -> readActivation().pending());
+    }
+
+    private UpdateLaunch launch(String version, boolean rolledBack) {
+        return new UpdateLaunch(version, versions.resolve(version).resolve("package.bin"),
+                rolledBack);
     }
 
     private Path stageAndActivateLocked(VerifiedUpdate update, String version)
@@ -88,7 +150,7 @@ public final class UpdateTransaction {
         } else {
             stageNewVersion(update, target);
         }
-        writeActivation(new Activation(version, state.current()));
+        writeActivation(new Activation(version, state.current(), true, 0));
         return target;
     }
 
@@ -97,10 +159,13 @@ public final class UpdateTransaction {
         Path staging = versions.resolve(".staging-" + UUID.randomUUID());
         try {
             Files.createDirectory(staging);
+            restrictToOwner(staging);
             update.copyVerifiedTo(staging.resolve("package.bin"));
+            restrictToOwner(staging.resolve("package.bin"));
             Files.writeString(staging.resolve("sha256"), update.sha256() + "\n",
                     java.nio.charset.StandardCharsets.US_ASCII,
                     StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+            restrictToOwner(staging.resolve("sha256"));
             forceFile(staging.resolve("package.bin"));
             forceFile(staging.resolve("sha256"));
             moveAtomic(staging, target);
@@ -145,12 +210,32 @@ public final class UpdateTransaction {
                 || !Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
             throw new UpdateVerificationException(message);
         }
+        Path packageFile = directory.resolve("package.bin");
+        Path hashFile = directory.resolve("sha256");
+        try {
+            if (Files.isSymbolicLink(packageFile) || Files.isSymbolicLink(hashFile)
+                    || !Files.isRegularFile(packageFile, LinkOption.NOFOLLOW_LINKS)
+                    || !Files.isRegularFile(hashFile, LinkOption.NOFOLLOW_LINKS)) {
+                throw new UpdateVerificationException(message);
+            }
+            String recorded = Files.readString(hashFile,
+                    java.nio.charset.StandardCharsets.US_ASCII).strip();
+            if (!recorded.matches("[0-9a-f]{64}") || !recorded.equals(sha256(packageFile))) {
+                throw new UpdateVerificationException(
+                        "Installed version integrity check failed");
+            }
+        } catch (UpdateVerificationException e) {
+            throw e;
+        } catch (IOException e) {
+            throw new UpdateVerificationException(
+                    "Could not verify installed version integrity", e);
+        }
     }
 
     private Activation readActivation() throws UpdateVerificationException {
         Path state = root.resolve(STATE_FILE);
         if (!Files.exists(state, LinkOption.NOFOLLOW_LINKS)) {
-            return new Activation(null, null);
+            return new Activation(null, null, false, 0);
         }
         if (Files.isSymbolicLink(state)
                 || !Files.isRegularFile(state, LinkOption.NOFOLLOW_LINKS)) {
@@ -164,13 +249,27 @@ public final class UpdateTransaction {
         }
         String current = blankToNull(properties.getProperty("current"));
         String previous = blankToNull(properties.getProperty("previous"));
+        String pendingValue = properties.getProperty("pending", "false");
+        if (!"true".equals(pendingValue) && !"false".equals(pendingValue)) {
+            throw new UpdateVerificationException("Invalid activation pending state");
+        }
+        boolean pending = Boolean.parseBoolean(pendingValue);
+        int launchAttempts;
+        try {
+            launchAttempts = Integer.parseInt(properties.getProperty("launchAttempts", "0"));
+        } catch (NumberFormatException e) {
+            throw new UpdateVerificationException("Invalid activation launch attempts", e);
+        }
+        if (launchAttempts < 0 || !pending && launchAttempts != 0) {
+            throw new UpdateVerificationException("Invalid activation health state");
+        }
         if (current != null) {
             requireVersion(current);
         }
         if (previous != null) {
             requireVersion(previous);
         }
-        return new Activation(current, previous);
+        return new Activation(current, previous, pending, launchAttempts);
     }
 
     private void writeActivation(Activation activation) throws UpdateVerificationException {
@@ -181,12 +280,19 @@ public final class UpdateTransaction {
         if (activation.previous() != null) {
             requireVersion(activation.previous());
         }
+        if (activation.launchAttempts() < 0
+                || !activation.pending() && activation.launchAttempts() != 0) {
+            throw new UpdateVerificationException("Invalid activation health state");
+        }
         Path temporary = root.resolve("." + STATE_FILE + "-" + UUID.randomUUID());
         Properties properties = new Properties();
         properties.setProperty("current", activation.current());
         if (activation.previous() != null) {
             properties.setProperty("previous", activation.previous());
         }
+        properties.setProperty("pending", Boolean.toString(activation.pending()));
+        properties.setProperty("launchAttempts",
+                Integer.toString(activation.launchAttempts()));
         try (OutputStream output = Files.newOutputStream(temporary,
                 StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
             properties.store(output, "JDesk update activation");
@@ -195,6 +301,7 @@ public final class UpdateTransaction {
         }
         try {
             forceFile(temporary);
+            restrictToOwner(temporary);
             moveAtomicReplace(temporary, root.resolve(STATE_FILE));
             forceDirectory(root);
         } catch (IOException e) {
@@ -216,6 +323,7 @@ public final class UpdateTransaction {
             try (FileChannel channel = FileChannel.open(lockPath, LinkOption.NOFOLLOW_LINKS,
                     StandardOpenOption.CREATE, StandardOpenOption.WRITE);
                  FileLock lock = channel.lock()) {
+                restrictToOwner(lockPath);
                 if (!lock.isValid()) {
                     throw new UpdateVerificationException("Update transaction lock is invalid");
                 }
@@ -279,6 +387,29 @@ public final class UpdateTransaction {
         }
     }
 
+    private static void restrictToOwner(Path path) throws IOException {
+        var posix = Files.getFileAttributeView(path,
+                java.nio.file.attribute.PosixFileAttributeView.class,
+                LinkOption.NOFOLLOW_LINKS);
+        if (posix != null) {
+            posix.setPermissions(PosixFilePermissions.fromString(
+                    Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)
+                            ? "rwx------" : "rw-------"));
+            return;
+        }
+        AclFileAttributeView acl = Files.getFileAttributeView(
+                path, AclFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+        if (acl != null) {
+            AclEntry ownerOnly = AclEntry.newBuilder().setType(AclEntryType.ALLOW)
+                    .setPrincipal(Files.getOwner(path, LinkOption.NOFOLLOW_LINKS))
+                    .setPermissions(java.util.EnumSet.allOf(AclEntryPermission.class))
+                    .build();
+            acl.setAcl(java.util.List.of(ownerOnly));
+            return;
+        }
+        throw new IOException("Filesystem cannot enforce owner-only permissions: " + path);
+    }
+
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.strip();
     }
@@ -313,6 +444,7 @@ public final class UpdateTransaction {
         T run() throws UpdateVerificationException;
     }
 
-    private record Activation(String current, String previous) {
+    private record Activation(String current, String previous, boolean pending,
+                              int launchAttempts) {
     }
 }

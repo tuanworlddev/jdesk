@@ -32,6 +32,8 @@ import dev.jdesk.webview.spi.WebViewSnapshot;
 import dev.jdesk.webview.spi.WebViewProcessFailure;
 import dev.jdesk.webview.spi.WindowBounds;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -49,6 +51,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Runtime wiring over an in-test fake platform (unit tests may use fakes, spec 17.1).
@@ -511,12 +514,17 @@ class JDeskRuntimeTest {
         }
 
         @Override
-        public void close() throws InterruptedException {
+        public void close() {
             if (thread.isAlive()) {
                 if (provider.app != null) {
                     provider.app.requestStop();
                 }
-                thread.join(TimeUnit.SECONDS.toMillis(10));
+                try {
+                    thread.join(TimeUnit.SECONDS.toMillis(10));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError("Interrupted while stopping test runtime", e);
+                }
             }
         }
     }
@@ -856,6 +864,36 @@ class JDeskRuntimeTest {
                         .toCompletableFuture().join()).hasCauseInstanceOf(JDeskException.class);
             }
             assertThat(running.provider.app.externalUris).containsExactly(allowed);
+        }
+    }
+
+    @Test void managedPolicyDisablesExternalBrowserAndDeveloperTools(@TempDir Path temp)
+            throws Exception {
+        Path policy = temp.resolve("managed-policy.json");
+        Files.writeString(policy, """
+                {
+                  "version": 1,
+                  "externalBrowserAllowed": false,
+                  "devToolsAllowed": false
+                }
+                """);
+        System.setProperty("jdesk.policy.file", policy.toString());
+        RunningRuntime running;
+        try {
+            running = new RunningRuntime(List.of(RunningRuntime.window("main")),
+                    Optional.of("http://127.0.0.1:5173"), true);
+        } finally {
+            System.clearProperty("jdesk.policy.file");
+        }
+        try (running) {
+            running.awaitReady();
+            assertThat(running.provider.config.devMode()).isTrue();
+            assertThat(running.provider.app.windows.getFirst().config.devToolsEnabled()).isFalse();
+            assertThatThrownBy(() -> running.runtime.openExternal(
+                    URI.create("https://example.com")).toCompletableFuture().join())
+                    .hasCauseInstanceOf(JDeskException.class)
+                    .hasMessageContaining("managed policy");
+            assertThat(running.provider.app.externalUris).isEmpty();
         }
     }
 

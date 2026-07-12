@@ -16,6 +16,7 @@ import org.junit.jupiter.api.io.TempDir;
  * macOS the JDK falls back to a ~2&nbsp;s polling service — this is the slow fallback the
  * FSEvents backend exists to replace, but it must still be correct.
  */
+@SuppressWarnings("try")
 class PortableWatchBackendTest {
 
     @TempDir

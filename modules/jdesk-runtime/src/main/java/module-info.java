@@ -9,6 +9,7 @@ module dev.jdesk.runtime {
 
     exports dev.jdesk.runtime.json;
     exports dev.jdesk.runtime.config;
+    exports dev.jdesk.runtime.diagnostics;
     exports dev.jdesk.runtime.automation;
     exports dev.jdesk.runtime.assets to
             dev.jdesk.testapps.nativesmoke, dev.jdesk.testapps.securityprobe;

@@ -255,6 +255,13 @@ adapters are implemented and tested. The `create-jdesk-app` CLI is published to 
 are still pending. The CI definition now includes Windows, Linux, and macOS ARM64
 native/security/package gates; tagged publishing waits for the complete matrix.
 
+The repository also includes a reviewed public-API baseline, signed-manifest update
+coordination with health rollback, enterprise managed runtime policy, bounded redacted
+support bundles, CycloneDX 1.7 inventory, CodeQL/Dependabot automation, installer payload
+validation and native startup/latency/RSS regression budgets. See the
+[release and support policy](docs/development/release-and-support-policy.md) before
+depending on a pre-1.0 line.
+
 See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and the
 [implementation report](docs/verification/final-report.md) for the detailed status.
 

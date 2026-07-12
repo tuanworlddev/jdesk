@@ -21,6 +21,7 @@ import dev.jdesk.runtime.automation.AutomationProvider;
 import dev.jdesk.runtime.automation.AutomationSession;
 import dev.jdesk.runtime.capability.CapabilityEngine;
 import dev.jdesk.runtime.capability.OriginNormalizer;
+import dev.jdesk.runtime.config.ManagedPolicy;
 import dev.jdesk.runtime.ipc.CommandDispatcher;
 import dev.jdesk.runtime.json.JacksonJsonCodec;
 import dev.jdesk.runtime.json.JsonCodec;
@@ -80,6 +81,7 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
     private final LifecycleStateMachine lifecycle;
     private final CapabilityEngine capabilityEngine;
     private final NavigationPolicy navigationPolicy;
+    private final ManagedPolicy managedPolicy;
     private final Consumer<List<String>> activationHandler;
     private final Map<WindowId, WindowRuntime> windows = new ConcurrentHashMap<>();
     private final Set<WindowId> windowIds = ConcurrentHashMap.newKeySet();
@@ -180,6 +182,7 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
         this.spec = spec;
         this.provider = provider;
         this.options = options;
+        this.managedPolicy = ManagedPolicy.fromSystemProperties();
         this.activationHandler = java.util.Objects.requireNonNull(
                 activationHandler, "activationHandler");
         this.lifecycle = new LifecycleStateMachine(spec.lifecycleListeners());
@@ -252,6 +255,10 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
         if (!Boolean.getBoolean("jdesk.automation")) {
             return null;
         }
+        if (!managedPolicy.automationAllowed()) {
+            throw new JDeskException(ErrorCode.CAPABILITY_DENIED,
+                    "Automation is disabled by managed policy");
+        }
         List<AutomationProvider> providers = java.util.ServiceLoader
                 .load(AutomationProvider.class).stream()
                 .map(java.util.ServiceLoader.Provider::get).toList();
@@ -281,11 +288,13 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
 
     private void createWindowOnUiThread(WindowConfig config) {
         WindowConfig launchConfig = devWindowConfig(config);
-        boolean logConsole = options.devMode() || Boolean.getBoolean("jdesk.console.forward");
-        boolean automation = Boolean.getBoolean("jdesk.automation");
+        boolean logConsole = managedPolicy.consoleForwardingAllowed()
+                && (options.devMode() || Boolean.getBoolean("jdesk.console.forward"));
+        boolean automation = managedPolicy.automationAllowed()
+                && Boolean.getBoolean("jdesk.automation");
         PlatformWindow window = platformApp.createWindow(new NativeWindowConfig(
                 launchConfig.id(), launchConfig.title(), launchConfig.width(), launchConfig.height(),
-                launchConfig.resizable(), launchConfig.entry(), options.devMode(),
+                launchConfig.resizable(), launchConfig.entry(), developerToolsEnabled(),
                 launchConfig.minWidth(), launchConfig.minHeight(),
                 logConsole || automation));
         try {
@@ -461,6 +470,11 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
 
     @Override public CompletionStage<Void> openExternal(java.net.URI uri) {
         java.util.Objects.requireNonNull(uri, "uri");
+        if (!managedPolicy.externalBrowserAllowed()) {
+            return CompletableFuture.failedFuture(new JDeskException(
+                    ErrorCode.CAPABILITY_DENIED,
+                    "External browser access is disabled by managed policy"));
+        }
         String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(java.util.Locale.ROOT);
         if (!(scheme.equals("https") || scheme.equals("http")) || uri.getHost() == null
                 || uri.getUserInfo() != null) {
@@ -468,6 +482,10 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
                     "External URI must be HTTP(S), have a host, and contain no credentials"));
         }
         return platformApp.ui().submit(() -> { platformApp.openExternal(uri); return null; });
+    }
+
+    private boolean developerToolsEnabled() {
+        return options.devMode() && managedPolicy.devToolsAllowed();
     }
 
     private dev.jdesk.api.SecretStore secretStore;

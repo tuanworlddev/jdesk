@@ -6,6 +6,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.jar.Attributes;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -54,6 +57,21 @@ class ReleaseArtifactsTest {
     }
 
     @Test
+    void siblingChecksumPathsIncludeTheImageDirectory() throws Exception {
+        Path image = Files.createDirectories(dir.resolve("Example.app/Contents"));
+        Files.writeString(image.resolve("launcher"), "binary");
+
+        Path checksumFile = dir.resolve("checksums.sha256");
+        List<ReleaseArtifacts.Checksum> checksums =
+                ReleaseArtifacts.writeChecksums(dir, checksumFile);
+
+        assertThat(checksums).extracting(ReleaseArtifacts.Checksum::relativePath)
+                .containsExactly("Example.app/Contents/launcher");
+        assertThat(Files.readString(checksumFile))
+                .contains("  Example.app/Contents/launcher");
+    }
+
+    @Test
     void sbomIsValidCycloneDxAndDeterministic() throws Exception {
         Files.writeString(dir.resolve("app.jar"), "jarbytes");
         Path checksumFile = dir.resolve("checksums.sha256");
@@ -62,16 +80,29 @@ class ReleaseArtifactsTest {
 
         Path sbom1 = dir.resolve("sbom1.json");
         Path sbom2 = dir.resolve("sbom2.json");
-        ReleaseArtifacts.writeSbom(sbom1, "dev.example.app", "1.2.3", artifacts);
-        ReleaseArtifacts.writeSbom(sbom2, "dev.example.app", "1.2.3", artifacts);
+        Path jar = dir.resolve("example-lib-4.5.6.jar");
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        manifest.getMainAttributes().putValue("Automatic-Module-Name", "dev.example.lib");
+        manifest.getMainAttributes().putValue("Implementation-Version", "4.5.6");
+        try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jar), manifest)) {
+            // Manifest-only fixture is enough for identity and hash inspection.
+            output.flush();
+        }
+        List<ReleaseArtifacts.SoftwareComponent> libraries =
+                ReleaseArtifacts.inspectJars(List.of(jar));
+        ReleaseArtifacts.writeSbom(sbom1, "dev.example.app", "1.2.3", artifacts, libraries);
+        ReleaseArtifacts.writeSbom(sbom2, "dev.example.app", "1.2.3", artifacts, libraries);
 
         String json = Files.readString(sbom1, StandardCharsets.UTF_8);
         assertThat(json).contains("\"bomFormat\": \"CycloneDX\"")
-                .contains("\"specVersion\": \"1.5\"")
+                .contains("\"specVersion\": \"1.7\"")
+                .contains("\"$schema\"")
                 .contains("\"name\": \"dev.example.app\"")
                 .contains("\"version\": \"1.2.3\"")
                 .contains("\"alg\": \"SHA-256\"")
-                .contains("app.jar");
+                .contains("app.jar", "dev.example.lib", "pkg:generic/dev.example.lib@4.5.6",
+                        "\"dependencies\"", "\"aggregate\": \"incomplete\"");
         assertThat(Files.readString(sbom2)).isEqualTo(json); // deterministic
     }
 

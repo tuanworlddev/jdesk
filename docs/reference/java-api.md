@@ -581,6 +581,7 @@ record PlatformInfo(String osName, String osVersion, String architecture)
 | Member | Meaning |
 | --- | --- |
 | `static final int PROTOCOL_VERSION` | Independent integer IPC protocol version. Currently `1`. |
+| `static String current()` | Exact framework build version embedded by Gradle; `development` only when the generated resource is absent. |
 
 ## Binary streaming
 

@@ -1,0 +1,522 @@
+# JDesk public API baseline v1
+
+type public abstract interface dev.jdesk.api.ApplicationHandle
+  method public abstract dev.jdesk.api.FileWatchHandle dev.jdesk.api.ApplicationHandle.watchFiles(java.nio.file.Path,dev.jdesk.api.FileWatchOptions,java.util.function.Consumer<java.util.List<dev.jdesk.api.FileWatchEvent>>)
+  method public abstract dev.jdesk.api.PlatformInfo dev.jdesk.api.ApplicationHandle.platform()
+  method public abstract dev.jdesk.api.PtyHandle dev.jdesk.api.ApplicationHandle.openPty(dev.jdesk.api.PtySpec,java.util.function.Consumer<byte[]>)
+  method public abstract dev.jdesk.api.SecretStore dev.jdesk.api.ApplicationHandle.secrets()
+  method public abstract dev.jdesk.api.UiDispatcher dev.jdesk.api.ApplicationHandle.ui()
+  method public abstract java.util.Optional<dev.jdesk.api.WindowHandle> dev.jdesk.api.ApplicationHandle.window(dev.jdesk.api.WindowId)
+  method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.FileDialogResult> dev.jdesk.api.ApplicationHandle.showOpenDialog(dev.jdesk.api.FileDialog$OpenDialog)
+  method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.FileDialogResult> dev.jdesk.api.ApplicationHandle.showSaveDialog(dev.jdesk.api.FileDialog$SaveDialog)
+  method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.MessageDialogResult> dev.jdesk.api.ApplicationHandle.showMessageDialog(dev.jdesk.api.MessageDialog)
+  method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.Subscription> dev.jdesk.api.ApplicationHandle.registerGlobalShortcut(java.lang.String,java.lang.Runnable)
+  method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.SystemTheme> dev.jdesk.api.ApplicationHandle.systemTheme()
+  method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.TrayHandle> dev.jdesk.api.ApplicationHandle.createTrayItem(dev.jdesk.api.TraySpec,java.util.function.Consumer<java.lang.String>)
+  method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.WindowHandle> dev.jdesk.api.ApplicationHandle.openWindow(dev.jdesk.api.WindowConfig)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.String> dev.jdesk.api.ApplicationHandle.readClipboardText()
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.ApplicationHandle.openExternal(java.net.URI)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.ApplicationHandle.printFile(dev.jdesk.api.PrintJob)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.ApplicationHandle.setApplicationIcon(byte[])
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.ApplicationHandle.setApplicationMenu(dev.jdesk.api.MenuSpec,java.util.function.Consumer<java.lang.String>)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.ApplicationHandle.setDockBadge(java.lang.String)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.ApplicationHandle.showNotification(java.lang.String,java.lang.String)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.ApplicationHandle.writeClipboard(java.lang.String,byte[])
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.ApplicationHandle.writeClipboardText(java.lang.String)
+  method public abstract java.util.concurrent.CompletionStage<java.util.Optional<byte[]>> dev.jdesk.api.ApplicationHandle.readClipboard(java.lang.String)
+  method public abstract void dev.jdesk.api.ApplicationHandle.requestStop()
+
+type public final record dev.jdesk.api.ApplicationSpec
+  constructor public dev.jdesk.api.ApplicationSpec(java.lang.String,dev.jdesk.api.CommandRegistry,dev.jdesk.api.CapabilitySet,java.util.List<dev.jdesk.api.WindowConfig>,java.util.List<dev.jdesk.api.LifecycleListener>,java.util.Optional<java.lang.String>)
+  constructor public dev.jdesk.api.ApplicationSpec(java.lang.String,dev.jdesk.api.CommandRegistry,dev.jdesk.api.CapabilitySet,java.util.List<dev.jdesk.api.WindowConfig>,java.util.List<dev.jdesk.api.LifecycleListener>,java.util.Optional<java.lang.String>,dev.jdesk.api.CommandRegistry)
+  constructor public dev.jdesk.api.ApplicationSpec(java.lang.String,dev.jdesk.api.CommandRegistry,dev.jdesk.api.CapabilitySet,java.util.List<dev.jdesk.api.WindowConfig>,java.util.List<dev.jdesk.api.LifecycleListener>,java.util.Optional<java.lang.String>,dev.jdesk.api.CommandRegistry,boolean,java.util.function.Consumer<java.util.List<java.lang.String>>)
+  constructor public dev.jdesk.api.ApplicationSpec(java.lang.String,dev.jdesk.api.CommandRegistry,dev.jdesk.api.CapabilitySet,java.util.List<dev.jdesk.api.WindowConfig>,java.util.List<dev.jdesk.api.LifecycleListener>,java.util.Optional<java.lang.String>,dev.jdesk.api.CommandRegistry,boolean,java.util.function.Consumer<java.util.List<java.lang.String>>,java.util.Optional<java.lang.String>)
+  constructor public dev.jdesk.api.ApplicationSpec(java.lang.String,dev.jdesk.api.CommandRegistry,dev.jdesk.api.CapabilitySet,java.util.List<dev.jdesk.api.WindowConfig>,java.util.List<dev.jdesk.api.LifecycleListener>,java.util.Optional<java.lang.String>,dev.jdesk.api.CommandRegistry,boolean,java.util.function.Consumer<java.util.List<java.lang.String>>,java.util.Optional<java.lang.String>,java.util.Map<java.lang.String, dev.jdesk.api.AssetRoute>)
+  method public boolean dev.jdesk.api.ApplicationSpec.singleInstance()
+  method public dev.jdesk.api.CapabilitySet dev.jdesk.api.ApplicationSpec.capabilities()
+  method public dev.jdesk.api.CommandRegistry dev.jdesk.api.ApplicationSpec.commands()
+  method public dev.jdesk.api.CommandRegistry dev.jdesk.api.ApplicationSpec.frontendEvents()
+  method public final boolean dev.jdesk.api.ApplicationSpec.equals(java.lang.Object)
+  method public final int dev.jdesk.api.ApplicationSpec.hashCode()
+  method public final java.lang.String dev.jdesk.api.ApplicationSpec.toString()
+  method public java.lang.String dev.jdesk.api.ApplicationSpec.id()
+  method public java.util.List<dev.jdesk.api.LifecycleListener> dev.jdesk.api.ApplicationSpec.lifecycleListeners()
+  method public java.util.List<dev.jdesk.api.WindowConfig> dev.jdesk.api.ApplicationSpec.windows()
+  method public java.util.Map<java.lang.String, dev.jdesk.api.AssetRoute> dev.jdesk.api.ApplicationSpec.assetRoutes()
+  method public java.util.Optional<java.lang.String> dev.jdesk.api.ApplicationSpec.contentSecurityPolicy()
+  method public java.util.Optional<java.lang.String> dev.jdesk.api.ApplicationSpec.devServerUrl()
+  method public java.util.function.Consumer<java.util.List<java.lang.String>> dev.jdesk.api.ApplicationSpec.activationHandler()
+
+type public abstract interface dev.jdesk.api.AssetRoute annotations=[@java.lang.FunctionalInterface()]
+  method public abstract java.util.Optional<dev.jdesk.api.AssetRoute$Response> dev.jdesk.api.AssetRoute.serve(dev.jdesk.api.AssetRoute$Request) throws java.io.IOException
+
+type public static final record dev.jdesk.api.AssetRoute$Request
+  constructor public dev.jdesk.api.AssetRoute$Request(java.lang.String,java.lang.String,byte[],java.util.Map<java.lang.String, java.lang.String>)
+  constructor public dev.jdesk.api.AssetRoute$Request(java.lang.String,java.util.Map<java.lang.String, java.lang.String>)
+  method public byte[] dev.jdesk.api.AssetRoute$Request.body()
+  method public final boolean dev.jdesk.api.AssetRoute$Request.equals(java.lang.Object)
+  method public final int dev.jdesk.api.AssetRoute$Request.hashCode()
+  method public final java.lang.String dev.jdesk.api.AssetRoute$Request.toString()
+  method public java.lang.String dev.jdesk.api.AssetRoute$Request.method()
+  method public java.lang.String dev.jdesk.api.AssetRoute$Request.path()
+  method public java.util.Map<java.lang.String, java.lang.String> dev.jdesk.api.AssetRoute$Request.headers()
+  method public java.util.Optional<java.lang.String> dev.jdesk.api.AssetRoute$Request.header(java.lang.String)
+
+type public static final record dev.jdesk.api.AssetRoute$Response
+  constructor public dev.jdesk.api.AssetRoute$Response(java.lang.String,long,java.util.function.Supplier<java.io.InputStream>,java.util.Map<java.lang.String, java.lang.String>)
+  method public final boolean dev.jdesk.api.AssetRoute$Response.equals(java.lang.Object)
+  method public final int dev.jdesk.api.AssetRoute$Response.hashCode()
+  method public final java.lang.String dev.jdesk.api.AssetRoute$Response.toString()
+  method public java.lang.String dev.jdesk.api.AssetRoute$Response.contentType()
+  method public java.util.Map<java.lang.String, java.lang.String> dev.jdesk.api.AssetRoute$Response.headers()
+  method public java.util.function.Supplier<java.io.InputStream> dev.jdesk.api.AssetRoute$Response.body()
+  method public long dev.jdesk.api.AssetRoute$Response.contentLength()
+  method public static dev.jdesk.api.AssetRoute$Response dev.jdesk.api.AssetRoute$Response.empty()
+  method public static dev.jdesk.api.AssetRoute$Response dev.jdesk.api.AssetRoute$Response.of(byte[],java.lang.String)
+  method public static dev.jdesk.api.AssetRoute$Response dev.jdesk.api.AssetRoute$Response.of(java.nio.file.Path,java.lang.String) throws java.io.IOException
+
+type public final class dev.jdesk.api.BinaryStream
+  constructor public dev.jdesk.api.BinaryStream(long,java.lang.String,java.lang.String,dev.jdesk.api.BinaryStream$Source)
+  method public dev.jdesk.api.BinaryStream$Source dev.jdesk.api.BinaryStream.source()
+  method public java.lang.String dev.jdesk.api.BinaryStream.contentType()
+  method public java.lang.String dev.jdesk.api.BinaryStream.fileName()
+  method public long dev.jdesk.api.BinaryStream.length()
+  method public static dev.jdesk.api.BinaryStream dev.jdesk.api.BinaryStream.of(java.nio.file.Path,java.lang.String) throws java.io.IOException
+
+type public abstract static interface dev.jdesk.api.BinaryStream$Source annotations=[@java.lang.FunctionalInterface()]
+  method public abstract java.io.InputStream dev.jdesk.api.BinaryStream$Source.open() throws java.io.IOException
+
+type public final record dev.jdesk.api.CapabilityGrant
+  constructor public dev.jdesk.api.CapabilityGrant(java.lang.String,java.util.Set<java.lang.String>)
+  method public final boolean dev.jdesk.api.CapabilityGrant.equals(java.lang.Object)
+  method public final int dev.jdesk.api.CapabilityGrant.hashCode()
+  method public final java.lang.String dev.jdesk.api.CapabilityGrant.toString()
+  method public java.lang.String dev.jdesk.api.CapabilityGrant.capability()
+  method public java.util.Set<java.lang.String> dev.jdesk.api.CapabilityGrant.windows()
+  method public static dev.jdesk.api.CapabilityGrant dev.jdesk.api.CapabilityGrant.forAllWindows(java.lang.String)
+
+type public abstract interface dev.jdesk.api.CapabilitySet
+  method public abstract boolean dev.jdesk.api.CapabilitySet.isGranted(java.lang.String,dev.jdesk.api.WindowId)
+  method public abstract java.util.Set<dev.jdesk.api.CapabilityGrant> dev.jdesk.api.CapabilitySet.grants()
+  method public static dev.jdesk.api.CapabilitySet dev.jdesk.api.CapabilitySet.empty()
+  method public static dev.jdesk.api.CapabilitySet dev.jdesk.api.CapabilitySet.of(java.util.Collection<dev.jdesk.api.CapabilityGrant>)
+
+type public final record dev.jdesk.api.CommandDefinition
+  constructor public dev.jdesk.api.CommandDefinition(java.lang.String,java.util.Optional<java.lang.String>,java.lang.Class<?>,java.util.Optional<java.time.Duration>,dev.jdesk.api.CommandHandler)
+  method public dev.jdesk.api.CommandHandler dev.jdesk.api.CommandDefinition.handler()
+  method public final boolean dev.jdesk.api.CommandDefinition.equals(java.lang.Object)
+  method public final int dev.jdesk.api.CommandDefinition.hashCode()
+  method public final java.lang.String dev.jdesk.api.CommandDefinition.toString()
+  method public java.lang.Class<?> dev.jdesk.api.CommandDefinition.requestType()
+  method public java.lang.String dev.jdesk.api.CommandDefinition.name()
+  method public java.util.Optional<java.lang.String> dev.jdesk.api.CommandDefinition.requiredCapability()
+  method public java.util.Optional<java.time.Duration> dev.jdesk.api.CommandDefinition.timeout()
+
+type public abstract interface dev.jdesk.api.CommandHandler annotations=[@java.lang.FunctionalInterface()]
+  method public abstract java.util.concurrent.CompletionStage<?> dev.jdesk.api.CommandHandler.invoke(java.lang.Object,dev.jdesk.api.InvocationContext)
+
+type public final class dev.jdesk.api.CommandRegistry
+  method public int dev.jdesk.api.CommandRegistry.size()
+  method public java.util.Optional<dev.jdesk.api.CommandDefinition> dev.jdesk.api.CommandRegistry.find(java.lang.String)
+  method public java.util.Set<java.lang.String> dev.jdesk.api.CommandRegistry.commandNames()
+  method public static dev.jdesk.api.CommandRegistry dev.jdesk.api.CommandRegistry.of(dev.jdesk.api.CommandDefinition...)
+
+type public final class dev.jdesk.api.Csp
+  method public dev.jdesk.api.Csp dev.jdesk.api.Csp.connectSrc(java.lang.String...)
+  method public dev.jdesk.api.Csp dev.jdesk.api.Csp.defaultSrc(java.lang.String...)
+  method public dev.jdesk.api.Csp dev.jdesk.api.Csp.directive(java.lang.String,java.lang.String...)
+  method public dev.jdesk.api.Csp dev.jdesk.api.Csp.fontSrc(java.lang.String...)
+  method public dev.jdesk.api.Csp dev.jdesk.api.Csp.frameSrc(java.lang.String...)
+  method public dev.jdesk.api.Csp dev.jdesk.api.Csp.imgSrc(java.lang.String...)
+  method public dev.jdesk.api.Csp dev.jdesk.api.Csp.mediaSrc(java.lang.String...)
+  method public dev.jdesk.api.Csp dev.jdesk.api.Csp.scriptSrc(java.lang.String...)
+  method public dev.jdesk.api.Csp dev.jdesk.api.Csp.styleSrc(java.lang.String...)
+  method public java.lang.String dev.jdesk.api.Csp.build()
+  method public java.lang.String dev.jdesk.api.Csp.toString()
+  method public static dev.jdesk.api.Csp dev.jdesk.api.Csp.defaults()
+  method public static dev.jdesk.api.Csp dev.jdesk.api.Csp.empty()
+
+type public abstract annotation dev.jdesk.api.DesktopCommand implements java.lang.annotation.Annotation annotations=[@java.lang.annotation.Retention(CLASS), @java.lang.annotation.Target({METHOD})]
+  method public abstract java.lang.String dev.jdesk.api.DesktopCommand.value()
+
+type public final enum dev.jdesk.api.ErrorCode
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.ALREADY_CLOSED
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.ASSET_NOT_FOUND
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.CANCELLED
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.CAPABILITY_DENIED
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.ILLEGAL_STATE
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.INTERNAL_ERROR
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.INVALID_REQUEST
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.LIMIT_EXCEEDED
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.NAVIGATION_BLOCKED
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.PAYLOAD_TOO_LARGE
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.PROTOCOL_VERSION_UNSUPPORTED
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.SERIALIZATION_ERROR
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.STALE_NONCE
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.TIMEOUT
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.UNKNOWN_COMMAND
+  field public static final dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.WINDOW_CLOSED
+  method public static dev.jdesk.api.ErrorCode dev.jdesk.api.ErrorCode.valueOf(java.lang.String)
+  method public static dev.jdesk.api.ErrorCode[] dev.jdesk.api.ErrorCode.values()
+
+type public abstract interface dev.jdesk.api.EventEmitter
+  method public abstract void dev.jdesk.api.EventEmitter.emit(java.lang.String,java.lang.Object)
+
+type public final class dev.jdesk.api.FileDialog
+
+type public static final record dev.jdesk.api.FileDialog$Filter
+  constructor public dev.jdesk.api.FileDialog$Filter(java.lang.String,java.util.List<java.lang.String>)
+  method public final boolean dev.jdesk.api.FileDialog$Filter.equals(java.lang.Object)
+  method public final int dev.jdesk.api.FileDialog$Filter.hashCode()
+  method public final java.lang.String dev.jdesk.api.FileDialog$Filter.toString()
+  method public java.lang.String dev.jdesk.api.FileDialog$Filter.label()
+  method public java.util.List<java.lang.String> dev.jdesk.api.FileDialog$Filter.extensions()
+
+type public static final record dev.jdesk.api.FileDialog$OpenDialog
+  constructor public dev.jdesk.api.FileDialog$OpenDialog(java.lang.String,java.util.Optional<java.lang.String>,java.util.List<dev.jdesk.api.FileDialog$Filter>,boolean,boolean)
+  method public boolean dev.jdesk.api.FileDialog$OpenDialog.allowMultiple()
+  method public boolean dev.jdesk.api.FileDialog$OpenDialog.chooseDirectories()
+  method public final boolean dev.jdesk.api.FileDialog$OpenDialog.equals(java.lang.Object)
+  method public final int dev.jdesk.api.FileDialog$OpenDialog.hashCode()
+  method public final java.lang.String dev.jdesk.api.FileDialog$OpenDialog.toString()
+  method public java.lang.String dev.jdesk.api.FileDialog$OpenDialog.title()
+  method public java.util.List<dev.jdesk.api.FileDialog$Filter> dev.jdesk.api.FileDialog$OpenDialog.filters()
+  method public java.util.Optional<java.lang.String> dev.jdesk.api.FileDialog$OpenDialog.directory()
+  method public static dev.jdesk.api.FileDialog$OpenDialog dev.jdesk.api.FileDialog$OpenDialog.ofType(java.lang.String,dev.jdesk.api.FileDialog$Filter...)
+
+type public static final record dev.jdesk.api.FileDialog$SaveDialog
+  constructor public dev.jdesk.api.FileDialog$SaveDialog(java.lang.String,java.util.Optional<java.lang.String>,java.util.Optional<java.lang.String>,java.util.List<dev.jdesk.api.FileDialog$Filter>)
+  method public final boolean dev.jdesk.api.FileDialog$SaveDialog.equals(java.lang.Object)
+  method public final int dev.jdesk.api.FileDialog$SaveDialog.hashCode()
+  method public final java.lang.String dev.jdesk.api.FileDialog$SaveDialog.toString()
+  method public java.lang.String dev.jdesk.api.FileDialog$SaveDialog.title()
+  method public java.util.List<dev.jdesk.api.FileDialog$Filter> dev.jdesk.api.FileDialog$SaveDialog.filters()
+  method public java.util.Optional<java.lang.String> dev.jdesk.api.FileDialog$SaveDialog.directory()
+  method public java.util.Optional<java.lang.String> dev.jdesk.api.FileDialog$SaveDialog.suggestedName()
+  method public static dev.jdesk.api.FileDialog$SaveDialog dev.jdesk.api.FileDialog$SaveDialog.withName(java.lang.String,java.lang.String,dev.jdesk.api.FileDialog$Filter...)
+
+type public final record dev.jdesk.api.FileDialogResult
+  constructor public dev.jdesk.api.FileDialogResult(java.util.List<java.lang.String>)
+  method public boolean dev.jdesk.api.FileDialogResult.isCancelled()
+  method public final boolean dev.jdesk.api.FileDialogResult.equals(java.lang.Object)
+  method public final int dev.jdesk.api.FileDialogResult.hashCode()
+  method public final java.lang.String dev.jdesk.api.FileDialogResult.toString()
+  method public java.util.List<java.lang.String> dev.jdesk.api.FileDialogResult.paths()
+  method public java.util.Optional<java.lang.String> dev.jdesk.api.FileDialogResult.path()
+  method public static dev.jdesk.api.FileDialogResult dev.jdesk.api.FileDialogResult.cancelled()
+
+type public final record dev.jdesk.api.FileWatchEvent
+  constructor public dev.jdesk.api.FileWatchEvent(java.nio.file.Path,dev.jdesk.api.FileWatchEvent$Kind)
+  method public dev.jdesk.api.FileWatchEvent$Kind dev.jdesk.api.FileWatchEvent.kind()
+  method public final boolean dev.jdesk.api.FileWatchEvent.equals(java.lang.Object)
+  method public final int dev.jdesk.api.FileWatchEvent.hashCode()
+  method public final java.lang.String dev.jdesk.api.FileWatchEvent.toString()
+  method public java.nio.file.Path dev.jdesk.api.FileWatchEvent.path()
+  method public static dev.jdesk.api.FileWatchEvent dev.jdesk.api.FileWatchEvent.overflow(java.nio.file.Path)
+
+type public static final enum dev.jdesk.api.FileWatchEvent$Kind
+  field public static final dev.jdesk.api.FileWatchEvent$Kind dev.jdesk.api.FileWatchEvent$Kind.CREATED
+  field public static final dev.jdesk.api.FileWatchEvent$Kind dev.jdesk.api.FileWatchEvent$Kind.DELETED
+  field public static final dev.jdesk.api.FileWatchEvent$Kind dev.jdesk.api.FileWatchEvent$Kind.MODIFIED
+  field public static final dev.jdesk.api.FileWatchEvent$Kind dev.jdesk.api.FileWatchEvent$Kind.OVERFLOW
+  method public static dev.jdesk.api.FileWatchEvent$Kind dev.jdesk.api.FileWatchEvent$Kind.valueOf(java.lang.String)
+  method public static dev.jdesk.api.FileWatchEvent$Kind[] dev.jdesk.api.FileWatchEvent$Kind.values()
+
+type public abstract interface dev.jdesk.api.FileWatchHandle implements java.lang.AutoCloseable
+  method public abstract boolean dev.jdesk.api.FileWatchHandle.isActive()
+  method public abstract void dev.jdesk.api.FileWatchHandle.close()
+
+type public final record dev.jdesk.api.FileWatchOptions
+  field public static final dev.jdesk.api.FileWatchOptions dev.jdesk.api.FileWatchOptions.NON_RECURSIVE
+  field public static final dev.jdesk.api.FileWatchOptions dev.jdesk.api.FileWatchOptions.RECURSIVE
+  constructor public dev.jdesk.api.FileWatchOptions(boolean,java.time.Duration)
+  method public boolean dev.jdesk.api.FileWatchOptions.recursive()
+  method public dev.jdesk.api.FileWatchOptions dev.jdesk.api.FileWatchOptions.withCoalesceWindow(java.time.Duration)
+  method public final boolean dev.jdesk.api.FileWatchOptions.equals(java.lang.Object)
+  method public final int dev.jdesk.api.FileWatchOptions.hashCode()
+  method public final java.lang.String dev.jdesk.api.FileWatchOptions.toString()
+  method public java.time.Duration dev.jdesk.api.FileWatchOptions.coalesceWindow()
+
+type public abstract interface dev.jdesk.api.InvocationContext
+  method public abstract boolean dev.jdesk.api.InvocationContext.isCancelled()
+  method public abstract dev.jdesk.api.ApplicationHandle dev.jdesk.api.InvocationContext.application()
+  method public abstract dev.jdesk.api.EventEmitter dev.jdesk.api.InvocationContext.events()
+  method public abstract dev.jdesk.api.PlatformInfo dev.jdesk.api.InvocationContext.platform()
+  method public abstract dev.jdesk.api.WindowId dev.jdesk.api.InvocationContext.windowId()
+  method public abstract java.lang.String dev.jdesk.api.InvocationContext.commandName()
+  method public abstract java.lang.String dev.jdesk.api.InvocationContext.requestId()
+
+type public final class dev.jdesk.api.JDeskApplication
+  method public static dev.jdesk.api.JDeskApplication$Builder dev.jdesk.api.JDeskApplication.builder()
+
+type public static final class dev.jdesk.api.JDeskApplication$Builder
+  method public dev.jdesk.api.ApplicationSpec dev.jdesk.api.JDeskApplication$Builder.buildSpec()
+  method public dev.jdesk.api.JDeskApplication$Builder dev.jdesk.api.JDeskApplication$Builder.assetRoute(java.lang.String,dev.jdesk.api.AssetRoute)
+  method public dev.jdesk.api.JDeskApplication$Builder dev.jdesk.api.JDeskApplication$Builder.capabilities(dev.jdesk.api.CapabilitySet)
+  method public dev.jdesk.api.JDeskApplication$Builder dev.jdesk.api.JDeskApplication$Builder.commands(dev.jdesk.api.CommandRegistry)
+  method public dev.jdesk.api.JDeskApplication$Builder dev.jdesk.api.JDeskApplication$Builder.contentSecurityPolicy(dev.jdesk.api.Csp)
+  method public dev.jdesk.api.JDeskApplication$Builder dev.jdesk.api.JDeskApplication$Builder.contentSecurityPolicy(java.lang.String)
+  method public dev.jdesk.api.JDeskApplication$Builder dev.jdesk.api.JDeskApplication$Builder.devServerUrl(java.lang.String)
+  method public dev.jdesk.api.JDeskApplication$Builder dev.jdesk.api.JDeskApplication$Builder.frontendEvents(dev.jdesk.api.CommandRegistry)
+  method public dev.jdesk.api.JDeskApplication$Builder dev.jdesk.api.JDeskApplication$Builder.id(java.lang.String)
+  method public dev.jdesk.api.JDeskApplication$Builder dev.jdesk.api.JDeskApplication$Builder.lifecycle(dev.jdesk.api.LifecycleListener)
+  method public dev.jdesk.api.JDeskApplication$Builder dev.jdesk.api.JDeskApplication$Builder.singleInstance(java.util.function.Consumer<java.util.List<java.lang.String>>)
+  method public dev.jdesk.api.JDeskApplication$Builder dev.jdesk.api.JDeskApplication$Builder.window(dev.jdesk.api.WindowConfig)
+  method public int dev.jdesk.api.JDeskApplication$Builder.run(java.lang.String[])
+
+type public abstract interface dev.jdesk.api.JDeskBootstrap
+  method public abstract int dev.jdesk.api.JDeskBootstrap.launch(dev.jdesk.api.ApplicationSpec,java.lang.String[])
+
+type public class dev.jdesk.api.JDeskException extends java.lang.RuntimeException
+  constructor public dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode,java.lang.String)
+  constructor public dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode,java.lang.String,java.lang.Object,java.lang.Throwable)
+  constructor public dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode,java.lang.String,java.lang.Throwable)
+  method public dev.jdesk.api.ErrorCode dev.jdesk.api.JDeskException.code()
+  method public java.lang.Object dev.jdesk.api.JDeskException.details()
+  method public java.lang.String dev.jdesk.api.JDeskException.publicMessage()
+
+type public final class dev.jdesk.api.JDeskVersion
+  field public static final int dev.jdesk.api.JDeskVersion.PROTOCOL_VERSION
+  method public static java.lang.String dev.jdesk.api.JDeskVersion.current()
+
+type public abstract interface dev.jdesk.api.LifecycleListener
+  method public default boolean dev.jdesk.api.LifecycleListener.onCloseRequested(dev.jdesk.api.WindowId)
+  method public default void dev.jdesk.api.LifecycleListener.onReady()
+  method public default void dev.jdesk.api.LifecycleListener.onReady(dev.jdesk.api.ApplicationHandle)
+  method public default void dev.jdesk.api.LifecycleListener.onStarting()
+  method public default void dev.jdesk.api.LifecycleListener.onStopped()
+  method public default void dev.jdesk.api.LifecycleListener.onStopping()
+
+type public final enum dev.jdesk.api.LifecycleState
+  field public static final dev.jdesk.api.LifecycleState dev.jdesk.api.LifecycleState.NEW
+  field public static final dev.jdesk.api.LifecycleState dev.jdesk.api.LifecycleState.READY
+  field public static final dev.jdesk.api.LifecycleState dev.jdesk.api.LifecycleState.STARTING
+  field public static final dev.jdesk.api.LifecycleState dev.jdesk.api.LifecycleState.STOPPED
+  field public static final dev.jdesk.api.LifecycleState dev.jdesk.api.LifecycleState.STOPPING
+  method public static dev.jdesk.api.LifecycleState dev.jdesk.api.LifecycleState.valueOf(java.lang.String)
+  method public static dev.jdesk.api.LifecycleState[] dev.jdesk.api.LifecycleState.values()
+
+type public abstract sealed interface dev.jdesk.api.MenuItem
+  method public static dev.jdesk.api.MenuItem$Action dev.jdesk.api.MenuItem.action(java.lang.String,java.lang.String)
+  method public static dev.jdesk.api.MenuItem$Action dev.jdesk.api.MenuItem.action(java.lang.String,java.lang.String,java.lang.String)
+  method public static dev.jdesk.api.MenuItem$Separator dev.jdesk.api.MenuItem.separator()
+  method public static dev.jdesk.api.MenuItem$Submenu dev.jdesk.api.MenuItem.submenu(java.lang.String,dev.jdesk.api.MenuItem...)
+
+type public static final record dev.jdesk.api.MenuItem$Action implements dev.jdesk.api.MenuItem
+  constructor public dev.jdesk.api.MenuItem$Action(java.lang.String,java.lang.String,java.util.Optional<java.lang.String>)
+  method public final boolean dev.jdesk.api.MenuItem$Action.equals(java.lang.Object)
+  method public final int dev.jdesk.api.MenuItem$Action.hashCode()
+  method public final java.lang.String dev.jdesk.api.MenuItem$Action.toString()
+  method public java.lang.String dev.jdesk.api.MenuItem$Action.id()
+  method public java.lang.String dev.jdesk.api.MenuItem$Action.label()
+  method public java.util.Optional<java.lang.String> dev.jdesk.api.MenuItem$Action.accelerator()
+
+type public static final record dev.jdesk.api.MenuItem$Separator implements dev.jdesk.api.MenuItem
+  constructor public dev.jdesk.api.MenuItem$Separator()
+  method public final boolean dev.jdesk.api.MenuItem$Separator.equals(java.lang.Object)
+  method public final int dev.jdesk.api.MenuItem$Separator.hashCode()
+  method public final java.lang.String dev.jdesk.api.MenuItem$Separator.toString()
+
+type public static final record dev.jdesk.api.MenuItem$Submenu implements dev.jdesk.api.MenuItem
+  constructor public dev.jdesk.api.MenuItem$Submenu(java.lang.String,java.util.List<dev.jdesk.api.MenuItem>)
+  method public final boolean dev.jdesk.api.MenuItem$Submenu.equals(java.lang.Object)
+  method public final int dev.jdesk.api.MenuItem$Submenu.hashCode()
+  method public final java.lang.String dev.jdesk.api.MenuItem$Submenu.toString()
+  method public java.lang.String dev.jdesk.api.MenuItem$Submenu.label()
+  method public java.util.List<dev.jdesk.api.MenuItem> dev.jdesk.api.MenuItem$Submenu.items()
+
+type public final record dev.jdesk.api.MenuSpec
+  constructor public dev.jdesk.api.MenuSpec(java.util.List<dev.jdesk.api.MenuItem>)
+  method public final boolean dev.jdesk.api.MenuSpec.equals(java.lang.Object)
+  method public final int dev.jdesk.api.MenuSpec.hashCode()
+  method public final java.lang.String dev.jdesk.api.MenuSpec.toString()
+  method public java.util.List<dev.jdesk.api.MenuItem> dev.jdesk.api.MenuSpec.items()
+  method public static dev.jdesk.api.MenuSpec dev.jdesk.api.MenuSpec.of(dev.jdesk.api.MenuItem...)
+
+type public final record dev.jdesk.api.MessageDialog
+  constructor public dev.jdesk.api.MessageDialog(java.lang.String,java.lang.String,dev.jdesk.api.MessageDialog$Kind,java.util.List<java.lang.String>)
+  method public dev.jdesk.api.MessageDialog$Kind dev.jdesk.api.MessageDialog.kind()
+  method public final boolean dev.jdesk.api.MessageDialog.equals(java.lang.Object)
+  method public final int dev.jdesk.api.MessageDialog.hashCode()
+  method public final java.lang.String dev.jdesk.api.MessageDialog.toString()
+  method public java.lang.String dev.jdesk.api.MessageDialog.message()
+  method public java.lang.String dev.jdesk.api.MessageDialog.title()
+  method public java.util.List<java.lang.String> dev.jdesk.api.MessageDialog.buttons()
+  method public static dev.jdesk.api.MessageDialog dev.jdesk.api.MessageDialog.ok(java.lang.String,java.lang.String)
+
+type public static final enum dev.jdesk.api.MessageDialog$Kind
+  field public static final dev.jdesk.api.MessageDialog$Kind dev.jdesk.api.MessageDialog$Kind.ERROR
+  field public static final dev.jdesk.api.MessageDialog$Kind dev.jdesk.api.MessageDialog$Kind.INFO
+  field public static final dev.jdesk.api.MessageDialog$Kind dev.jdesk.api.MessageDialog$Kind.WARNING
+  method public static dev.jdesk.api.MessageDialog$Kind dev.jdesk.api.MessageDialog$Kind.valueOf(java.lang.String)
+  method public static dev.jdesk.api.MessageDialog$Kind[] dev.jdesk.api.MessageDialog$Kind.values()
+
+type public final record dev.jdesk.api.MessageDialogResult
+  constructor public dev.jdesk.api.MessageDialogResult(int,java.lang.String)
+  method public final boolean dev.jdesk.api.MessageDialogResult.equals(java.lang.Object)
+  method public final int dev.jdesk.api.MessageDialogResult.hashCode()
+  method public final java.lang.String dev.jdesk.api.MessageDialogResult.toString()
+  method public int dev.jdesk.api.MessageDialogResult.buttonIndex()
+  method public java.lang.String dev.jdesk.api.MessageDialogResult.buttonLabel()
+
+type public final record dev.jdesk.api.PermissionDecision
+  constructor public dev.jdesk.api.PermissionDecision(boolean,dev.jdesk.api.ErrorCode,java.lang.String)
+  method public boolean dev.jdesk.api.PermissionDecision.allowed()
+  method public dev.jdesk.api.ErrorCode dev.jdesk.api.PermissionDecision.errorCode()
+  method public final boolean dev.jdesk.api.PermissionDecision.equals(java.lang.Object)
+  method public final int dev.jdesk.api.PermissionDecision.hashCode()
+  method public final java.lang.String dev.jdesk.api.PermissionDecision.toString()
+  method public java.lang.String dev.jdesk.api.PermissionDecision.publicReason()
+  method public static dev.jdesk.api.PermissionDecision dev.jdesk.api.PermissionDecision.allow()
+  method public static dev.jdesk.api.PermissionDecision dev.jdesk.api.PermissionDecision.deny(dev.jdesk.api.ErrorCode,java.lang.String)
+
+type public final record dev.jdesk.api.PlatformInfo
+  constructor public dev.jdesk.api.PlatformInfo(java.lang.String,java.lang.String,java.lang.String)
+  method public final boolean dev.jdesk.api.PlatformInfo.equals(java.lang.Object)
+  method public final int dev.jdesk.api.PlatformInfo.hashCode()
+  method public final java.lang.String dev.jdesk.api.PlatformInfo.toString()
+  method public java.lang.String dev.jdesk.api.PlatformInfo.architecture()
+  method public java.lang.String dev.jdesk.api.PlatformInfo.osName()
+  method public java.lang.String dev.jdesk.api.PlatformInfo.osVersion()
+
+type public final record dev.jdesk.api.PrintJob
+  constructor public dev.jdesk.api.PrintJob(java.lang.String,java.util.Optional<java.lang.String>,int,java.util.Optional<java.lang.String>)
+  method public dev.jdesk.api.PrintJob dev.jdesk.api.PrintJob.toPrinter(java.lang.String)
+  method public dev.jdesk.api.PrintJob dev.jdesk.api.PrintJob.withCopies(int)
+  method public dev.jdesk.api.PrintJob dev.jdesk.api.PrintJob.withPaperSize(java.lang.String)
+  method public final boolean dev.jdesk.api.PrintJob.equals(java.lang.Object)
+  method public final int dev.jdesk.api.PrintJob.hashCode()
+  method public final java.lang.String dev.jdesk.api.PrintJob.toString()
+  method public int dev.jdesk.api.PrintJob.copies()
+  method public java.lang.String dev.jdesk.api.PrintJob.filePath()
+  method public java.util.Optional<java.lang.String> dev.jdesk.api.PrintJob.paperSize()
+  method public java.util.Optional<java.lang.String> dev.jdesk.api.PrintJob.printerName()
+  method public static dev.jdesk.api.PrintJob dev.jdesk.api.PrintJob.of(java.lang.String)
+
+type public abstract interface dev.jdesk.api.PtyHandle implements java.lang.AutoCloseable
+  method public abstract boolean dev.jdesk.api.PtyHandle.isAlive()
+  method public abstract java.util.OptionalInt dev.jdesk.api.PtyHandle.exitCode()
+  method public abstract void dev.jdesk.api.PtyHandle.close()
+  method public abstract void dev.jdesk.api.PtyHandle.kill()
+  method public abstract void dev.jdesk.api.PtyHandle.resize(int,int)
+  method public abstract void dev.jdesk.api.PtyHandle.terminate()
+  method public abstract void dev.jdesk.api.PtyHandle.write(byte[])
+
+type public final record dev.jdesk.api.PtySpec
+  constructor public dev.jdesk.api.PtySpec(java.util.List<java.lang.String>,java.util.Optional<java.nio.file.Path>,java.util.Map<java.lang.String, java.lang.String>,int,int)
+  method public dev.jdesk.api.PtySpec dev.jdesk.api.PtySpec.withEnvironment(java.util.Map<java.lang.String, java.lang.String>)
+  method public dev.jdesk.api.PtySpec dev.jdesk.api.PtySpec.withSize(int,int)
+  method public dev.jdesk.api.PtySpec dev.jdesk.api.PtySpec.withWorkingDirectory(java.nio.file.Path)
+  method public final boolean dev.jdesk.api.PtySpec.equals(java.lang.Object)
+  method public final int dev.jdesk.api.PtySpec.hashCode()
+  method public final java.lang.String dev.jdesk.api.PtySpec.toString()
+  method public int dev.jdesk.api.PtySpec.columns()
+  method public int dev.jdesk.api.PtySpec.rows()
+  method public java.util.List<java.lang.String> dev.jdesk.api.PtySpec.command()
+  method public java.util.Map<java.lang.String, java.lang.String> dev.jdesk.api.PtySpec.environment()
+  method public java.util.Optional<java.nio.file.Path> dev.jdesk.api.PtySpec.workingDirectory()
+  method public static dev.jdesk.api.PtySpec dev.jdesk.api.PtySpec.of(java.lang.String...)
+
+type public abstract annotation dev.jdesk.api.PublicDesktopCommand implements java.lang.annotation.Annotation annotations=[@java.lang.annotation.Retention(CLASS), @java.lang.annotation.Target({METHOD})]
+
+type public abstract annotation dev.jdesk.api.RequiresCapability implements java.lang.annotation.Annotation annotations=[@java.lang.annotation.Retention(CLASS), @java.lang.annotation.Target({METHOD})]
+  method public abstract java.lang.String dev.jdesk.api.RequiresCapability.value()
+
+type public abstract interface dev.jdesk.api.SecretStore
+  method public abstract java.util.Optional<java.lang.String> dev.jdesk.api.SecretStore.get(java.lang.String)
+  method public abstract void dev.jdesk.api.SecretStore.delete(java.lang.String)
+  method public abstract void dev.jdesk.api.SecretStore.put(java.lang.String,java.lang.String)
+
+type public abstract interface dev.jdesk.api.Subscription implements java.lang.AutoCloseable annotations=[@java.lang.FunctionalInterface()]
+  method public abstract void dev.jdesk.api.Subscription.close()
+
+type public final enum dev.jdesk.api.SystemTheme
+  field public static final dev.jdesk.api.SystemTheme dev.jdesk.api.SystemTheme.DARK
+  field public static final dev.jdesk.api.SystemTheme dev.jdesk.api.SystemTheme.LIGHT
+  method public static dev.jdesk.api.SystemTheme dev.jdesk.api.SystemTheme.valueOf(java.lang.String)
+  method public static dev.jdesk.api.SystemTheme[] dev.jdesk.api.SystemTheme.values()
+
+type public abstract interface dev.jdesk.api.TrayHandle implements java.lang.AutoCloseable
+  method public abstract void dev.jdesk.api.TrayHandle.close()
+  method public abstract void dev.jdesk.api.TrayHandle.setTitle(java.lang.String)
+
+type public final record dev.jdesk.api.TraySpec
+  constructor public dev.jdesk.api.TraySpec(java.lang.String,java.util.Optional<byte[]>,dev.jdesk.api.MenuSpec)
+  method public dev.jdesk.api.MenuSpec dev.jdesk.api.TraySpec.menu()
+  method public dev.jdesk.api.TraySpec dev.jdesk.api.TraySpec.withIcon(byte[])
+  method public final boolean dev.jdesk.api.TraySpec.equals(java.lang.Object)
+  method public final int dev.jdesk.api.TraySpec.hashCode()
+  method public final java.lang.String dev.jdesk.api.TraySpec.toString()
+  method public java.lang.String dev.jdesk.api.TraySpec.title()
+  method public java.util.Optional<byte[]> dev.jdesk.api.TraySpec.iconPng()
+  method public static dev.jdesk.api.TraySpec dev.jdesk.api.TraySpec.of(java.lang.String,dev.jdesk.api.MenuSpec)
+
+type public abstract interface dev.jdesk.api.UiDispatcher
+  method public abstract <T> java.util.concurrent.CompletionStage<T> dev.jdesk.api.UiDispatcher.submit(java.util.concurrent.Callable<T>)
+  method public abstract boolean dev.jdesk.api.UiDispatcher.isUiThread()
+  method public abstract void dev.jdesk.api.UiDispatcher.assertUiThread()
+  method public abstract void dev.jdesk.api.UiDispatcher.execute(java.lang.Runnable)
+
+type public final record dev.jdesk.api.WindowConfig
+  constructor public dev.jdesk.api.WindowConfig(dev.jdesk.api.WindowId,java.lang.String,int,int,boolean,java.net.URI)
+  constructor public dev.jdesk.api.WindowConfig(dev.jdesk.api.WindowId,java.lang.String,int,int,boolean,java.net.URI,int,int,boolean,boolean)
+  constructor public dev.jdesk.api.WindowConfig(dev.jdesk.api.WindowId,java.lang.String,int,int,boolean,java.net.URI,int,int,boolean,boolean,java.util.Optional<dev.jdesk.api.WindowConfig$Position>)
+  method public boolean dev.jdesk.api.WindowConfig.rememberBounds()
+  method public boolean dev.jdesk.api.WindowConfig.resizable()
+  method public boolean dev.jdesk.api.WindowConfig.startMaximized()
+  method public dev.jdesk.api.WindowId dev.jdesk.api.WindowConfig.id()
+  method public final boolean dev.jdesk.api.WindowConfig.equals(java.lang.Object)
+  method public final int dev.jdesk.api.WindowConfig.hashCode()
+  method public final java.lang.String dev.jdesk.api.WindowConfig.toString()
+  method public int dev.jdesk.api.WindowConfig.height()
+  method public int dev.jdesk.api.WindowConfig.minHeight()
+  method public int dev.jdesk.api.WindowConfig.minWidth()
+  method public int dev.jdesk.api.WindowConfig.width()
+  method public java.lang.String dev.jdesk.api.WindowConfig.title()
+  method public java.net.URI dev.jdesk.api.WindowConfig.entry()
+  method public java.util.Optional<dev.jdesk.api.WindowConfig$Position> dev.jdesk.api.WindowConfig.position()
+  method public static dev.jdesk.api.WindowConfig$Builder dev.jdesk.api.WindowConfig.builder()
+
+type public static final class dev.jdesk.api.WindowConfig$Builder
+  method public dev.jdesk.api.WindowConfig dev.jdesk.api.WindowConfig$Builder.build()
+  method public dev.jdesk.api.WindowConfig$Builder dev.jdesk.api.WindowConfig$Builder.entry(java.lang.String)
+  method public dev.jdesk.api.WindowConfig$Builder dev.jdesk.api.WindowConfig$Builder.id(java.lang.String)
+  method public dev.jdesk.api.WindowConfig$Builder dev.jdesk.api.WindowConfig$Builder.minSize(int,int)
+  method public dev.jdesk.api.WindowConfig$Builder dev.jdesk.api.WindowConfig$Builder.position(int,int)
+  method public dev.jdesk.api.WindowConfig$Builder dev.jdesk.api.WindowConfig$Builder.rememberBounds(boolean)
+  method public dev.jdesk.api.WindowConfig$Builder dev.jdesk.api.WindowConfig$Builder.resizable(boolean)
+  method public dev.jdesk.api.WindowConfig$Builder dev.jdesk.api.WindowConfig$Builder.size(int,int)
+  method public dev.jdesk.api.WindowConfig$Builder dev.jdesk.api.WindowConfig$Builder.startMaximized(boolean)
+  method public dev.jdesk.api.WindowConfig$Builder dev.jdesk.api.WindowConfig$Builder.title(java.lang.String)
+
+type public static final record dev.jdesk.api.WindowConfig$Position
+  constructor public dev.jdesk.api.WindowConfig$Position(int,int)
+  method public final boolean dev.jdesk.api.WindowConfig$Position.equals(java.lang.Object)
+  method public final int dev.jdesk.api.WindowConfig$Position.hashCode()
+  method public final java.lang.String dev.jdesk.api.WindowConfig$Position.toString()
+  method public int dev.jdesk.api.WindowConfig$Position.x()
+  method public int dev.jdesk.api.WindowConfig$Position.y()
+
+type public abstract interface dev.jdesk.api.WindowHandle
+  method public abstract dev.jdesk.api.EventEmitter dev.jdesk.api.WindowHandle.events()
+  method public abstract dev.jdesk.api.WindowId dev.jdesk.api.WindowHandle.id()
+  method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.Subscription> dev.jdesk.api.WindowHandle.onFileDrop(java.util.function.Consumer<java.util.List<java.nio.file.Path>>)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.close()
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.focus()
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.hide()
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.print()
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.setAlwaysOnTop(boolean)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.setBounds(int,int,int,int)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.setFullscreen(boolean)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.setMaximized(boolean)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.setMinimized(boolean)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.setTitle(java.lang.String)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.show()
+  method public abstract java.util.concurrent.CompletionStage<java.util.Optional<java.lang.String>> dev.jdesk.api.WindowHandle.showContextMenu(dev.jdesk.api.MenuSpec)
+
+type public final record dev.jdesk.api.WindowId
+  constructor public dev.jdesk.api.WindowId(java.lang.String)
+  method public final boolean dev.jdesk.api.WindowId.equals(java.lang.Object)
+  method public final int dev.jdesk.api.WindowId.hashCode()
+  method public java.lang.String dev.jdesk.api.WindowId.toString()
+  method public java.lang.String dev.jdesk.api.WindowId.value()

@@ -45,6 +45,14 @@ public final class Main {
     }
 
     private static final boolean STRESS = Boolean.getBoolean("jdesk.smoke.stress");
+    private static final double MAX_IPC_P95_MS = Double.parseDouble(
+            System.getProperty("jdesk.smoke.maxIpcP95Ms", "150"));
+    private static final double MAX_IPC_P99_MS = Double.parseDouble(
+            System.getProperty("jdesk.smoke.maxIpcP99Ms", "300"));
+    private static final long MAX_RSS_BYTES = Long.getLong(
+            "jdesk.smoke.maxRssBytes", 805_306_368L);
+    private static final long MAX_STARTUP_READY_MS = Long.getLong(
+            "jdesk.smoke.maxStartupReadyMs", 15_000L);
     private static final boolean STREAM_2GB = Boolean.getBoolean("jdesk.smoke.stream2gb");
     private static final long PROCESS_KILL_HOLD_MS = Long.getLong("jdesk.smoke.processKillHoldMs", 0L);
     private static final boolean MESSAGE_DIALOG = Boolean.getBoolean("jdesk.smoke.messageDialog");
@@ -62,7 +70,8 @@ public final class Main {
 
     // ---- DTOs (public for JSON binding) ----
     public record RunInfo(String runId, boolean stress, boolean stream2gb,
-            long processKillHoldMs, String platformId) {
+            long processKillHoldMs, String platformId, double maxIpcP95Ms,
+            double maxIpcP99Ms) {
     }
 
     public record EchoRequest(String text, int number) {
@@ -164,6 +173,8 @@ public final class Main {
     }
 
     private static int run(EvidenceRun evidence) throws Exception {
+        long startupStarted = System.nanoTime();
+        AtomicBoolean startupBudgetPassed = new AtomicBoolean(false);
         PlatformProvider provider = loadProvider();
         evidence.providerId(provider.id());
         evidence.applicationPid(ProcessHandle.current().pid());
@@ -212,7 +223,17 @@ public final class Main {
                         .title("JDesk native smoke")
                         .size(1000, 700)
                         .entry("jdesk://app/index.html")).build()),
-                List.of(),
+                List.of(new dev.jdesk.api.LifecycleListener() {
+                    @Override public void onReady() {
+                        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(
+                                System.nanoTime() - startupStarted);
+                        evidence.putEnvironment("startup.readyMs", Long.toString(elapsedMs));
+                        boolean passed = elapsedMs <= MAX_STARTUP_READY_MS;
+                        startupBudgetPassed.set(passed);
+                        evidence.addCase("java:startup-ready-budget", passed,
+                                "readyMs=" + elapsedMs + " maxMs=" + MAX_STARTUP_READY_MS);
+                    }
+                }),
                 Optional.empty(),
                 CommandRegistry.of(new CommandDefinition("smoke.frontendPing",
                         Optional.of("smoke:use"), PingRequest.class, Optional.empty(),
@@ -245,7 +266,8 @@ public final class Main {
         try (JDeskRuntime runtime = new JDeskRuntime(spec, provider, options)) {
             runtimeRef.set(runtime);
             Thread orchestrator = new Thread(() ->
-                    orchestrate(runtime, evidence, reportLatch, reportRef, deniedRan, verdict),
+                    orchestrate(runtime, evidence, reportLatch, reportRef, deniedRan,
+                            startupBudgetPassed, verdict),
                     "smoke-orchestrator");
             orchestrator.setDaemon(true);
             orchestrator.start();
@@ -271,6 +293,7 @@ public final class Main {
             CountDownLatch reportLatch,
             AtomicReference<Report> reportRef,
             AtomicBoolean deniedRan,
+            AtomicBoolean startupBudgetPassed,
             AtomicBoolean verdict) {
         try {
             if (!reportLatch.await(180, TimeUnit.SECONDS)) {
@@ -591,12 +614,13 @@ public final class Main {
                     png.detail() + " " + png.width() + "x" + png.height()
                             + " colors=" + png.distinctColors());
 
-            // Stabilization interval, then RSS baseline (spec 17.5: record, no threshold yet).
+            // Stabilization interval, then enforce a deliberately conservative regression budget.
             Thread.sleep(STRESS ? 3000 : 500);
             long rssAfter = dev.jdesk.testkit.evidence.RssSampler.currentRssBytes();
             evidence.putEnvironment("rss.afterProbesBytes", Long.toString(rssAfter));
-            evidence.addCase("java:rss-baseline-recorded", true,
-                    "rssAfterProbes=" + rssAfter + " bytes (baseline only, no threshold)");
+            evidence.addCase("java:rss-regression-budget",
+                    rssAfter > 0 && rssAfter <= MAX_RSS_BYTES,
+                    "rssAfterProbes=" + rssAfter + " maxBytes=" + MAX_RSS_BYTES);
 
             int pending = runtime.pendingInvocations();
             evidence.addCase("java:zero-pending-invocations", pending == 0,
@@ -607,7 +631,8 @@ public final class Main {
 
             verdict.set(report.allPassed() && !deniedRan.get() && png.valid()
                     && pending == 0 && consoleSeen && secretsPassed && automationPassed
-                    && windowStatePassed);
+                    && windowStatePassed && startupBudgetPassed.get()
+                    && rssAfter > 0 && rssAfter <= MAX_RSS_BYTES);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             evidence.addCase("orchestrator", false, "interrupted");
@@ -630,7 +655,8 @@ public final class Main {
                 new CommandDefinition("smoke.runInfo", Optional.of("smoke:use"), Void.class,
                         Optional.empty(), (request, context) ->
                         CompletableFuture.completedFuture(new RunInfo(evidence.runId(), STRESS,
-                                STREAM_2GB, PROCESS_KILL_HOLD_MS, platformId))),
+                                STREAM_2GB, PROCESS_KILL_HOLD_MS, platformId,
+                                MAX_IPC_P95_MS, MAX_IPC_P99_MS))),
 
                 new CommandDefinition("smoke.binaryStream", Optional.of("smoke:use"), Void.class,
                         Optional.of(Duration.ofMinutes(10)), (request, context) ->

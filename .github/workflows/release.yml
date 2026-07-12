@@ -9,6 +9,8 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write
+  attestations: write
 
 jobs:
   publish:
@@ -50,6 +52,20 @@ jobs:
             -PjdeskPublishUrl=https://maven.pkg.github.com/${{ github.repository }} \
             -PjdeskPublishUser=${{ github.actor }} \
             -PjdeskPublishToken=${{ secrets.GITHUB_TOKEN }}
+      - name: Stage release libraries and checksums
+        if: steps.release.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          mkdir -p build/release-artifacts
+          find modules -path '*/build/libs/*.jar' -type f \
+            ! -name '*-SNAPSHOT*' -exec cp {} build/release-artifacts/ \;
+          test -n "$(find build/release-artifacts -name '*.jar' -print -quit)"
+          (cd build/release-artifacts && sha256sum *.jar > checksums.sha256)
+      - name: Attest release provenance
+        if: steps.release.outputs.enabled == 'true' && vars.JDESK_ENABLE_ATTESTATIONS == 'true'
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-path: build/release-artifacts/*
       - name: Create pre-release
         if: steps.release.outputs.enabled == 'true'
         env:
@@ -60,3 +76,4 @@ jobs:
             --title "JDesk $TAG" \
             --notes "Pre-alpha artifacts verified by the complete Windows, macOS, and Linux native/security/package CI matrix." \
             --prerelease || gh release edit "$TAG" --prerelease
+          gh release upload "$TAG" build/release-artifacts/* --clobber

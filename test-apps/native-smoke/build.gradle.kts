@@ -56,4 +56,12 @@ tasks.named<JavaExec>("run") {
         providers.gradleProperty("jdeskStress").getOrElse("false"))
     systemProperty("jdesk.smoke.stream2gb",
         providers.gradleProperty("jdeskStream2gb").getOrElse("false"))
+    systemProperty("jdesk.smoke.maxIpcP95Ms",
+        providers.gradleProperty("jdeskMaxIpcP95Ms").getOrElse("150"))
+    systemProperty("jdesk.smoke.maxIpcP99Ms",
+        providers.gradleProperty("jdeskMaxIpcP99Ms").getOrElse("300"))
+    systemProperty("jdesk.smoke.maxRssBytes",
+        providers.gradleProperty("jdeskMaxRssBytes").getOrElse("805306368"))
+    systemProperty("jdesk.smoke.maxStartupReadyMs",
+        providers.gradleProperty("jdeskMaxStartupReadyMs").getOrElse("15000"))
 }

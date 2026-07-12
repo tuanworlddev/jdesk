@@ -40,6 +40,9 @@ Task-oriented how-tos for when you are building.
 - [Store secrets in the OS credential store](guides/storing-secrets.md)
 - [Use native dialogs and printing](guides/dialogs-and-printing.md)
 - [Automate and E2E-test your app](guides/automation-and-e2e.md)
+- [Update an application safely](guides/updating-applications.md)
+- [Apply enterprise managed policy](guides/enterprise-managed-policy.md)
+- [Create a redacted support bundle](guides/diagnostics-and-support.md)
 - [Grant capabilities and permissions](guides/capabilities-and-permissions.md)
 - [Manage windows and the app lifecycle](guides/managing-windows.md)
 - [Serve assets over `jdesk://app/`](guides/serving-assets.md)
@@ -79,6 +82,7 @@ Exact, complete descriptions to look up while working.
 - [Scaffolding and publishing](development/scaffolding-and-publishing.md)
 - [Threat model and capability guide](security/threat-model.md)
 - [Contributing](development/contributing.md)
+- [Release and support policy](development/release-and-support-policy.md)
 
 ## Architecture Decision Records
 

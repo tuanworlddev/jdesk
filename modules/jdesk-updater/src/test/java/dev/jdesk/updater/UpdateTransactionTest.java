@@ -85,6 +85,60 @@ class UpdateTransactionTest {
                 .hasMessage("Install root must not be a symlink");
     }
 
+    @Test void unconfirmedUpgradeRollsBackOnItsSecondLaunch() throws Exception {
+        UpdateTransaction tx = new UpdateTransaction(temp.resolve("install"));
+        tx.stageAndActivate(verified(packageFile("stable.pkg", "stable")), "1.0.0");
+        assertThat(tx.prepareLaunch().version()).isEqualTo("1.0.0");
+        tx.confirmHealthy("1.0.0");
+
+        tx.stageAndActivate(verified(packageFile("candidate.pkg", "candidate")), "1.1.0");
+        assertThat(tx.isCurrentPending()).isTrue();
+        UpdateLaunch candidate = tx.prepareLaunch();
+        assertThat(candidate.version()).isEqualTo("1.1.0");
+        assertThat(candidate.packagePath()).hasFileName("package.bin");
+        assertThat(tx.prepareLaunch().rolledBack()).isTrue();
+        assertThat(tx.currentVersion()).isEqualTo("1.0.0");
+        assertThat(tx.isCurrentPending()).isFalse();
+    }
+
+    @Test void healthyUpgradeIsNotRolledBack() throws Exception {
+        UpdateTransaction tx = new UpdateTransaction(temp.resolve("install"));
+        tx.stageAndActivate(verified(packageFile("stable.pkg", "stable")), "1.0.0");
+        tx.prepareLaunch();
+        tx.confirmHealthy("1.0.0");
+        tx.stageAndActivate(verified(packageFile("candidate.pkg", "candidate")), "1.1.0");
+
+        UpdateLaunch launch = tx.prepareLaunch();
+        assertThat(launch.version()).isEqualTo("1.1.0");
+        tx.confirmHealthy(launch);
+        assertThat(tx.prepareLaunch().version()).isEqualTo("1.1.0");
+        assertThat(tx.isCurrentPending()).isFalse();
+    }
+
+    @Test void launchRejectsInstalledPayloadTampering() throws Exception {
+        UpdateTransaction tx = new UpdateTransaction(temp.resolve("install"));
+        tx.stageAndActivate(verified(packageFile("stable.pkg", "stable")), "1.0.0");
+        Files.writeString(temp.resolve("install/versions/1.0.0/package.bin"), "tampered");
+
+        assertThatThrownBy(tx::prepareLaunch)
+                .hasMessage("Installed version integrity check failed");
+    }
+
+    @Test void updateStateIsOwnerOnlyOnPosixFilesystems() throws Exception {
+        Path install = temp.resolve("install");
+        UpdateTransaction tx = new UpdateTransaction(install);
+        tx.stageAndActivate(verified(packageFile("stable.pkg", "stable")), "1.0.0");
+        var view = Files.getFileAttributeView(install,
+                java.nio.file.attribute.PosixFileAttributeView.class);
+        if (view != null) {
+            assertThat(java.nio.file.attribute.PosixFilePermissions.toString(
+                    view.readAttributes().permissions())).isEqualTo("rwx------");
+            assertThat(java.nio.file.attribute.PosixFilePermissions.toString(
+                    Files.getPosixFilePermissions(install.resolve("activation.properties"))))
+                    .isEqualTo("rw-------");
+        }
+    }
+
     private Path packageFile(String name,String content)throws Exception{Path p=temp.resolve(name);Files.writeString(p,content);return p;}
     private static Path activate(UpdateTransaction tx, VerifiedUpdate update, String version) {
         try {
