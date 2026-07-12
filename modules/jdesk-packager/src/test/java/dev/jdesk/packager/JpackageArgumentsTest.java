@@ -40,6 +40,27 @@ class JpackageArgumentsTest {
     }
 
     @Test
+    void includesIconAndFileAssociations() {
+        List<String> args = minimal()
+                .icon(Path.of("build", "app.icns"))
+                .fileAssociation(Path.of("build", "hex.properties"))
+                .fileAssociation(Path.of("build", "forgelog.properties"))
+                .build()
+                .toArguments();
+        assertThat(args).containsSequence("--icon", Path.of("build", "app.icns").toString());
+        assertThat(args).containsSequence("--file-associations",
+                Path.of("build", "hex.properties").toString());
+        assertThat(args).containsSequence("--file-associations",
+                Path.of("build", "forgelog.properties").toString());
+    }
+
+    @Test
+    void omitsIconAndFileAssociationsWhenAbsent() {
+        assertThat(minimal().build().toArguments())
+                .doesNotContain("--icon", "--file-associations");
+    }
+
+    @Test
     void omitsMacIdentifierWhenAbsent() {
         List<String> args = minimal().build().toArguments();
         assertThat(args).doesNotContain("--mac-package-identifier", "--java-options");

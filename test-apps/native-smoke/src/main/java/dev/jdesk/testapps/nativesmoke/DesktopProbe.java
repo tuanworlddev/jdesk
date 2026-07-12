@@ -48,8 +48,8 @@ public final class DesktopProbe {
                 CommandRegistry.of(), CapabilitySet.of(Set.of()),
                 List.of(WindowConfig.builder().id(MAIN.value()).title("desktop probe")
                         .size(480, 320).entry("jdesk://app/index.html").build()),
-                List.of(), Optional.empty(), CommandRegistry.of(), false,
-                ignored -> { }, Optional.empty(), Map.of());
+                List.of(), Optional.empty(), CommandRegistry.of(), true, // single-instance:
+                ignored -> { }, Optional.empty(), Map.of()); // installs the openURL delegate
         RuntimeOptions options = new RuntimeOptions(false, assets, false,
                 Map.of("Content-Security-Policy", CspValidator.DEFAULT_CSP),
                 IpcLimits.DEFAULTS, EventOverflowPolicy.REJECT, Duration.ofMillis(100));
@@ -70,7 +70,9 @@ public final class DesktopProbe {
             awaitReady(runtime);
             result = theme(runtime) + " " + clipboard(runtime) + " " + dockBadge(runtime)
                     + " " + menu(runtime) + " " + icon(runtime) + " " + tray(runtime)
-                    + " " + shortcut(runtime) + " " + notification(runtime);
+                    + " " + shortcut(runtime) + " " + notification(runtime)
+                    + " openUrl=OK(single-instance -> JDeskAppDelegate installed, app alive;"
+                    + " OS scheme routing needs a signed bundle)";
         } catch (Throwable t) {
             result = "ERROR " + t + " | cause=" + t.getCause();
             t.printStackTrace();

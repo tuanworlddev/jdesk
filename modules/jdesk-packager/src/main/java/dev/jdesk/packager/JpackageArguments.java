@@ -22,6 +22,8 @@ public final class JpackageArguments {
     private final String appVersion;
     private final List<String> javaOptions;
     private final String macPackageIdentifier;
+    private final Path icon;
+    private final List<Path> fileAssociations;
 
     private JpackageArguments(Builder builder) {
         this.name = require(builder.name, "name");
@@ -49,6 +51,8 @@ public final class JpackageArguments {
         this.appVersion = require(builder.appVersion, "appVersion");
         this.javaOptions = List.copyOf(builder.javaOptions);
         this.macPackageIdentifier = builder.macPackageIdentifier;
+        this.icon = builder.icon;
+        this.fileAssociations = List.copyOf(builder.fileAssociations);
     }
 
     private static String require(String value, String what) {
@@ -103,6 +107,14 @@ public final class JpackageArguments {
             args.add("--java-options");
             args.add(option);
         }
+        if (icon != null) {
+            args.add("--icon");
+            args.add(icon.toString());
+        }
+        for (Path fileAssociation : fileAssociations) {
+            args.add("--file-associations");
+            args.add(fileAssociation.toString());
+        }
         if (macPackageIdentifier != null && !macPackageIdentifier.isBlank()) {
             args.add("--mac-package-identifier");
             args.add(macPackageIdentifier);
@@ -122,6 +134,8 @@ public final class JpackageArguments {
         private String appVersion;
         private final List<String> javaOptions = new ArrayList<>();
         private String macPackageIdentifier;
+        private Path icon;
+        private final List<Path> fileAssociations = new ArrayList<>();
 
         private Builder() {
         }
@@ -180,6 +194,18 @@ public final class JpackageArguments {
         /** macOS bundle identifier ({@code --mac-package-identifier}); ignored elsewhere. */
         public Builder macPackageIdentifier(String value) {
             this.macPackageIdentifier = value;
+            return this;
+        }
+
+        /** Application icon file ({@code --icon}); {@code .icns} on macOS, {@code .ico} on Windows. */
+        public Builder icon(Path iconFile) {
+            this.icon = iconFile;
+            return this;
+        }
+
+        /** Adds a jpackage file-association properties file ({@code --file-associations}). */
+        public Builder fileAssociation(Path propertiesFile) {
+            this.fileAssociations.add(Objects.requireNonNull(propertiesFile, "propertiesFile"));
             return this;
         }
 

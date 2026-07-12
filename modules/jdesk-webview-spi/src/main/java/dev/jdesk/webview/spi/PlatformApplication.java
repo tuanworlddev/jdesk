@@ -126,6 +126,14 @@ public interface PlatformApplication extends AutoCloseable {
                 "Notifications are not supported by this platform adapter");
     }
 
+    /**
+     * Installs a handler for {@code scheme://} deep links delivered by the OS while running
+     * (UI thread). Default: no-op (OS-level routing still requires the app bundle to declare
+     * the scheme; see the packager's {@code InfoPlistCustomizer}).
+     */
+    default void setOpenUrlHandler(java.util.function.Consumer<java.net.URI> handler) {
+    }
+
     /** Blocks running the native event loop until {@link #requestStop()}. */
     void runEventLoop();
 

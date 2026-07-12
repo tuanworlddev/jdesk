@@ -410,6 +410,13 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
         }
     }
 
+    @Override
+    public void setOpenUrlHandler(java.util.function.Consumer<java.net.URI> handler) {
+        requireOpen();
+        dispatcher.assertUiThread();
+        MacOpenUrl.install(nsApp, handler);
+    }
+
     @Override public MessageDialogResult showMessageDialog(MessageDialog dialog) {
         requireOpen(); dispatcher.assertUiThread();
         MemorySegment alert = ObjC.send(ObjC.send(ObjC.cls("NSAlert"), "alloc"), "init");

@@ -195,6 +195,13 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
                 : Optional.empty();
         platformApp = provider.createApplication(new PlatformApplicationConfig(
                 spec.id(), options.devMode(), devOrigin, assetResolver));
+        // Deep links delivered while running go to the same activation handler as
+        // single-instance argv. Installed only for single-instance apps (the activation
+        // opt-in), so other apps' NSApp delegate is untouched.
+        if (spec.singleInstance()) {
+            platformApp.setOpenUrlHandler(uri ->
+                    spec.activationHandler().accept(List.of(uri.toString())));
+        }
         DevAssetWatcher assetWatcher = null;
         try {
             // Start automation before any window exists so console output emitted
