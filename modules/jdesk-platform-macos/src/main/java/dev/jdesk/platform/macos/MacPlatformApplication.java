@@ -53,6 +53,9 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
     private final MemorySegment nsApp;
     private final MemorySegment constructionPool;
     private volatile boolean stopRequested;
+    /** Lazily created so apps that never watch files never load CoreServices. */
+    private volatile MacFsEventsBackend fileWatchBackend;
+    private volatile MacPtyBackend ptyBackend;
 
     MacPlatformApplication(PlatformApplicationConfig config) {
         super("MacPlatformApplication");
@@ -202,6 +205,36 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
         return new MacSecretStore(applicationId);
     }
 
+    @Override
+    public java.util.Optional<dev.jdesk.webview.spi.FileWatchBackend> fileWatchBackend() {
+        MacFsEventsBackend backend = fileWatchBackend;
+        if (backend == null) {
+            synchronized (this) {
+                backend = fileWatchBackend;
+                if (backend == null) {
+                    backend = new MacFsEventsBackend();
+                    fileWatchBackend = backend;
+                }
+            }
+        }
+        return java.util.Optional.of(backend);
+    }
+
+    @Override
+    public java.util.Optional<dev.jdesk.webview.spi.PtyBackend> ptyBackend() {
+        MacPtyBackend backend = ptyBackend;
+        if (backend == null) {
+            synchronized (this) {
+                backend = ptyBackend;
+                if (backend == null) {
+                    backend = new MacPtyBackend();
+                    ptyBackend = backend;
+                }
+            }
+        }
+        return java.util.Optional.of(backend);
+    }
+
     @Override public String readClipboardText() {
         requireOpen(); dispatcher.assertUiThread();
         MemorySegment pasteboard=ObjC.send(ObjC.cls("NSPasteboard"),"generalPasteboard");
@@ -216,6 +249,85 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
                 ObjC.nsString("public.utf8-plain-text"));
         if(!ok)throw new JDeskException(ErrorCode.ILLEGAL_STATE,"Could not write clipboard");
     }
+
+    @Override
+    public dev.jdesk.api.SystemTheme systemTheme() {
+        requireOpen();
+        dispatcher.assertUiThread();
+        MemorySegment appearance = ObjC.send(nsApp, "effectiveAppearance");
+        String name = ObjC.javaString(ObjC.send(appearance, "name"));
+        return name != null && name.contains("Dark")
+                ? dev.jdesk.api.SystemTheme.DARK : dev.jdesk.api.SystemTheme.LIGHT;
+    }
+
+    @Override
+    public byte[] readClipboard(String type) {
+        requireOpen();
+        dispatcher.assertUiThread();
+        MemorySegment pasteboard = ObjC.send(ObjC.cls("NSPasteboard"), "generalPasteboard");
+        MemorySegment data = ObjC.send(pasteboard, "dataForType:", ObjC.nsString(type));
+        if (data == null || data.equals(MemorySegment.NULL)) {
+            return null;
+        }
+        long length = ObjC.sendLong(data, "length");
+        if (length <= 0) {
+            return new byte[0];
+        }
+        MemorySegment bytes = ObjC.send(data, "bytes");
+        if (bytes.equals(MemorySegment.NULL)) {
+            return new byte[0];
+        }
+        return bytes.reinterpret(length).toArray(JAVA_BYTE);
+    }
+
+    @Override
+    public void writeClipboard(String type, byte[] data) {
+        requireOpen();
+        dispatcher.assertUiThread();
+        java.util.Objects.requireNonNull(data, "data");
+        MemorySegment pasteboard = ObjC.send(ObjC.cls("NSPasteboard"), "generalPasteboard");
+        ObjC.sendLong(pasteboard, "clearContents");
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment buffer = arena.allocate(Math.max(1, data.length));
+            if (data.length > 0) {
+                MemorySegment.copy(data, 0, buffer, JAVA_BYTE, 0, data.length);
+            }
+            MemorySegment nsData;
+            try {
+                nsData = (MemorySegment) ObjC.msgSend(FunctionDescriptor.of(
+                        ADDRESS, ADDRESS, ADDRESS, ADDRESS, JAVA_LONG)).invokeExact(
+                        ObjC.cls("NSData"), ObjC.sel("dataWithBytes:length:"),
+                        buffer, (long) data.length);
+            } catch (Throwable t) {
+                throw ObjC.rethrow(t);
+            }
+            boolean ok = ObjC.sendBool(pasteboard, "setData:forType:", nsData, ObjC.nsString(type));
+            if (!ok) {
+                throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                        "Could not write binary clipboard data for type " + type);
+            }
+        }
+    }
+
+    @Override
+    public void setDockBadge(String label) {
+        requireOpen();
+        dispatcher.assertUiThread();
+        MemorySegment dockTile = ObjC.send(nsApp, "dockTile");
+        MemorySegment value = label == null || label.isBlank()
+                ? MemorySegment.NULL : ObjC.nsString(label);
+        ObjC.sendVoid(dockTile, "setBadgeLabel:", value);
+        ObjC.sendVoid(dockTile, "display");
+    }
+
+    @Override
+    public void setApplicationMenu(dev.jdesk.api.MenuSpec menu,
+            java.util.function.Consumer<String> onAction) {
+        requireOpen();
+        dispatcher.assertUiThread();
+        MacMenu.install(nsApp, menu, onAction);
+    }
+
     @Override public MessageDialogResult showMessageDialog(MessageDialog dialog) {
         requireOpen(); dispatcher.assertUiThread();
         MemorySegment alert = ObjC.send(ObjC.send(ObjC.cls("NSAlert"), "alloc"), "init");

@@ -51,6 +51,56 @@ public interface PlatformApplication extends AutoCloseable {
                 "File printing is not supported by this platform adapter");
     }
 
+    /**
+     * Low-latency native file-watching backend, when the platform has one (macOS
+     * FSEvents). Empty (the default) makes the runtime fall back to a portable
+     * {@code WatchService} backend. May be called from any thread.
+     */
+    default java.util.Optional<FileWatchBackend> fileWatchBackend() {
+        return java.util.Optional.empty();
+    }
+
+    /**
+     * Native pseudo-terminal backend, when the platform has one (macOS). Empty (the default)
+     * makes {@link dev.jdesk.api.ApplicationHandle#openPty} report {@code ILLEGAL_STATE}. May
+     * be called from any thread.
+     */
+    default java.util.Optional<PtyBackend> ptyBackend() {
+        return java.util.Optional.empty();
+    }
+
+    /** OS light/dark appearance (UI thread). Default: unsupported. */
+    default dev.jdesk.api.SystemTheme systemTheme() {
+        throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                "System theme is not supported by this platform adapter");
+    }
+
+    /** Reads binary clipboard data of {@code type}; null when absent (UI thread). Default: unsupported. */
+    default byte[] readClipboard(String type) {
+        throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                "Binary clipboard is not supported by this platform adapter");
+    }
+
+    /** Writes binary clipboard data under {@code type} (UI thread). Default: unsupported. */
+    default void writeClipboard(String type, byte[] data) {
+        throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                "Binary clipboard is not supported by this platform adapter");
+    }
+
+    /** Sets/clears the Dock (or taskbar) badge label (UI thread). Default: unsupported. */
+    default void setDockBadge(String label) {
+        throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                "Dock badge is not supported by this platform adapter");
+    }
+
+    /**
+     * Installs the application menu bar (UI thread). Default: no-op — platforms without a
+     * global menu bar simply ignore it.
+     */
+    default void setApplicationMenu(dev.jdesk.api.MenuSpec menu,
+            java.util.function.Consumer<String> onAction) {
+    }
+
     /** Blocks running the native event loop until {@link #requestStop()}. */
     void runEventLoop();
 

@@ -4,9 +4,14 @@ import dev.jdesk.api.ApplicationSpec;
 import dev.jdesk.api.ApplicationHandle;
 import dev.jdesk.api.ErrorCode;
 import dev.jdesk.api.EventEmitter;
+import dev.jdesk.api.FileWatchEvent;
+import dev.jdesk.api.FileWatchHandle;
+import dev.jdesk.api.FileWatchOptions;
 import dev.jdesk.api.UiDispatcher;
 import dev.jdesk.api.JDeskException;
 import dev.jdesk.api.PlatformInfo;
+import dev.jdesk.api.PtyHandle;
+import dev.jdesk.api.PtySpec;
 import dev.jdesk.api.WindowConfig;
 import dev.jdesk.api.WindowId;
 import dev.jdesk.api.WindowHandle;
@@ -17,6 +22,11 @@ import dev.jdesk.runtime.ipc.CommandDispatcher;
 import dev.jdesk.runtime.json.JacksonJsonCodec;
 import dev.jdesk.runtime.json.JsonCodec;
 import dev.jdesk.runtime.lifecycle.LifecycleStateMachine;
+import dev.jdesk.runtime.pty.PtyManager;
+import dev.jdesk.runtime.watch.FileWatchManager;
+import dev.jdesk.runtime.watch.PortableWatchBackend;
+import dev.jdesk.webview.spi.FileWatchBackend;
+import dev.jdesk.webview.spi.PtyBackend;
 import dev.jdesk.webview.spi.NativeWindowConfig;
 import dev.jdesk.webview.spi.NavigationDecision;
 import dev.jdesk.webview.spi.PlatformApplication;
@@ -27,8 +37,10 @@ import dev.jdesk.webview.spi.WebViewSnapshot;
 import dev.jdesk.webview.spi.WebViewDiagnostics;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -70,6 +82,8 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
     private final AtomicInteger openWindows = new AtomicInteger();
     private final WindowStateStore windowStateStore;
     private PlatformApplication platformApp;
+    private FileWatchManager fileWatchManager;
+    private PtyManager ptyManager;
     private volatile AutomationServer automationServer;
 
     /** Per-window wiring: dispatcher plus the tracked current top-level origin. */
@@ -423,6 +437,32 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
                     "Clipboard text exceeds 1 MiB"));
         return platformApp.ui().submit(() -> { platformApp.writeClipboardText(text); return null; });
     }
+    @Override public CompletionStage<dev.jdesk.api.SystemTheme> systemTheme() {
+        return platformApp.ui().submit(platformApp::systemTheme);
+    }
+    @Override public CompletionStage<Optional<byte[]>> readClipboard(String type) {
+        java.util.Objects.requireNonNull(type, "type");
+        return platformApp.ui().submit(() -> Optional.ofNullable(platformApp.readClipboard(type)));
+    }
+    @Override public CompletionStage<Void> writeClipboard(String type, byte[] data) {
+        java.util.Objects.requireNonNull(type, "type");
+        java.util.Objects.requireNonNull(data, "data");
+        if (data.length > 64L * 1024 * 1024) {
+            return CompletableFuture.failedFuture(new JDeskException(ErrorCode.PAYLOAD_TOO_LARGE,
+                    "Clipboard data exceeds 64 MiB"));
+        }
+        byte[] copy = data.clone();
+        return platformApp.ui().submit(() -> { platformApp.writeClipboard(type, copy); return null; });
+    }
+    @Override public CompletionStage<Void> setDockBadge(String label) {
+        return platformApp.ui().submit(() -> { platformApp.setDockBadge(label); return null; });
+    }
+    @Override public CompletionStage<Void> setApplicationMenu(
+            dev.jdesk.api.MenuSpec menu, Consumer<String> onAction) {
+        java.util.Objects.requireNonNull(menu, "menu");
+        java.util.Objects.requireNonNull(onAction, "onAction");
+        return platformApp.ui().submit(() -> { platformApp.setApplicationMenu(menu, onAction); return null; });
+    }
     @Override public CompletionStage<dev.jdesk.api.MessageDialogResult> showMessageDialog(
             dev.jdesk.api.MessageDialog dialog) {
         java.util.Objects.requireNonNull(dialog, "dialog");
@@ -464,6 +504,43 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
             }
         });
         return future;
+    }
+
+    @Override
+    public FileWatchHandle watchFiles(Path root, FileWatchOptions options,
+            Consumer<List<FileWatchEvent>> listener) {
+        return fileWatchManager().watch(root, options, listener);
+    }
+
+    /** Lazily builds the manager on the platform's native backend, else the portable one. */
+    private synchronized FileWatchManager fileWatchManager() {
+        if (fileWatchManager == null) {
+            if (platformApp == null) {
+                throw new JDeskException(ErrorCode.ILLEGAL_STATE, "Application is not started");
+            }
+            FileWatchBackend backend = platformApp.fileWatchBackend()
+                    .orElseGet(PortableWatchBackend::new);
+            fileWatchManager = new FileWatchManager(backend);
+        }
+        return fileWatchManager;
+    }
+
+    @Override
+    public PtyHandle openPty(PtySpec spec, Consumer<byte[]> output) {
+        return ptyManager().open(spec, output);
+    }
+
+    private synchronized PtyManager ptyManager() {
+        if (ptyManager == null) {
+            if (platformApp == null) {
+                throw new JDeskException(ErrorCode.ILLEGAL_STATE, "Application is not started");
+            }
+            PtyBackend backend = platformApp.ptyBackend().orElseThrow(() ->
+                    new JDeskException(ErrorCode.ILLEGAL_STATE,
+                            "Pseudo-terminals are not supported by this platform adapter"));
+            ptyManager = new PtyManager(backend);
+        }
+        return ptyManager;
     }
 
     /** Closes one window from any thread; the native close runs on the UI thread. */
@@ -586,6 +663,28 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
                 windowRuntime.window.close();
             } catch (RuntimeException e) {
                 LOG.log(Level.ERROR, "Window shutdown failed", e);
+            }
+        }
+        FileWatchManager watchManager;
+        PtyManager ptys;
+        synchronized (this) {
+            watchManager = fileWatchManager;
+            fileWatchManager = null;
+            ptys = ptyManager;
+            ptyManager = null;
+        }
+        if (watchManager != null) {
+            try {
+                watchManager.close();
+            } catch (RuntimeException e) {
+                LOG.log(Level.ERROR, "File watch shutdown failed", e);
+            }
+        }
+        if (ptys != null) {
+            try {
+                ptys.close();
+            } catch (RuntimeException e) {
+                LOG.log(Level.ERROR, "PTY shutdown failed", e);
             }
         }
         try {
