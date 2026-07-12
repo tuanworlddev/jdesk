@@ -77,6 +77,46 @@ final class Gtk {
     // ---- GLib ----
     static final MethodHandle GTK_SETTINGS_GET_DEFAULT = dl("gtk_settings_get_default",
             FunctionDescriptor.of(ADDRESS));
+    // gdk-pixbuf + window icon
+    static final MethodHandle GDK_PIXBUF_NEW_FROM_STREAM = dl("gdk_pixbuf_new_from_stream",
+            FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, ADDRESS));
+    static final MethodHandle GTK_WINDOW_SET_DEFAULT_ICON = dl("gtk_window_set_default_icon",
+            FunctionDescriptor.ofVoid(ADDRESS));
+    static final MethodHandle GTK_WINDOW_SET_ICON = dl("gtk_window_set_icon",
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
+    // GtkStatusIcon (tray) — deprecated but functional on X11 desktops
+    static final MethodHandle GTK_STATUS_ICON_NEW = dl("gtk_status_icon_new",
+            FunctionDescriptor.of(ADDRESS));
+    static final MethodHandle GTK_STATUS_ICON_SET_FROM_PIXBUF = dl(
+            "gtk_status_icon_set_from_pixbuf", FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
+    static final MethodHandle GTK_STATUS_ICON_SET_TITLE = dl("gtk_status_icon_set_title",
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
+    static final MethodHandle GTK_STATUS_ICON_SET_TOOLTIP_TEXT = dl(
+            "gtk_status_icon_set_tooltip_text", FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
+    static final MethodHandle GTK_STATUS_ICON_SET_VISIBLE = dl("gtk_status_icon_set_visible",
+            FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT));
+    // GtkMenu (context / tray menus)
+    static final MethodHandle GTK_MENU_NEW = dl("gtk_menu_new", FunctionDescriptor.of(ADDRESS));
+    static final MethodHandle GTK_MENU_ITEM_NEW_WITH_LABEL = dl(
+            "gtk_menu_item_new_with_label", FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle GTK_SEPARATOR_MENU_ITEM_NEW = dl(
+            "gtk_separator_menu_item_new", FunctionDescriptor.of(ADDRESS));
+    static final MethodHandle GTK_MENU_SHELL_APPEND = dl("gtk_menu_shell_append",
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
+    static final MethodHandle GTK_MENU_ITEM_SET_SUBMENU = dl("gtk_menu_item_set_submenu",
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
+    static final MethodHandle GTK_MENU_POPUP_AT_POINTER = dl("gtk_menu_popup_at_pointer",
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
+    static final MethodHandle GTK_WIDGET_SHOW_ALL2 = dl("gtk_widget_show_all",
+            FunctionDescriptor.ofVoid(ADDRESS));
+    // drag-and-drop destination
+    static final MethodHandle GTK_DRAG_DEST_SET = dl("gtk_drag_dest_set",
+            FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT));
+    static final MethodHandle GTK_DRAG_DEST_ADD_URI_TARGETS = dl(
+            "gtk_drag_dest_add_uri_targets", FunctionDescriptor.ofVoid(ADDRESS));
+    static final MethodHandle GTK_SELECTION_DATA_GET_URIS = dl(
+            "gtk_selection_data_get_uris", FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle G_STRFREEV = dl("g_strfreev", FunctionDescriptor.ofVoid(ADDRESS));
     // void g_object_get(gpointer, const gchar* first_property, ..., NULL) — variadic.
     static final MethodHandle G_OBJECT_GET = LINKER.downcallHandle(
             LOOKUP.findOrThrow("g_object_get"),

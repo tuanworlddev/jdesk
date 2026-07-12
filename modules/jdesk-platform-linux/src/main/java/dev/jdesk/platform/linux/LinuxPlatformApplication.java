@@ -385,6 +385,19 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
         requireOpen(); dispatcher.assertUiThread();
         LinuxDesktop.showNotification(title, body);
     }
+    @Override public void setApplicationIcon(byte[] pngData) {
+        requireOpen(); dispatcher.assertUiThread();
+        LinuxDesktop.setApplicationIcon(pngData);
+    }
+    @Override public void setDockBadge(String label) {
+        requireOpen(); dispatcher.assertUiThread();
+        LinuxDesktop.setDockBadge(label);
+    }
+    @Override public dev.jdesk.webview.spi.TrayControl createTrayItem(
+            dev.jdesk.api.TraySpec spec, java.util.function.Consumer<String> onAction) {
+        requireOpen(); dispatcher.assertUiThread();
+        return LinuxDesktop.createTrayItem(spec, onAction);
+    }
 
     @Override public void openExternal(URI uri) {
         requireOpen(); dispatcher.assertUiThread();
