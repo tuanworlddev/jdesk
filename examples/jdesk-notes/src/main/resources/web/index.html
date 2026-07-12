@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JDesk Notes</title>
+  <!-- CSP-safe: external stylesheet + script only, no inline code. -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="toolbar">
+    <div class="actions">
+      <button id="btn-new" type="button" title="New (Ctrl+N)" disabled>New</button>
+      <button id="btn-open" type="button" title="Open… (Ctrl+O)" disabled>Open…</button>
+      <button id="btn-save" type="button" title="Save (Ctrl+S)" disabled>Save</button>
+      <button id="btn-save-as" type="button" title="Save As… (Ctrl+Shift+S)" disabled>Save As…</button>
+    </div>
+    <div id="doc-title" class="doc-title">Untitled</div>
+  </header>
+
+  <main class="editor-wrap">
+    <textarea id="editor" spellcheck="true" placeholder="Start typing…"
+              aria-label="Note contents" disabled></textarea>
+  </main>
+
+  <footer class="statusbar">
+    <span id="status" class="status">connecting to the JDesk bridge…</span>
+    <span id="counts" class="counts"></span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

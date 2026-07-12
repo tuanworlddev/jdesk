@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "grants": [
+    { "capability": "notes:use", "windows": ["main"] }
+  ]
+}

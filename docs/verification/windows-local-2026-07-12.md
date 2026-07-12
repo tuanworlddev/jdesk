@@ -37,6 +37,19 @@ packaging lane. The ConPTY PTY backend, Win32 shell integration (tray/hotkeys/no
 and native file-drop remain **compile-verified** — no runnable Windows probe exercises them
 yet (native-smoke does not open a PTY).
 
+### Native file dialogs (comdlg32) — now runtime-verified
+
+The Windows file dialogs (`showOpenDialog`/`showSaveDialog` → comdlg32 `IFileDialog`) were
+previously **compile-verified only** ("a modal dialog can't be driven on headless CI"). They
+are now driven end-to-end by the new [`examples/jdesk-notes`](../../examples/jdesk-notes) app
+on real Windows 11: typing in the editor → **Save As** raised the native "Save note as"
+dialog and wrote the file with the exact editor content (70 bytes, byte-for-byte match) →
+**New** cleared the editor → **Open** raised the native "Open note" dialog and reloaded the
+file (title + 70-char content restored). The app's toolbar Save/Open/Save-As were fired
+through the token-gated automation `/input` endpoint (real DOM events); the modal dialogs
+were completed with Windows UI Automation. This is the first runtime confirmation of the
+Windows native file-chooser path.
+
 ## Cross-platform / Windows defects fixed in this run
 
 All of these made `./gradlew check` fail on a fresh Windows checkout while passing on the

@@ -1,0 +1,143 @@
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --border: #d9dde3;
+  --text: #1c2330;
+  --muted: #5b6472;
+  --accent: #2f6fed;
+  --accent-text: #ffffff;
+  --dirty: #d98324;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1d23;
+    --panel: #23272f;
+    --border: #333a45;
+    --text: #e7eaf0;
+    --muted: #9aa4b2;
+    --accent: #4d84ff;
+    --accent-text: #0d1017;
+    --dirty: #f0a94a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  font: 14px/1.4 system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+}
+
+.toolbar button {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.toolbar button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.toolbar button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#btn-save {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+#btn-save:disabled {
+  background: var(--panel);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.doc-title {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+.doc-title.dirty::after {
+  content: " •";
+  color: var(--dirty);
+}
+
+.editor-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  padding: 10px 12px;
+}
+
+#editor {
+  flex: 1 1 auto;
+  width: 100%;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font: 14px/1.55 "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  color: var(--text);
+  background: var(--panel);
+  outline: none;
+  tab-size: 4;
+}
+
+#editor:focus {
+  border-color: var(--accent);
+}
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.status.error { color: #d64545; }
+.status.ok { color: #2f9e56; }
+.counts { font-variant-numeric: tabular-nums; }

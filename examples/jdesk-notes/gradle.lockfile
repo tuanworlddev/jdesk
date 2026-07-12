@@ -1,0 +1,9 @@
+# This is a Gradle generated file for dependency locking.
+# Manual edits can break the build and are not advised.
+# This file is expected to be part of source control.
+# To regenerate this file, run: ./gradlew :examples:jdesk-notes:dependencies --write-locks
+com.fasterxml.jackson.core:jackson-annotations:2.19.0=compileClasspath
+com.fasterxml.jackson.core:jackson-core:2.19.0=compileClasspath
+com.fasterxml.jackson.core:jackson-databind:2.19.0=compileClasspath
+com.fasterxml.jackson:jackson-bom:2.19.0=compileClasspath
+empty=annotationProcessor

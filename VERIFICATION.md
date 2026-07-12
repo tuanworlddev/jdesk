@@ -135,8 +135,11 @@ when JDeskSmoke is frontmost, so nothing leaks to other apps).
 | `/input` synthesizes a real DOM click | PASS | `java:automation-input` — page recorded `window.__inputProbeClicked` |
 | Earliest module/parse-load error reaches `/console` | PASS | `java:early-error-capture` — `Failed to load jdesk://app/does-not-exist-module.js (script)` from a window whose module never loaded |
 
-Platform status: file dialogs are live-verified on macOS; Windows (comdlg32) and Linux
-(GtkFileChooser) are implemented and compile-verified (a modal dialog can't be driven on
+Platform status: file dialogs are live-verified on macOS and, as of 2026-07-12, on **real
+Windows 11** too — driven end-to-end by the `examples/jdesk-notes` app (Save As/Open through
+comdlg32 `IFileDialog`, byte-for-byte file round trip; see the
+[Windows local verification report](docs/verification/windows-local-2026-07-12.md)). Linux
+(GtkFileChooser) is implemented and compile-verified (a modal dialog can't be driven on
 headless CI). `WindowHandle.print()` is macOS (NSPrintOperation, live) + Linux
 (webkit_print_operation, compile); Windows WebView2 print UI is a documented gap.
 `printFile` is CUPS `lp` on macOS/Linux and ShellExecute print on Windows.

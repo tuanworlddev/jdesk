@@ -39,4 +39,5 @@ include(
     ":test-apps:security-probe",
     ":test-apps:packaging-probe",
     ":examples:hello-vanilla",
+    ":examples:jdesk-notes",
 )
