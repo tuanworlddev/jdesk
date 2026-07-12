@@ -120,11 +120,17 @@ public final class DesktopProbe {
                         MenuItem.action("quit", "Quit", "CmdOrCtrl+Q")),
                 MenuItem.submenu("Edit",
                         MenuItem.action("copy", "Copy", "CmdOrCtrl+C"),
-                        MenuItem.action("paste", "Paste", "CmdOrCtrl+V")));
+                        MenuItem.action("paste", "Paste", "CmdOrCtrl+V"),
+                        // Exercise the stateful-menu branches: a checked item drives setState:
+                        // and a disabled item drives setEnabled:false in MacMenu. Top-item
+                        // count stays 2 so the impl's arity self-check still holds.
+                        MenuItem.check("wrap", "Word Wrap", true),
+                        MenuItem.action("find", "Find").enabled(false)));
         // The macOS impl self-checks that NSApp.mainMenu really has 2 top items, so a clean
         // return proves the menu is installed. The click->listener path is NOT auto-tested.
         runtime.setApplicationMenu(spec, id -> { }).toCompletableFuture().get(5, TimeUnit.SECONDS);
-        return "menuInstall=OK(2 top items, arity self-checked; click NOT auto-tested)";
+        return "menuInstall=OK(2 top items, checked+disabled items applied without throw,"
+                + " arity self-checked; click/visual NOT auto-tested)";
     }
 
     private static String icon(JDeskRuntime runtime) throws Exception {
@@ -144,9 +150,16 @@ public final class DesktopProbe {
         TrayHandle handle = runtime.createTrayItem(TraySpec.of("JD", menu), id -> { })
                 .toCompletableFuture().get(5, TimeUnit.SECONDS);
         handle.setTitle("JD2");
+        // Exercise TrayHandle.setMenu: replace the click menu with one carrying a checked item
+        // (MacTray.setMenu rebuilds the standalone NSMenu). A clean return proves it did not throw.
+        handle.setMenu(MenuSpec.of(
+                MenuItem.check("opt", "Enabled", true),
+                MenuItem.separator(),
+                MenuItem.action("quit", "Quit")));
         Thread.sleep(100);
         handle.close(); // remove
-        return "tray=OK(created+setTitle+removed, statusItem self-checked; click NOT auto-tested)";
+        return "tray=OK(created+setTitle+setMenu(checked)+removed, statusItem self-checked;"
+                + " click NOT auto-tested)";
     }
 
     private static String notification(JDeskRuntime runtime) {

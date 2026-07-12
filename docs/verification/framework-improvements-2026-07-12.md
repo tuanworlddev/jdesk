@@ -2,8 +2,10 @@
 
 This round turns the limitations found while building the `jdesk-notes` example into real
 framework features, each verified on Windows 11 (unit tests cross-platform; native paths
-runtime-driven with WebView2 150.0.4078.65). macOS/Linux native changes follow the existing
-idioms and remain CI-verified.
+runtime-driven with WebView2 150.0.4078.65). The macOS and Linux native paths are
+runtime-verified on the real CI native lanes, and the macOS menu/tray changes are additionally
+live-verified on Apple Silicon (see §2). See "Verification status" at the end for the exact,
+honest state — including CI lanes that have not yet re-run.
 
 ## What changed
 
@@ -29,6 +31,13 @@ scoped to the application id; `-Djdesk.paths.dir=<base>` overrides all three for
   Linux: `gtk_check_menu_item_*` + `gtk_widget_set_sensitive`, tray menu ref-swapped.
 - Verified: `NativeIntegrationTypesTest` covers the new API; the `jdesk-notes` tray shows
   "Start with Windows" as a checkmark that flips via `setMenu` on toggle (Windows runtime).
+  macOS: live-verified on Apple Silicon via `DesktopProbe` — a checked + a disabled menu item
+  drive `setState:`/`setEnabled:` and `TrayHandle.setMenu` rebuilds the `NSStatusItem` menu
+  with a checked item, all applied on real AppKit without throwing while the impl's arity
+  self-check still holds (`menuInstall=OK(... checked+disabled items applied without throw ...)`,
+  `tray=OK(... setMenu(checked) ...)`). The click→listener dispatch and the checkmark's visual
+  are GUI gestures and remain NOT auto-tested. macOS + Linux native menu/tray also pass on the
+  real CI native lanes (`macos-arm64-native`, `linux-x64-native`, `security-*`).
 
 ### 3. WebView2 loader auto-location
 
@@ -94,3 +103,24 @@ First runtime exercise of `WindowsPtyBackend` (previously compile-verified only)
 
 Run it: `./gradlew :test-apps:native-smoke:run -PjdeskPlatform=windows
 -PjdeskWebView2Loader=<loader> -PjdeskMain=dev.jdesk.testapps.nativesmoke.WindowsPtyProbe`.
+
+## Verification status (honest, as of this commit)
+
+- **Full build green locally** on macOS (Apple Silicon, JDK 25): `./gradlew build` exit 0 —
+  compile + all unit tests + every JaCoCo coverage gate.
+- **Last CI run that actually executed jobs** was on commit `0a798e4` (run `29196303339`).
+  There, the macOS and Linux native + security lanes passed — `macos-arm64-native`,
+  `linux-x64-native`, `security-macos-arm64`, `security-linux-x64` all green — so the
+  stateful-menu / `setMenu` / app-dirs changes are runtime-verified on real WKWebView and
+  WebKitGTK, not merely compile-verified.
+- **`security-windows-x64` was red** in that same run with `ILLEGAL_STATE: Event loop ended
+  while waiting for init script installation` — a WebView2 **startup race**, not a probe
+  assertion. It is treated as flaky pending a clean re-run (the parent commit's Windows lanes
+  only went green on a re-run too), and the changed code does not touch the init-script path.
+  This must be re-run and confirmed green before a release gate.
+- **CI is currently blocked at the account level.** Every workflow run after `0a798e4`
+  (`b559009`, `1ff7e4e`, `15065d0` — the ConPTY work) failed with **zero steps executed**
+  (~2 s, all jobs), the signature of exhausted GitHub Actions minutes / a spending-limit cap —
+  an infrastructure/billing state, not a code failure. **Until Actions billing is restored,
+  these three commits (including the ConPTY hardening and its headless tests) are NOT
+  CI-verified**, and the flaky `security-windows-x64` cannot be re-confirmed.
