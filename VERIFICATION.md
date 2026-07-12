@@ -134,7 +134,8 @@ building a real-time multiplayer game on JDesk.
 | Window `position(x, y)` places the native window | PASS | runtime unit `configuredPositionAppliesBoundsAfterShow`; AppKit ground-truth read via System Events showed the window at exactly `170,140` (WKWebView `window.screenX/screenY` is unreliable, so the smoke only asserts the positioned window opens: `java:window-position-opens`) |
 | Codegen always emits `JDeskCommands` (even for one service) | PASS | codegen `HappyPathTest.aggregatorIsGeneratedEvenForSingleService` |
 | `frontend { staticCopy() }` mirrors ui/ → dist (no Build.java) | PASS | plugin functional `staticCopyMirrorsFrontendTreeIntoDist`; scaffolded app served `/src/main.js` + `/src/style.css` live with no bundler |
-| Dev app identity: process name set from applicationId | PASS (code) | `NSProcessInfo setProcessName:` in MacPlatformApplication — menu bar / permission dialogs show the app name instead of "java" on raw-JVM launches |
+| Dev app identity: standard app menu with `Quit <Name>` + ⌘Q | PASS | `installApplicationMenu` in MacPlatformApplication; live System Events read of the app-menu dropdown showed `Quit Nativesmoke` (run 1783818805, 46/46) — the framework's controllable identity surface |
+| Dev app identity: bold menu-bar name on raw-JVM launch | **NOT FIXABLE at runtime** (documented, not a PASS) | Live-tested 2026-07-12 (Homebrew OpenJDK 25): the bold bar name stays "java" with `setProcessName:`, with `setMainMenu:` (menu bar item 2 = "java" while the dropdown = "Quit Nativesmoke"), and with `-Xdock:name` (AWT-only). AppKit forces the executable name for a bundle-less process; only a packaged `.app` with `CFBundleName` changes it (jpackage path already correct). Earlier "PASS" claim retracted. |
 | `-Djdesk.*` flags forwarded by `./gradlew run` | PASS | plugin run-task doFirst forwards console.forward/automation to the forked app JVM |
 
 ## Unit / functional gates

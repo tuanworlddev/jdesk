@@ -63,6 +63,8 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
         }
         this.config = config;
         this.constructionPool = ObjC.autoreleasePoolPush();
+        String displayName = displayName(config.applicationId());
+        applyProcessName(displayName);
         this.nsApp = ObjC.send(ObjC.cls("NSApplication"), "sharedApplication");
         try {
             // NSApplicationActivationPolicyRegular = 0
@@ -72,31 +74,94 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
             throw ObjC.rethrow(t);
         }
         ObjC.sendVoidBool(nsApp, "activateIgnoringOtherApps:", true);
-        applyProcessName(config.applicationId());
+        installApplicationMenu(displayName);
         this.dispatcher = new MacUiDispatcher(config.devMode());
         this.blockRegistry = new NativeCallbackRegistry("macos-app-blocks", Arena.ofShared());
         markOpen();
     }
 
     /**
-     * Sets the process display name so a non-bundled launch (dev {@code gradlew run})
-     * shows the app name in the menu bar and system permission dialogs instead of "java".
-     * A packaged {@code .app} already carries {@code CFBundleName}, which wins; this only
-     * matters for the raw-JVM dev/run paths. Derives a readable name from the last segment
-     * of the reverse-DNS application id (e.g. {@code dev.example.dragon7} -> "Dragon7").
+     * Derives a readable display name from the last segment of the reverse-DNS application
+     * id (e.g. {@code dev.example.dragon7} -> "Dragon7"). Returns {@code null} when no usable
+     * segment exists (empty id or trailing dot), in which case identity fixes are skipped.
      */
-    private void applyProcessName(String applicationId) {
+    private static String displayName(String applicationId) {
         String segment = applicationId.substring(applicationId.lastIndexOf('.') + 1);
         if (segment.isEmpty()) {
+            return null;
+        }
+        return Character.toUpperCase(segment.charAt(0)) + segment.substring(1);
+    }
+
+    /**
+     * Sets {@code NSProcessInfo.processName} so contexts that read it (some crash reports,
+     * {@code ps} listings) show the app name instead of "java" on a raw-JVM dev launch.
+     * Best-effort and cosmetic; the visible menu-bar name is handled separately by
+     * {@link #installApplicationMenu(String)} (setting the process name alone does <em>not</em>
+     * change the bold menu-bar title — verified live: macOS derives the auto app-menu title
+     * from the executable/bundle name, not from {@code processName}).
+     */
+    private void applyProcessName(String name) {
+        if (name == null) {
             return;
         }
-        String name = Character.toUpperCase(segment.charAt(0)) + segment.substring(1);
         try {
             MemorySegment processInfo = ObjC.send(ObjC.cls("NSProcessInfo"), "processInfo");
             ObjC.sendVoid(processInfo, "setProcessName:", ObjC.nsString(name));
         } catch (RuntimeException e) {
             // Best-effort cosmetic; never block startup over the display name.
             LOG.log(System.Logger.Level.DEBUG, "Could not set process name", e);
+        }
+    }
+
+    /**
+     * Installs a standard application menu so every JDesk app has a real app menu with a
+     * {@code Quit <Name>} item and a working ⌘Q — a raw FFM {@code NSApplication} otherwise has
+     * only AppKit's bare auto-generated menu. The submenu title and the Quit item carry the app
+     * name, so the app's identity shows in the one place the framework can control at runtime.
+     *
+     * <p><strong>Limitation (verified live, macOS ARM64, Homebrew OpenJDK 25):</strong> this does
+     * <em>not</em> change the <em>bold application name</em> shown in the menu bar on a non-bundled
+     * launch. AppKit forces that title to the executable name ("java") for a bundle-less process
+     * and ignores the first menu item's title; {@code NSProcessInfo setProcessName:} and the
+     * launcher flag {@code -Xdock:name} were both confirmed to have no effect on it (the latter
+     * only renames AWT apps, which JDesk is not). The only way to change the bold name is a real
+     * {@code .app} carrying {@code CFBundleName} — which {@code jpackage} produces, so packaged
+     * apps already show the correct name. For dev {@code gradlew run} the bold name stays "java".
+     *
+     * <p>The Quit item is wired to {@code terminate:}. The runtime registers no JVM shutdown hook
+     * of its own, so standard AppKit termination bypasses no cleanup.
+     */
+    private void installApplicationMenu(String name) {
+        if (name == null) {
+            return;
+        }
+        try {
+            MemorySegment mainMenu = ObjC.send(ObjC.send(ObjC.cls("NSMenu"), "alloc"), "init");
+            ObjC.autorelease(mainMenu);
+            MemorySegment appItem = ObjC.send(ObjC.send(ObjC.cls("NSMenuItem"), "alloc"), "init");
+            ObjC.autorelease(appItem);
+            // AppKit forces the bold bar title to the executable name for a bundle-less process,
+            // so this title only takes effect once the app is packaged (CFBundleName present).
+            ObjC.sendVoid(appItem, "setTitle:", ObjC.nsString(name));
+            ObjC.sendVoid(mainMenu, "addItem:", appItem);
+
+            MemorySegment appMenu = ObjC.send(ObjC.send(ObjC.cls("NSMenu"), "alloc"),
+                    "initWithTitle:", ObjC.nsString(name));
+            ObjC.autorelease(appMenu);
+            MemorySegment quitItem = ObjC.send(ObjC.send(ObjC.cls("NSMenuItem"), "alloc"), "init");
+            ObjC.autorelease(quitItem);
+            ObjC.sendVoid(quitItem, "setTitle:", ObjC.nsString("Quit " + name));
+            ObjC.sendVoid(quitItem, "setKeyEquivalent:", ObjC.nsString("q"));
+            ObjC.sendVoid(quitItem, "setAction:", ObjC.sel("terminate:"));
+            ObjC.sendVoid(quitItem, "setTarget:", nsApp);
+            ObjC.sendVoid(appMenu, "addItem:", quitItem);
+            ObjC.sendVoid(appItem, "setSubmenu:", appMenu);
+
+            ObjC.sendVoid(nsApp, "setMainMenu:", mainMenu);
+        } catch (RuntimeException e) {
+            // Best-effort cosmetic; never block startup over the menu bar name.
+            LOG.log(System.Logger.Level.DEBUG, "Could not install application menu", e);
         }
     }
 
