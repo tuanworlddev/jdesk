@@ -15,9 +15,10 @@ import org.gradle.api.provider.MapProperty;
  * }
  * }</pre>
  *
- * The packaging tasks register these {@code scheme://} URL schemes in the app's
- * {@code Info.plist} ({@code CFBundleURLTypes}) so Launch Services routes matching links to
- * the installed app.
+ * The packaging task registers these {@code scheme://} URL schemes with the OS so it routes
+ * matching links to the app: macOS {@code Info.plist} {@code CFBundleURLTypes} (Launch Services),
+ * a Linux {@code .desktop} {@code x-scheme-handler/<scheme>} entry, and a Windows HKCU
+ * {@code URL Protocol} {@code .reg} script. Usage descriptions apply to macOS only.
  */
 public abstract class JDeskDeepLinkExtension {
 

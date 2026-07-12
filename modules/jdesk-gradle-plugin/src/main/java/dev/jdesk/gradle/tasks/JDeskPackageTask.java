@@ -124,6 +124,8 @@ public abstract class JDeskPackageTask extends DefaultTask {
                 new File(destination, name + ".app")));
 
         boolean macOs = OsSupport.isMacOs();
+        boolean windows = OsSupport.isWindows();
+        boolean linux = OsSupport.isLinux();
         String rawVersion = getAppVersion().get();
         String version = JpackageArguments.normalizeVersion(rawVersion, macOs);
         if (!version.equals(rawVersion)) {
@@ -220,6 +222,34 @@ public abstract class JDeskPackageTask extends DefaultTask {
                 }
             } catch (java.io.IOException e) {
                 throw new GradleException("jdeskPackage: failed to customize Info.plist", e);
+            }
+        } else if (linux && !schemes.isEmpty()) {
+            // jpackage app-image has no .desktop; emit one registering x-scheme-handler/<scheme>.
+            // Effective once installed into an applications dir + update-desktop-database (the
+            // Linux analogue of Launch Services reading Info.plist).
+            Path exec = new File(destination, name + "/bin/" + name).toPath();
+            Path desktop = new File(destination, name + "/" + name + ".desktop").toPath();
+            try {
+                java.nio.file.Files.writeString(desktop, dev.jdesk.packager.LinuxDesktopEntry.build(
+                        name, exec.toString(), schemes));
+                getLogger().lifecycle("jdeskPackage: wrote {} (install it to "
+                        + "~/.local/share/applications/ + run update-desktop-database)", desktop);
+            } catch (java.io.IOException e) {
+                throw new GradleException("jdeskPackage: failed to write .desktop entry", e);
+            }
+        } else if (windows && !schemes.isEmpty()) {
+            // jpackage exposes no URL-scheme flag; emit an HKCU .reg script (per-user, no admin).
+            // Apply it via `reg import`, an installer custom action, or first-run — the Windows
+            // analogue of Launch Services reading Info.plist.
+            Path exe = new File(destination, name + "/" + name + ".exe").toPath();
+            Path regFile = new File(destination, name + "/register-url-schemes.reg").toPath();
+            try {
+                java.nio.file.Files.writeString(regFile,
+                        dev.jdesk.packager.WindowsUrlScheme.regScript(schemes, exe.toString()));
+                getLogger().lifecycle("jdeskPackage: wrote {} (apply with `reg import` to register "
+                        + "the URL scheme handler)", regFile);
+            } catch (java.io.IOException e) {
+                throw new GradleException("jdeskPackage: failed to write URL-scheme .reg", e);
             }
         }
 

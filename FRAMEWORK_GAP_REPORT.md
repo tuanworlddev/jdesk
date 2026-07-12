@@ -22,7 +22,7 @@ Environment for live macOS results: macOS 26.5.1, Apple Silicon (arm64), JDK 25.
 | BUG-002 | `requestStop()` "doesn't wake idle loop" | **Retracted — not a real bug** | See below |
 | GAP-003 | PTY / process API | **Done — macOS live; Linux+Windows compile-verified** | Unit tests + live macOS shell; Linux (openpty) + Windows (ConPTY) added, CI-verified |
 | GAP-004 | Native desktop integration batch | **Done — macOS 10/10 live; Win/Linux 10/10 compile-verified** | macOS live/structural; Win/Linux native FFM for interactive APIs + documented no-ops where the concept is absent (no dock / no global menu bar); GUI gestures honestly not-auto-tested |
-| GAP-005 | Deep-link scheme + file association | **Done (macOS)** | InfoPlist/jpackage unit-tested + verified on a real jpackage Info.plist; openURL delegate live; OS routing needs a signed bundle |
+| GAP-005 | Deep-link scheme + file association | **Done — macOS live; Win/Linux scheme registration compile-verified** | InfoPlist/jpackage unit-tested + verified on a real Info.plist; openURL delegate live; Linux `.desktop` + Windows `.reg` scheme registration added (unit-tested content); URL transport already cross-platform; OS routing needs a real install/signed bundle |
 
 ---
 
@@ -226,23 +226,36 @@ below). Windows and Linux are implemented for every API too (see the per-API mat
   - `jdesk-packager` `InfoPlistCustomizer`: injects `CFBundleURLTypes` + usage-description
     keys into a jpackage `Info.plist`; idempotent, XML-escaped. `JpackageArguments` gains
     `--icon` and repeatable `--file-associations`.
+  - `jdesk-packager` `LinuxDesktopEntry`: builds a `.desktop` entry with
+    `MimeType=x-scheme-handler/<scheme>` and `Exec=… %u` (the Linux analogue of
+    `InfoPlistCustomizer`). `WindowsUrlScheme`: builds an HKCU `URL Protocol` `.reg` script
+    (`shell\open\command "<exe>" "%1"`). Both are pure text generators, unit-tested on this host;
+    the package task emits them next to the app image.
   - `jdesk-webview-spi` `PlatformApplication.setOpenUrlHandler`; macOS `MacOpenUrl` installs a
     `JDeskAppDelegate` (`application:openURLs:`); the runtime forwards each URL to the
-    single-instance activation handler (same path as argv).
+    single-instance activation handler (same path as argv). On Windows/Linux the OS delivers the
+    URL as a command-line argument, which `jdesk-instance` already forwards to the **same**
+    activation handler — so the URL-delivery transport is cross-platform without an adapter change.
   - `jdesk-gradle-plugin`: `jdesk { deepLink { schemes; usageDescription(k,v) }; appIcon;
-    fileAssociation(ext, mime, desc) }` wires all of the above into `jdeskPackage`.
-- **Unit tests:** `InfoPlistCustomizerTest` (5), `JpackageArgumentsTest` (+2 for icon /
-  file-associations).
+    fileAssociation(ext, mime, desc) }` wires all of the above into `jdeskPackage`, which now
+    post-processes the `Info.plist` (macOS), writes the `.desktop` (Linux) or the `.reg` (Windows)
+    depending on the packaging host.
+- **Unit tests:** `InfoPlistCustomizerTest` (5), `LinuxDesktopEntryTest` (4), `WindowsUrlSchemeTest`
+  (4), `JpackageArgumentsTest` (+2 for icon / file-associations).
 - **Verification:** `InfoPlistCustomizer` run against a **real** jpackage-generated
   `Info.plist` (`build/jpackage/JDeskSmoke.app`) injects `CFBundleURLTypes` (`jdesk-forge`)
   and a usage description, and the result is still valid XML and idempotent. Live
   (`DesktopProbe` as single-instance) the `JDeskAppDelegate` installs and the app keeps
   working.
-- **BLOCKED (honest):** routing an actual `scheme://` link and an "Open with" association at
-  the OS level (Launch Services) needs a **signed, installed `.app`** — not reproducible from
-  an unbundled dev run. The Gradle DSL is compile-verified and its injection/arg logic is
-  unit-tested; a full `jdeskPackage` producing an installed, signed bundle is the remaining
-  end-to-end validation.
+- **BLOCKED (honest):** routing an actual `scheme://` link end-to-end needs the app **installed
+  and registered** with the OS — a signed `.app` for macOS Launch Services; the `.desktop`
+  copied into an applications dir + `update-desktop-database` on Linux; the `.reg` applied
+  (`reg import` / installer / first-run) on Windows. The generator logic for all three is
+  unit-tested on this host, but none of the OS-level registration is reproducible from an
+  unbundled dev run on a single macOS machine. A full `jdeskPackage` on each native CI lane,
+  producing an installed image, is the remaining end-to-end validation. (The Windows `.reg` is a
+  per-user HKCU script applied by an install step, since jpackage exposes no URL-scheme flag and
+  an app-image has no installer hook — the honest, admin-free analogue of the macOS `Info.plist`.)
 
 ---
 
@@ -256,13 +269,17 @@ the platform genuinely lacks the concept (no dock badge, no global menu bar, run
 owned by the packaged binary). Every Windows/Linux entry is **compile-verified only** — there
 is no Windows/Linux host on the authoring machine, so the native CI lanes runtime-verify; the
 live OS gestures (key press, tray/menu click, notification banner, drag) remain not-auto-tested
-on any host. GAP-005 is done (unit-tested + verified on a real jpackage plist; OS-level routing
-needs a signed bundle). BUG-002 was retracted after verification. Nothing here is claimed
-without evidence.
+on any host. GAP-005 is done across all three platforms: URL delivery is already cross-platform
+(single-instance argv forwarding), and scheme registration is implemented per OS — macOS
+`Info.plist`, Linux `.desktop` `x-scheme-handler`, Windows HKCU `URL Protocol` `.reg` — with the
+generator logic unit-tested; applying the registration + the end-to-end route are runtime-verified
+on the native CI lanes. BUG-002 was retracted after verification. Nothing here is claimed without
+evidence.
 
-The whole tree builds green: **807 unit tests pass** and every coverage gate is satisfied
+The whole tree builds green: **815 unit tests pass** and every coverage gate is satisfied
 (jdesk-api 0.92, jdesk-runtime 0.81, jdesk-webview-spi 0.82 line coverage) after adding tests
-for the new API value types, runtime desktop-integration delegations, and SPI defaults.
+for the new API value types, runtime desktop-integration delegations, SPI defaults, and the
+Linux/Windows deep-link scheme generators.
 
 ## Windows / Linux status
 
@@ -276,9 +293,14 @@ There is **no Windows or Linux environment on the authoring machine**, so everyt
 - **GAP-003 (PTY):** implemented for Linux (`openpty`+`posix_spawn`) and Windows (ConPTY).
   PLATFORM-002 closed, compile-verified.
 - **GAP-005 (packaging):** `JpackageArguments` icon/`--file-associations` and the Gradle DSL are
-  cross-platform (jpackage handles Windows/Linux file associations natively). `InfoPlistCustomizer`
-  + `scheme://` OS routing are macOS-specific; the Windows-registry / Linux-`.desktop` equivalents
-  are not implemented.
+  cross-platform (jpackage handles Windows/Linux file associations natively). `scheme://` **URL
+  delivery** is already cross-platform too — `jdesk-instance` forwards the launched URL argv to the
+  app's activation handler on all three OSes. Scheme **registration** is now implemented per OS:
+  macOS `InfoPlistCustomizer` (`CFBundleURLTypes`), Linux `LinuxDesktopEntry` (`.desktop`
+  `x-scheme-handler`), Windows `WindowsUrlScheme` (HKCU `URL Protocol` `.reg`). All three
+  generators are unit-tested; the package task emits the right artifact for the packaging host.
+  Applying the registration (install/`update-desktop-database`/`reg import`) and the end-to-end
+  link route are runtime-verified on the native CI lanes, not on this macOS host.
 - **GAP-004 (desktop integration):** macOS 10/10 (live/structural). Windows and Linux are now
   **implemented for every API** — the interactive ones with real native FFM (message-window
   WndProc / GTK signals / X11 grabs), the platform-inapplicable ones as documented no-ops. All
