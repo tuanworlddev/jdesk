@@ -18,7 +18,10 @@ dependencies {
 }
 application {
     mainModule = "dev.jdesk.testapps.nativesmoke"
-    mainClass = "dev.jdesk.testapps.nativesmoke.Main"
+    // -PjdeskMain lets the same native run harness drive a focused probe main
+    // (e.g. UploadProbe for GAP-002) with the identical UI-thread / native-access flags.
+    mainClass = providers.gradleProperty("jdeskMain")
+        .getOrElse("dev.jdesk.testapps.nativesmoke.Main")
 }
 
 tasks.named<JavaExec>("run") {

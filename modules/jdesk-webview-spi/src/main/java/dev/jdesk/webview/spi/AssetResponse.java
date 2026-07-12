@@ -10,7 +10,8 @@ import java.util.function.Supplier;
  * adapters stream it to the engine and close it, including on cancellation. Error pages
  * are deterministic and never leak filesystem paths.
  *
- * @param status 200, 206 (Range), 404, 416 (unsatisfiable Range), or 500
+ * @param status 200, 206 (Range), 404, 405 (method not allowed), 413 (upload too large),
+ *        416 (unsatisfiable Range), or 500
  * @param headers response headers including Content-Type; already includes cache and
  *        security headers supplied by runtime configuration (plus Content-Range on
  *        206/416 responses)
@@ -27,7 +28,8 @@ public record AssetResponse(
     public AssetResponse {
         headers = Map.copyOf(Objects.requireNonNull(headers, "headers"));
         Objects.requireNonNull(body, "body");
-        if (status != 200 && status != 206 && status != 404 && status != 416 && status != 500) {
+        if (status != 200 && status != 206 && status != 404 && status != 405
+                && status != 413 && status != 416 && status != 500) {
             throw new IllegalArgumentException("Unsupported asset status: " + status);
         }
     }

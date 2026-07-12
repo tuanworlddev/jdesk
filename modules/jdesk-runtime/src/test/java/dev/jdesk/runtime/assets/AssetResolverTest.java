@@ -42,6 +42,10 @@ class AssetResolverTest {
         return new AssetRequest(URI.create(uri), "GET");
     }
 
+    private static AssetRequest post(String uri, byte[] body) {
+        return new AssetRequest(URI.create(uri), "POST", body, Map.of());
+    }
+
     private static String body(AssetResponse response) {
         try (InputStream in = response.body().get()) {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
@@ -137,14 +141,18 @@ class AssetResolverTest {
     }
 
     @Test
-    void nonGetOrHeadMethodsAre404() {
+    void unsupportedMethodsAre405AndPostToStaticAssetsIs404() {
         AssetResolver resolver = resolver(false);
-        assertThat(resolver.handle(new AssetRequest(URI.create("jdesk://app/index.html"), "POST")).status())
+        // POST to a static asset (no route owns it) is a plain 404: the source is read-only.
+        assertThat(resolver.handle(post("jdesk://app/index.html", new byte[0])).status())
                 .isEqualTo(404);
-        assertThat(resolver.handle(new AssetRequest(URI.create("jdesk://app/index.html"), "PUT")).status())
-                .isEqualTo(404);
-        assertThat(resolver.handle(new AssetRequest(URI.create("jdesk://app/index.html"), "DELETE")).status())
-                .isEqualTo(404);
+        // Methods outside the asset ABI are 405, with an Allow header.
+        for (String verb : new String[] {"PUT", "DELETE", "PATCH", "OPTIONS"}) {
+            AssetResponse response =
+                    resolver.handle(new AssetRequest(URI.create("jdesk://app/index.html"), verb));
+            assertThat(response.status()).as("method %s", verb).isEqualTo(405);
+            assertThat(response.headers()).containsEntry("Allow", "GET, HEAD, POST");
+        }
     }
 
     @Test
@@ -364,5 +372,75 @@ class AssetResolverTest {
         AssetResponse response = resolver(false).handle(get("jdesk://app"));
         assertThat(response.status()).isEqualTo(200);
         assertThat(body(response)).isEqualTo("<html>home</html>");
+    }
+
+    // ---- binary upload channel (POST body -> app route, GAP-002) ----
+
+    private AssetResolver resolverWithRoute(
+            String prefix, dev.jdesk.api.AssetRoute route, long maxUploadBytes) {
+        return new AssetResolver(
+                source, false, SECURITY_HEADERS, Map.of(prefix, route), maxUploadBytes);
+    }
+
+    @Test
+    void postToRouteDeliversMethodAndBodyAsRawBytes() {
+        java.util.concurrent.atomic.AtomicReference<dev.jdesk.api.AssetRoute.Request> seen =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        AssetResolver resolver = resolverWithRoute("upload", request -> {
+            seen.set(request);
+            return Optional.of(dev.jdesk.api.AssetRoute.Response.of(
+                    ("len:" + request.body().length).getBytes(StandardCharsets.UTF_8), "text/plain"));
+        });
+        byte[] payload = {0, 1, 2, 3, (byte) 0xFF, (byte) 0x80, 127, -1};
+        AssetResponse response = resolver.handle(post("jdesk://app/upload/blob.bin", payload));
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(seen.get().method()).isEqualTo("POST");
+        assertThat(seen.get().path()).isEqualTo("blob.bin");
+        assertThat(seen.get().body()).isEqualTo(payload); // exact bytes, no base64, no mangling
+        assertThat(body(response)).isEqualTo("len:8");
+    }
+
+    @Test
+    void getToRouteStillExposesGetMethodAndEmptyBody() {
+        java.util.concurrent.atomic.AtomicReference<dev.jdesk.api.AssetRoute.Request> seen =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        AssetResolver resolver = resolverWithRoute("proxy", request -> {
+            seen.set(request);
+            return Optional.of(dev.jdesk.api.AssetRoute.Response.of(
+                    "ok".getBytes(StandardCharsets.UTF_8), "text/plain"));
+        });
+        assertThat(resolver.handle(get("jdesk://app/proxy/x")).status()).isEqualTo(200);
+        assertThat(seen.get().method()).isEqualTo("GET");
+        assertThat(seen.get().body()).isEmpty();
+    }
+
+    @Test
+    void routeEmptyResponseIs200WithNoBody() {
+        AssetResolver resolver = resolverWithRoute("upload",
+                request -> Optional.of(dev.jdesk.api.AssetRoute.Response.empty()));
+        AssetResponse response = resolver.handle(post("jdesk://app/upload/x", new byte[] {42}));
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(response.contentLength()).isZero();
+        assertThat(body(response)).isEmpty();
+    }
+
+    @Test
+    void postBodyOverCapIs413AndRouteIsNeverInvoked() {
+        java.util.concurrent.atomic.AtomicBoolean invoked =
+                new java.util.concurrent.atomic.AtomicBoolean();
+        AssetResolver resolver = resolverWithRoute("upload", request -> {
+            invoked.set(true);
+            return Optional.of(dev.jdesk.api.AssetRoute.Response.empty());
+        }, 8); // 8-byte cap
+        // Exactly at the cap: accepted.
+        assertThat(resolver.handle(post("jdesk://app/upload/x", new byte[8])).status()).isEqualTo(200);
+        assertThat(invoked.get()).isTrue();
+        // One byte over: rejected with 413 before the route runs.
+        invoked.set(false);
+        AssetResponse tooBig = resolver.handle(post("jdesk://app/upload/x", new byte[9]));
+        assertThat(tooBig.status()).isEqualTo(413);
+        assertThat(invoked.get())
+                .as("oversize upload must be rejected before the app route is invoked")
+                .isFalse();
     }
 }

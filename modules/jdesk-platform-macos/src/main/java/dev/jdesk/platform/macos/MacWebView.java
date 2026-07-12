@@ -459,22 +459,95 @@ final class MacWebView implements PlatformWebView {
                 ObjC.send(request, "valueForHTTPHeaderField:", ObjC.nsString("Range")));
         Map<String, String> requestHeaders =
                 range == null || range.isEmpty() ? Map.of() : Map.of("Range", range);
+        // Read the upload body here, on the main thread where the NSURLRequest is live, so
+        // a page fetch(..., {method:'POST', body}) reaches the resolver as raw bytes. Bounded
+        // to the upload cap + 1 so an oversize body becomes a 413, never an unbounded copy.
+        byte[] body = readRequestBody(request, method);
 
         ObjC.retain(task);
         ObjC.retain(nsUrl);
         AtomicBoolean cancelled = new AtomicBoolean();
         inflightTasks.put(task.address(), cancelled);
         Thread.ofVirtual().name("jdesk-asset-task").start(() ->
-                serveTaskAsync(task, nsUrl, url, method, requestHeaders, cancelled));
+                serveTaskAsync(task, nsUrl, url, method, body, requestHeaders, cancelled));
+    }
+
+    private static final byte[] EMPTY_BODY = new byte[0];
+    /** Largest byte[] the JVM will allocate for a request body slice. */
+    private static final long MAX_BODY_ARRAY = Integer.MAX_VALUE - 8L;
+
+    /**
+     * Reads an uploaded request body for methods that carry one. WebKit delivers a page
+     * {@code fetch(..., {method:'POST', body})} to a WKURLSchemeHandler through the
+     * NSURLRequest's {@code HTTPBody} (in-memory) or {@code HTTPBodyStream} (streamed);
+     * either may be nil. Bounded to {@link AssetRequest#MAX_BODY_BYTES}+1 so the resolver
+     * answers 413 without buffering an unbounded upload.
+     */
+    private byte[] readRequestBody(MemorySegment request, String method) {
+        if (!"POST".equalsIgnoreCase(method) && !"PUT".equalsIgnoreCase(method)
+                && !"PATCH".equalsIgnoreCase(method)) {
+            return EMPTY_BODY;
+        }
+        long limit = Math.min(AssetRequest.MAX_BODY_BYTES + 1, MAX_BODY_ARRAY);
+        MemorySegment httpBody = ObjC.send(request, "HTTPBody");
+        if (httpBody != null && !httpBody.equals(MemorySegment.NULL)) {
+            byte[] read = copyNsData(httpBody, limit);
+            LOG.log(Level.DEBUG, "upload body via HTTPBody: {0} bytes", read.length);
+            return read;
+        }
+        MemorySegment stream = ObjC.send(request, "HTTPBodyStream");
+        if (stream != null && !stream.equals(MemorySegment.NULL)) {
+            byte[] read = readNsInputStream(stream, limit);
+            LOG.log(Level.DEBUG, "upload body via HTTPBodyStream: {0} bytes", read.length);
+            return read;
+        }
+        LOG.log(Level.DEBUG, "upload body absent (no HTTPBody/HTTPBodyStream)");
+        return EMPTY_BODY;
+    }
+
+    /** Copies up to {@code limit} bytes out of an NSData ({@code -bytes}/{@code -length}). */
+    private byte[] copyNsData(MemorySegment data, long limit) {
+        long length = ObjC.sendLong(data, "length");
+        if (length <= 0) {
+            return EMPTY_BODY;
+        }
+        int count = (int) Math.min(length, limit);
+        MemorySegment bytes = ObjC.send(data, "bytes");
+        if (bytes.equals(MemorySegment.NULL)) {
+            return EMPTY_BODY;
+        }
+        return bytes.reinterpret(count).toArray(JAVA_BYTE);
+    }
+
+    /** Drains up to {@code limit} bytes from an NSInputStream (open/read:maxLength:/close). */
+    private byte[] readNsInputStream(MemorySegment stream, long limit) {
+        ObjC.sendVoid(stream, "open");
+        try (Arena arena = Arena.ofConfined()) {
+            int chunkSize = 64 * 1024;
+            MemorySegment chunk = arena.allocate(chunkSize);
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            while (out.size() < limit) {
+                long want = Math.min(chunkSize, limit - out.size());
+                long read = ObjC.sendReadMaxLength(stream, chunk, want);
+                if (read <= 0) {
+                    break; // 0 = end of stream, -1 = stream error
+                }
+                out.write(chunk.reinterpret(read).toArray(JAVA_BYTE), 0, (int) read);
+            }
+            return out.toByteArray();
+        } finally {
+            ObjC.sendVoid(stream, "close");
+        }
     }
 
     private void serveTaskAsync(MemorySegment task, MemorySegment nsUrl, String url,
-            String method, Map<String, String> requestHeaders, AtomicBoolean cancelled) {
+            String method, byte[] body, Map<String, String> requestHeaders,
+            AtomicBoolean cancelled) {
         try {
             AssetResponse asset;
             try {
                 asset = app.config().assetHandler().handle(
-                        new AssetRequest(URI.create(url), method, requestHeaders));
+                        new AssetRequest(URI.create(url), method, body, requestHeaders));
             } catch (RuntimeException e) {
                 LOG.log(Level.ERROR, "Asset handler failed for {0}", url, e);
                 onMain(task, cancelled, () -> failTaskQuietly(task, "asset resolution failed"));
@@ -488,11 +561,11 @@ final class MacWebView implements PlatformWebView {
             // Stream the body in bounded chunks (spec 9.1: never buffer whole assets).
             // Deliveries are joined one at a time, so the single shared-arena buffer is
             // never touched concurrently and a slow consumer naturally paces the reader.
-            try (Arena bodyArena = Arena.ofShared(); InputStream body = asset.body().get()) {
+            try (Arena bodyArena = Arena.ofShared(); InputStream responseBody = asset.body().get()) {
                 MemorySegment nativeChunk = bodyArena.allocate(ASYNC_CHUNK_SIZE);
                 byte[] chunk = new byte[ASYNC_CHUNK_SIZE];
                 int read;
-                while ((read = body.read(chunk)) > 0) {
+                while ((read = responseBody.read(chunk)) > 0) {
                     int length = read;
                     MemorySegment.copy(MemorySegment.ofArray(chunk), 0, nativeChunk, 0, length);
                     if (!onMain(task, cancelled, () -> deliverChunk(task, nativeChunk, length))) {

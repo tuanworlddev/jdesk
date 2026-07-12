@@ -35,15 +35,27 @@ public final class AssetResolver implements AssetHandler {
     private static final String ERROR_BODY =
             "<!doctype html><html><head><title>Error</title></head>"
                     + "<body><h1>500 Internal Error</h1></body></html>";
+    private static final String METHOD_NOT_ALLOWED_BODY =
+            "<!doctype html><html><head><title>Method not allowed</title></head>"
+                    + "<body><h1>405 Method Not Allowed</h1></body></html>";
+    private static final String PAYLOAD_TOO_LARGE_BODY =
+            "<!doctype html><html><head><title>Payload too large</title></head>"
+                    + "<body><h1>413 Payload Too Large</h1></body></html>";
 
     private final AssetSource source;
     private final boolean spaFallback;
     private final Map<String, String> securityHeaders;
+    private final long maxUploadBytes;
     /** App-defined routes, longest prefix first so nested prefixes win. */
     private final List<Map.Entry<String, AssetRoute>> routes;
 
     public AssetResolver(AssetSource source, boolean spaFallback, Map<String, String> securityHeaders) {
         this(source, spaFallback, securityHeaders, Map.of());
+    }
+
+    public AssetResolver(AssetSource source, boolean spaFallback,
+            Map<String, String> securityHeaders, Map<String, AssetRoute> assetRoutes) {
+        this(source, spaFallback, securityHeaders, assetRoutes, AssetRequest.MAX_BODY_BYTES);
     }
 
     /**
@@ -53,12 +65,16 @@ public final class AssetResolver implements AssetHandler {
      *        response
      * @param assetRoutes app-defined routes keyed by path prefix (checked before the
      *        asset source; a route owns everything under its prefix)
+     * @param maxUploadBytes largest POST body handed to a route before a 413; the platform
+     *        adapter reads at most this many + 1 so oversize is caught without buffering
      */
     public AssetResolver(AssetSource source, boolean spaFallback,
-            Map<String, String> securityHeaders, Map<String, AssetRoute> assetRoutes) {
+            Map<String, String> securityHeaders, Map<String, AssetRoute> assetRoutes,
+            long maxUploadBytes) {
         this.source = source;
         this.spaFallback = spaFallback;
         this.securityHeaders = Map.copyOf(securityHeaders);
+        this.maxUploadBytes = maxUploadBytes;
         this.routes = assetRoutes.entrySet().stream()
                 .sorted(Comparator.comparingInt((Map.Entry<String, AssetRoute> e)
                         -> e.getKey().length()).reversed())
@@ -68,12 +84,18 @@ public final class AssetResolver implements AssetHandler {
     @Override
     public AssetResponse handle(AssetRequest request) {
         try {
-            if (!"GET".equalsIgnoreCase(request.method()) && !"HEAD".equalsIgnoreCase(request.method())) {
-                return notFound();
+            String method = request.method();
+            boolean getOrHead = "GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method);
+            boolean post = "POST".equalsIgnoreCase(method);
+            if (!getOrHead && !post) {
+                return methodNotAllowed(); // PUT/DELETE/PATCH/... are not part of the asset ABI
             }
             if (!"jdesk".equalsIgnoreCase(request.uri().getScheme())
                     || !"app".equalsIgnoreCase(request.uri().getAuthority())) {
                 return notFound();
+            }
+            if (post && request.body().length > maxUploadBytes) {
+                return payloadTooLarge(); // reject before invoking any app route
             }
             Optional<String> normalized = AssetPaths.normalize(request.uri().getRawPath());
             if (normalized.isEmpty()) {
@@ -83,6 +105,11 @@ public final class AssetResolver implements AssetHandler {
             AssetResponse routed = tryRoutes(path, request);
             if (routed != null) {
                 return routed;
+            }
+            if (post) {
+                // A POST only makes sense against an app route; the static source is
+                // read-only, so an unmatched write is a plain 404 (no method probing).
+                return notFound();
             }
             Optional<AssetSource.Asset> asset = source.find(path);
             if (asset.isEmpty() && spaFallback && !path.contains(".")) {
@@ -111,7 +138,8 @@ public final class AssetResolver implements AssetHandler {
             }
             String subPath = path.equals(prefix) ? "" : path.substring(prefix.length() + 1);
             Optional<AssetRoute.Response> served = entry.getValue()
-                    .serve(new AssetRoute.Request(subPath, request.headers()));
+                    .serve(new AssetRoute.Request(
+                            subPath, request.method(), request.body(), request.headers()));
             if (served.isEmpty()) {
                 return notFound();
             }
@@ -198,5 +226,22 @@ public final class AssetResolver implements AssetHandler {
         headers.put("Content-Type", "text/html; charset=utf-8");
         headers.put("Cache-Control", "no-cache");
         return new AssetResponse(500, headers, body.length, () -> new ByteArrayInputStream(body));
+    }
+
+    private AssetResponse methodNotAllowed() {
+        byte[] body = METHOD_NOT_ALLOWED_BODY.getBytes(StandardCharsets.UTF_8);
+        Map<String, String> headers = new HashMap<>(securityHeaders);
+        headers.put("Content-Type", "text/html; charset=utf-8");
+        headers.put("Cache-Control", "no-cache");
+        headers.put("Allow", "GET, HEAD, POST");
+        return new AssetResponse(405, headers, body.length, () -> new ByteArrayInputStream(body));
+    }
+
+    private AssetResponse payloadTooLarge() {
+        byte[] body = PAYLOAD_TOO_LARGE_BODY.getBytes(StandardCharsets.UTF_8);
+        Map<String, String> headers = new HashMap<>(securityHeaders);
+        headers.put("Content-Type", "text/html; charset=utf-8");
+        headers.put("Cache-Control", "no-cache");
+        return new AssetResponse(413, headers, body.length, () -> new ByteArrayInputStream(body));
     }
 }

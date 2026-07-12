@@ -238,6 +238,22 @@ final class ObjC {
         }
     }
 
+    private static final FunctionDescriptor D_LONG_PTR_LONG =
+            FunctionDescriptor.of(JAVA_LONG, ADDRESS, ADDRESS, ADDRESS, JAVA_LONG);
+
+    /**
+     * {@code - (NSInteger)read:(uint8_t *)buffer maxLength:(NSUInteger)len} on NSInputStream:
+     * returns bytes read (&gt;0), 0 at end of stream, or -1 on error.
+     */
+    static long sendReadMaxLength(MemorySegment stream, MemorySegment buffer, long maxLength) {
+        try {
+            return (long) msgSend(D_LONG_PTR_LONG)
+                    .invokeExact(stream, sel("read:maxLength:"), buffer, maxLength);
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
+    }
+
     static boolean sendBool(MemorySegment receiver, String selector) {
         try {
             return (byte) msgSend(D_BOOL).invokeExact(receiver, sel(selector)) != 0;

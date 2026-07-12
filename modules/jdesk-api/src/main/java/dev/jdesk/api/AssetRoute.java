@@ -37,17 +37,32 @@ public interface AssetRoute {
 
     /**
      * @param path path below the route prefix; normalized and traversal-safe, no leading slash
+     * @param method HTTP-style method ({@code GET}/{@code HEAD}/{@code POST}). Static asset
+     *        routes only ever see GET/HEAD; a route that accepts uploads is reached with POST.
+     * @param body raw request body bytes, empty for GET/HEAD. This is the non-base64 binary
+     *        upload channel: a page {@code fetch(url, {method:'POST', body})} arrives here as
+     *        the exact bytes, capped by {@code jdesk.assets.maxUploadBytes} (413 beyond it).
+     *        The array is handed over, not copied — read it within {@link #serve}.
      * @param headers request headers forwarded by the engine (lower-case keys; at least Range)
      */
-    record Request(String path, Map<String, String> headers) {
+    record Request(String path, String method, byte[] body, Map<String, String> headers) {
+        private static final byte[] NO_BODY = new byte[0];
+
         public Request {
             Objects.requireNonNull(path, "path");
+            Objects.requireNonNull(method, "method");
+            Objects.requireNonNull(body, "body");
             Objects.requireNonNull(headers, "headers");
             java.util.HashMap<String, String> normalized = new java.util.HashMap<>(headers.size());
             for (Map.Entry<String, String> entry : headers.entrySet()) {
                 normalized.putIfAbsent(entry.getKey().toLowerCase(Locale.ROOT), entry.getValue());
             }
             headers = Map.copyOf(normalized);
+        }
+
+        /** GET convenience with no request body (source-compatible with pre-upload routes). */
+        public Request(String path, Map<String, String> headers) {
+            this(path, "GET", NO_BODY, headers);
         }
 
         /** Case-insensitive request-header lookup. */
@@ -86,6 +101,12 @@ public interface AssetRoute {
                     throw new UncheckedIOException(e);
                 }
             }, Map.of());
+        }
+
+        /** A 200 with an empty body — the natural acknowledgement for an accepted upload. */
+        public static Response empty() {
+            return new Response("application/octet-stream", 0L,
+                    InputStream::nullInputStream, Map.of());
         }
     }
 }

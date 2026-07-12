@@ -157,6 +157,42 @@ On macOS the scheme handler resolves and streams on background threads, so a slo
 on the event thread — keep route handlers fast there (serve from a disk cache and
 prefetch via commands) until async serving lands for those adapters.
 
+### Uploads: binary POST without base64
+
+The same route also receives uploads. A page `fetch` with a `POST` body reaches the
+handler as the exact bytes — no base64, no IPC envelope cap — through `request.body()`:
+
+```java
+JDeskApplication.builder()
+    .assetRoute("upload", request -> {
+        if (!request.method().equals("POST")) {
+            return Optional.empty(); // 404: this route only accepts writes
+        }
+        byte[] bytes = request.body();          // raw upload, already bounded (see below)
+        store.write(request.path(), bytes);     // may block: runs off the UI thread on macOS
+        return Optional.of(AssetRoute.Response.empty()); // 200, or Response.of(json, ...) to reply
+    })
+```
+
+```js
+await fetch('jdesk://app/upload/report.bin', { method: 'POST', body: arrayBuffer });
+```
+
+Bodies are capped by the `jdesk.assets.maxUploadBytes` system property (default 64 MiB);
+a larger upload is rejected with **413** before your handler runs, so a route never has to
+defend against an unbounded buffer. A method other than `GET`/`HEAD`/`POST` gets **405**;
+a `POST` that matches no route is a 404 (packaged assets are read-only).
+
+**Platform status (honest).** On **macOS** this is live-verified end-to-end on a real
+WKWebView (macOS 26.5.1, Apple Silicon): a 2 MiB `POST` arrives byte-exact — the route's
+SHA-256 of `request.body()` matches an independently computed digest — a 5 MiB upload
+against a 4 MiB cap returns 413 without buffering the whole body (the adapter reads only
+`cap + 1` bytes), a `PUT` returns 405, and ranged `GET` still returns 206. The body is
+read from `NSURLRequest.HTTPBody`. On **Windows (WebView2)** and **Linux (WebKitGTK)** the
+adapters do not forward the request body yet, so a route sees an empty `body()` there;
+until that lands, upload from those platforms should go through a command with chunked
+transfer. Track this as PLATFORM-001.
+
 ## Customizing the Content-Security-Policy
 
 Apps that legitimately need remote content — streaming video from a CDN, loading remote
