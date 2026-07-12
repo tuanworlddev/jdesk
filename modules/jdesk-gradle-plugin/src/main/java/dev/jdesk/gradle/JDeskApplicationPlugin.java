@@ -259,6 +259,10 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
                     t.getMainClass().set(extension.getMainClass());
                     t.getMainModule().set(extension.getMainModule());
                     t.getApplicationId().set(extension.getApplicationId());
+                    t.getUrlSchemes().set(extension.getDeepLink().getSchemes());
+                    t.getUsageDescriptions().set(extension.getDeepLink().getUsageDescriptions());
+                    t.getFileAssociations().set(extension.getFileAssociations());
+                    t.getAppIcon().set(extension.getAppIcon());
                     t.getImageName().convention(extension.getApplicationId()
                             .map(id -> id.substring(id.lastIndexOf('.') + 1)));
                     t.getAppVersion().convention(projectVersion);

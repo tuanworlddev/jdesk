@@ -68,6 +68,24 @@ public abstract class JDeskPackageTask extends DefaultTask {
     @Input
     public abstract Property<String> getAppVersion();
 
+    @Input
+    @Optional
+    public abstract org.gradle.api.provider.ListProperty<String> getUrlSchemes();
+
+    @Input
+    @Optional
+    public abstract org.gradle.api.provider.MapProperty<String, String> getUsageDescriptions();
+
+    /** File associations encoded as {@code extension\tmimeType\tdescription}. */
+    @Input
+    @Optional
+    public abstract org.gradle.api.provider.ListProperty<String> getFileAssociations();
+
+    @InputFile
+    @Optional
+    @PathSensitive(PathSensitivity.NAME_ONLY)
+    public abstract RegularFileProperty getAppIcon();
+
     @Internal
     public abstract Property<String> getJavaHome();
 
@@ -142,6 +160,29 @@ public abstract class JDeskPackageTask extends DefaultTask {
                 builder.macPackageIdentifier(applicationId);
             }
         }
+        if (getAppIcon().isPresent()) {
+            builder.icon(getAppIcon().get().getAsFile().toPath());
+        }
+        List<String> associations = getFileAssociations().getOrElse(List.of());
+        if (!associations.isEmpty()) {
+            try {
+                Path associationsDir = staging.toPath().resolveSibling("jdesk-file-associations");
+                java.nio.file.Files.createDirectories(associationsDir);
+                int index = 0;
+                for (String encoded : associations) {
+                    String[] parts = encoded.split("\t", -1);
+                    String ext = parts[0];
+                    String mime = parts.length > 1 ? parts[1] : "";
+                    String desc = parts.length > 2 ? parts[2] : ext;
+                    Path props = associationsDir.resolve("assoc-" + (index++) + ".properties");
+                    java.nio.file.Files.writeString(props, "extension=" + ext + "\n"
+                            + "mime-type=" + mime + "\ndescription=" + desc + "\n");
+                    builder.fileAssociation(props);
+                }
+            } catch (java.io.IOException e) {
+                throw new GradleException("jdeskPackage: failed to write file-association files", e);
+            }
+        }
         List<String> args = builder.build().toArguments();
 
         Path jpackage;
@@ -161,6 +202,26 @@ public abstract class JDeskPackageTask extends DefaultTask {
                     + " for its output; verify the runtime image and jars above.", e);
         }
         getLogger().lifecycle("jdeskPackage: app image written to {}", destination);
+
+        // Register scheme:// deep links + usage descriptions that jpackage cannot express,
+        // by post-processing the generated Info.plist (macOS Launch Services).
+        List<String> schemes = getUrlSchemes().getOrElse(List.of());
+        java.util.Map<String, String> usageDescriptions =
+                getUsageDescriptions().getOrElse(java.util.Map.of());
+        if (macOs && (!schemes.isEmpty() || !usageDescriptions.isEmpty())) {
+            Path plist = new File(destination, name + ".app/Contents/Info.plist").toPath();
+            try {
+                if (java.nio.file.Files.exists(plist)) {
+                    String customized = dev.jdesk.packager.InfoPlistCustomizer.customize(
+                            java.nio.file.Files.readString(plist),
+                            getApplicationId().getOrElse(name), schemes, usageDescriptions);
+                    java.nio.file.Files.writeString(plist, customized);
+                    getLogger().lifecycle("jdeskPackage: injected CFBundleURLTypes into Info.plist");
+                }
+            } catch (java.io.IOException e) {
+                throw new GradleException("jdeskPackage: failed to customize Info.plist", e);
+            }
+        }
 
         // Release hygiene (spec 12.5, 16): SHA-256 checksums + CycloneDX SBOM over the
         // produced image. CI images are UNSIGNED and do not satisfy a signed-release gate.

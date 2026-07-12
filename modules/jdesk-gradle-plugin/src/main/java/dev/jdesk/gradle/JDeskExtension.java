@@ -1,6 +1,8 @@
 package dev.jdesk.gradle;
 
 import org.gradle.api.Action;
+import org.gradle.api.file.RegularFileProperty;
+import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Nested;
 
@@ -47,5 +49,28 @@ public abstract class JDeskExtension {
     /** Signing configuration hooks (spec 16.3); unconfigured builds are UNSIGNED. */
     public void signing(Action<? super JDeskSigningExtension> action) {
         action.execute(getSigning());
+    }
+
+    @Nested
+    public abstract JDeskDeepLinkExtension getDeepLink();
+
+    /** {@code scheme://} deep-link registration for packaged apps. */
+    public void deepLink(Action<? super JDeskDeepLinkExtension> action) {
+        action.execute(getDeepLink());
+    }
+
+    /** Application icon file ({@code .icns} on macOS, {@code .ico} on Windows). */
+    public abstract RegularFileProperty getAppIcon();
+
+    /**
+     * File associations, each encoded as {@code extension\tmimeType\tdescription}; add via
+     * {@link #fileAssociation}. The package task materializes jpackage
+     * {@code --file-associations} properties files and {@code CFBundleDocumentTypes}.
+     */
+    public abstract ListProperty<String> getFileAssociations();
+
+    /** Registers an "Open with" file association (e.g. {@code "hex", "application/x-hex", "JDesk Hex"}). */
+    public void fileAssociation(String extension, String mimeType, String description) {
+        getFileAssociations().add(extension + "\t" + mimeType + "\t" + description);
     }
 }
