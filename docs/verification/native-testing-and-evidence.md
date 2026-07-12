@@ -127,11 +127,12 @@ Independent CI jobs so one platform cannot mask another (spec section 19). Curre
 | `gradle-plugin-functional` | Gradle TestKit functional tests. |
 | `windows-x64-native` | Native smoke on real WebView2. |
 | `linux-x64-native` | Native smoke on real WebKitGTK 4.1 under Xvfb. |
-| `security-windows-x64` / `security-linux-x64` | Security probes on real WebViews. |
-| `package-windows-x64` / `package-linux-x64` | jpackage app-image built + launched without Gradle. |
+| `macos-arm64-native` | Native smoke on real WKWebView on GitHub-hosted Apple Silicon. |
+| `security-windows-x64` / `security-linux-x64` / `security-macos-arm64` | Security probes on real WebViews. |
+| `package-windows-x64` / `package-linux-x64` / `package-macos-arm64` | jpackage app-image built + launched without Gradle, plus target-native installer creation. |
+| `release-gate` | Requires every unit, plugin, native, security, and package job to pass. |
 
-The macOS legs are verified on **local real Apple Silicon hardware** (private-repo macOS CI
-minutes are costly; a consolidated macOS CI job is deferred to Phase 7). Local real
-hardware counts as real verification per the spec. **Consult
+The macOS legs are verified both on local real Apple Silicon and GitHub-hosted
+`macos-14` ARM64 runners. **Consult
 [../../VERIFICATION.md](../../VERIFICATION.md) for the authoritative pass/fail matrix with
 run ids** — do not infer status from this page.

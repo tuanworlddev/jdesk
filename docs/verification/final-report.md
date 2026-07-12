@@ -1,17 +1,17 @@
 # JDesk implementation report
 
-Commit: 2365f051d0d68eb2ffbc6a1e14cb513d1d4827b7 (main)
+Remediation commit: cd962ff (framework-gaps-macos)
 Version: 0.1.0-SNAPSHOT
 Date: 2026-07-11 (UTC)
 
 ## Status
 
-- **Overall: INCOMPLETE** — version 1 is functionally implemented and verified on real
-  system WebViews across all three primary platforms, but two Definition-of-Done items
-  (section 26) are not yet fully satisfied on a single consolidated CI commit: (a) a
-  macOS native/package CI leg (macOS is verified on **real local Apple Silicon
-  hardware**, not yet a private-repo CI runner), and (b) signed release packages (CI
-  packages are `UNSIGNED` by design). Everything else is implemented and evidence-backed.
+- **Overall: INCOMPLETE FOR SIGNED RELEASE** — version 1 is functionally implemented and
+  verified on real system WebViews across all three primary platforms, including the
+  consolidated Windows x64, Linux x64, and macOS ARM64 CI matrix. Signed/notarized
+  release packages still require account-owner credentials; CI packages are `UNSIGNED`
+  by design. Everything else in the primary-platform scope is implemented and
+  evidence-backed.
 - **Implemented and verified:** pure Java core; Windows, macOS, and Linux adapters over
   real WebView2 / WKWebView / WebKitGTK through Java FFM; typed commands, events,
   cancellation, limits, lifecycle, capabilities through real bridges; deny-by-default
@@ -44,13 +44,6 @@ faked or worked around.
    steps. Attempted alternative: self-signed certs — rejected, they do not satisfy a real
    signed-release gate and would be dishonest to label as signed.
 
-2. **macOS native/package CI leg** (§19). macOS is verified on **real local Apple Silicon
-   hardware** with archived, verifier-checked evidence, which satisfies §0 rule 5 (the
-   current machine can test macOS, so no CI runner is required). Enabling a private-repo
-   `macos-14` CI leg is a cost decision (≈10× runner minutes); the job can be added on
-   request. This item is therefore **verified on real hardware**, not blocked — listed here
-   only for transparency about the CI matrix.
-
 The remaining "deferred" items (secondary architectures and benchmark
 harness) are out of the section-26 v1 DoD and are genuine future work, not blockers.
 
@@ -58,9 +51,9 @@ harness) are out of the section-26 v1 DoD and are genuine future work, not block
 
 | OS/arch | Native smoke | Package smoke | Security probes | Evidence / CI | WebView |
 | --- | --- | --- | --- | --- | --- |
-| Windows x64 | PASS | PASS | PASS | CI runs 29137796715 / 29137919391 (stress) / 29139506086 (package) / 29140030589 (security), artifacts `windows-x64-native-evidence`, `package-windows-x64-evidence`, `security-windows-x64-evidence` | WebView2 Evergreen (Windows Server 2025) |
-| macOS ARM64 | PASS (local) | PASS (local) | PASS (local) | Local real hardware, runs 1783741626 / 1783741637 (stress) / 1783741694 (package) / 1783744909 (security); archived `~/JDesk-evidence-archive`; verifier green | WKWebView (system WebKit, macOS 26.5.1) |
-| Linux x64 | PASS | PASS | PASS | CI run 29139086672 (native) + 29139506086 (package) + 29140030589 (security), artifacts `linux-x64-native-evidence`, `package-linux-x64-evidence`, `security-linux-x64-evidence` | WebKitGTK 4.1 under Xvfb |
+| Windows x64 | PASS | PASS | PASS | Consolidated CI run 29187403208, artifacts `windows-x64-native-evidence`, `package-windows-x64-evidence`, `security-windows-x64-evidence` | WebView2 Evergreen (Windows Server 2025) |
+| macOS ARM64 | PASS | PASS | PASS | Local remediation runs 1783846302 / 1783846340 / 1783846386 plus consolidated CI run 29187403208; verifier green | WKWebView (system WebKit) |
+| Linux x64 | PASS | PASS | PASS | Consolidated CI run 29187403208, artifacts `linux-x64-native-evidence`, `package-linux-x64-evidence`, `security-linux-x64-evidence` | WebKitGTK 4.1 under Xvfb |
 
 All native/package evidence is machine-generated per section 18, validated by
 `EvidenceVerifier` (checksum recomputation, schema/timestamp checks, and rejection of
@@ -78,7 +71,7 @@ passing run is a fake.
 jpackage --type app-image ... && ./JDeskSmoke.app/Contents/MacOS/JDeskSmoke   # package smoke
 ./gradlew :test-apps:native-smoke:verifyEvidence                  # anti-fake verification
 
-# Real GitHub Actions runners (windows-latest / ubuntu-latest):
+# Real GitHub Actions runners (windows-latest / ubuntu-latest / macos-14):
 ./gradlew --no-configuration-cache :test-apps:native-smoke:run -PjdeskPlatform=<windows|linux> -PjdeskStress=true
 ./gradlew --no-configuration-cache :test-apps:security-probe:run -PjdeskPlatform=<windows|linux>
 jpackage --type app-image ... && <launch app image without Gradle>   # package smoke
@@ -122,10 +115,6 @@ handshake latency, p50/p95/p99 IPC) is a documented follow-up.
 
 ## Blockers and unverified claims
 
-- **macOS CI leg not run** (private-repo macOS runner minutes are 10×). macOS is verified
-  on **real local Apple Silicon hardware** with archived, verifier-checked evidence, which
-  satisfies spec rule 5 (real hardware). A CI leg can be enabled by uncommenting the
-  documented job.
 - **Signed release** not produced: signing hooks exist as configuration surface only; CI
   packages are `UNSIGNED` and do not satisfy a signed-release gate (spec 16.3).
 - **Installers build UNSIGNED.** `jdeskInstaller` produces real DMG/MSI/DEB via jpackage

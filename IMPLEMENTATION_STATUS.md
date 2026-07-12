@@ -16,13 +16,13 @@ Machine-generated evidence rules (Section 18) apply to every `VERIFIED-*` claim.
 | Native SDK | Apple Command Line Tools, clang 21.0.0, macOS SDK 26.5 (no full Xcode) | `xcrun --show-sdk-version` |
 | Node / npm | v26.2.0 / 11.15.0 | `node --version` |
 | Git | 2.54.0 | `git --version` |
-| CI access | GitHub CLI 2.92.0 authenticated (scopes: repo, workflow) → real GitHub Actions runners available for Windows x64 and Linux x64 | `gh auth status` |
+| CI access | GitHub CLI 2.92.0 authenticated (scopes: repo, workflow) → real GitHub Actions runners available for Windows x64, Linux x64, and macOS ARM64 | `gh auth status` |
 
 ## Platform verification plan
 
 | Platform | How it will be verified | Status |
 | --- | --- | --- |
-| macOS ARM64 | Locally on this machine (real WKWebView) | VERIFIED-LOCAL |
+| macOS ARM64 | Local Apple Silicon plus GitHub-hosted `macos-14` (real WKWebView) | VERIFIED-CI (run 29187403208) |
 | Windows x64 | Real GitHub Actions `windows-latest` runner (WebView2 present); no local Windows hardware | VERIFIED-CI (runs 29137796715, 29137919391) |
 | Linux x64 | Real GitHub Actions `ubuntu-latest` runner + Xvfb + WebKitGTK 4.1 | VERIFIED-CI (run 29139086672) |
 | Windows ARM64 / macOS Intel / Linux ARM64 | Only after primary gates pass; else `UNVERIFIED` | NOT STARTED |
@@ -104,11 +104,11 @@ The original Phase-3 deferrals were completed in Phase 7: installers, signing ho
 named-module production launchers are implemented.
 
 ### Phase 4 — macOS adapter
-Status: DONE (2026-07-11, verified locally on real Apple Silicon hardware)
+Status: DONE (verified locally and on GitHub-hosted Apple Silicon)
 
 Gates:
 - [x] AppKit/WKWebView via FFM (ObjC runtime bindings, public clang blocks ABI, WKURLSchemeHandler, WKScriptMessageHandler, navigation delegate, takeSnapshot). No private selectors; DevTools via public `setInspectable:` only.
-- [x] Native smoke green on real macOS 26.5.1 arm64 (this machine): runs 1783741626-1b31e8d3bd4403a7 (functional, 21/21) and 1783741637-3a7dffd9377a2d6b (stress: 10,000 IPC round trips 0 mismatch in 509 ms, 25/25 window cycles), commit 9cd65d40c, dirty=false, provider `macos-wkwebview`, verifier green. Archived at ~/JDesk-evidence-archive/. A macOS CI job is deferred to the Phase 7 consolidated run (private-repo macOS minutes are 10x; local runs ARE real hardware per spec rule 5).
+- [x] Native smoke green on real macOS ARM64 locally (remediation evidence 1783846302-deb600a45fd34b54: 10,000 IPC round trips, 0 mismatch) and on GitHub-hosted Apple Silicon (`macos-arm64-native`, run 29187403208); provider `macos-wkwebview`, verifier green.
 - [x] Launch from packaged `.app` image: jpackage app-image built and executed (`JDeskSmoke.app`), evidence run 1783741694-0ba04a314ebd5e40, category `package`, PASSED 21/21, exit 0.
 
 ### Phase 5 — Linux adapter
@@ -129,7 +129,7 @@ Gates:
 - [x] CspValidator release check proven by unit test (unsafe-inline/eval rejected without acknowledgement; default CSP strict)
 
 ### Phase 7 — Packaging, documentation, release candidate
-Status: SUBSTANTIALLY DONE (packaging + installers + docs + evidence complete; signed-release + macOS CI remain — overall v1 INCOMPLETE by section 26, reported honestly)
+Status: SUBSTANTIALLY DONE (packaging + installers + three-platform CI + docs + evidence complete; signed release credentials remain)
 
 Gates:
 - [x] jlink + jpackage pipeline (Gradle plugin jdeskRuntimeImage/jdeskPackage; app images built + launched without Gradle on windows/macos/linux)
@@ -139,13 +139,13 @@ Gates:
 - [x] jdeskInstaller builds OS-native installers (DMG/PKG/MSI/EXE/DEB/RPM) via jpackage on the target OS: verified end-to-end locally (real 34 MB DMG through the plugin) + Windows MSI / Linux DEB in CI package jobs; unit-tested arg builder
 - [x] Signing hooks (jdesk { signing { ... } } extension: Authenticode / Developer ID + notarization / GPG) — configuration surface; CI packages labeled UNSIGNED
 - [x] SBOM + SHA-256 checksums: ReleaseArtifacts writes checksums.sha256 + CycloneDX 1.5 sbom.cyclonedx.json in jdeskPackage; deterministic, unit-tested (22 packager tests); verified against a real 282-file jpackage image
-- [x] Package smoke evidence on all 3 primary targets: macOS local (1783741694-...), windows/linux CI package jobs green (run 29139506086)
-- [x] Every required primary CI job green for the same HEAD commit (run 29140294843: core-unit, gradle-plugin-functional, windows-x64-native, linux-x64-native, package-windows-x64, package-linux-x64, security-windows-x64, security-linux-x64)
-- [x] No primary platform marked UNVERIFIED/BLOCKED/ASSUMED: Windows x64 + Linux x64 on real CI, macOS ARM64 on real local hardware (spec rule 5). macos-arm64 CI leg intentionally deferred (private-repo cost); documented, not hidden.
+- [x] Package smoke evidence on all 3 primary targets, including real app launch and DMG/MSI/DEB creation on each target OS (consolidated run 29187403208)
+- [x] Every required unit/plugin/native/security/package job green for the same remediation commit, followed by one `release-gate` (run 29187403208)
+- [x] No primary platform marked UNVERIFIED/BLOCKED/ASSUMED: Windows x64, Linux x64, and macOS ARM64 all run on real GitHub-hosted target OS runners.
 - [x] Fresh-project quick start reproduced: external sample (scratchpad) rebuilt against current HEAD — FRESH-SAMPLE-READY + FRESH-SAMPLE-GREET-CONFIRMED, exit 0
 - [x] Documentation set complete (docs/ section 24) + consolidated final report (docs/verification/final-report.md)
 
-Remaining before a signed v1 release (honestly incomplete, not claimed done): signed+notarized packages (installers build UNSIGNED today), a macos CI leg, secondary architectures, a dedicated performance benchmark harness, and the RSS regression-threshold ADR. See docs/verification/final-report.md — overall status INCOMPLETE.
+Remaining before a signed v1 release (honestly incomplete, not claimed done): signed+notarized packages (installers build UNSIGNED today), secondary architectures, a dedicated performance benchmark harness, and the RSS regression-threshold ADR. See docs/verification/final-report.md.
 
 ### Post-review hardening
 

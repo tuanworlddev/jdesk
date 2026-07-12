@@ -31,6 +31,7 @@ Environment: macOS 26.5.1 ARM64, OpenJDK 25.0.3, real system WKWebView.
 | `./gradlew check --rerun-tasks --no-build-cache` | PASS, 79 tasks executed, coverage gates PASS |
 | `npm ci && npm test` in `js/jdesk-client` | PASS, 3/3 |
 | Real native smoke + stress | PASS, evidence `1783846302-deb600a45fd34b54` |
+| Routing readiness regression rerun | PASS, evidence `1783848206-fd866acff41646be` |
 | IPC stress | PASS, 10,000 round trips, 0 mismatches, 13,698.6/s |
 | Real security probe | PASS, evidence `1783846340-4e4d073ef0fe9923` |
 | Real `jpackage` app-image launch | PASS, evidence `1783846386-80e272ca231af1e7` |
@@ -44,6 +45,18 @@ above is from the rerun, not from a partial retry.
 
 ## Remote verification
 
-`.github/workflows/ci.yml` contains native, security, and package jobs for Windows x64,
-Linux x64, and macOS ARM64 plus a single `release-gate`. Record the resulting run id here
-after the remediation commit is exercised on GitHub-hosted runners.
+GitHub Actions run `29187403208` exercises commit `cd962ff` on real hosted runners. Its
+matrix contains unit/coverage, Gradle plugin functional tests, and native, security, and
+package jobs for Windows x64, Linux x64, and macOS ARM64. One `release-gate` requires all
+11 jobs for the exact commit to succeed before a tag-triggered release workflow may run.
+
+During gate qualification, run `29187040748` exposed a connection-reuse bug after an
+oversized automation request. The server now returns `Connection: close` with `413`
+instead of allowing the client to reuse a socket whose unread body is being discarded;
+the regression test checks both the header and the immediately following request.
+
+Run `29187244090` then exposed a timing race in the multi-window native probe:
+`openWindow()` guarantees native creation, not completion of page script loading. The
+probe now waits for an explicit per-window JavaScript readiness sentinel and polls routed
+values to a deadline. The exact stress suite passed locally after the correction with
+`left=left`, `right=right`, and 10,000 IPC round trips with zero mismatches.

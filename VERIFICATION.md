@@ -5,38 +5,38 @@ This file is updated **only from machine-generated reports** (spec sections 18, 
 > **Evidence is not committed** (`.gitignore` excludes `/evidence/`; spec 18: "never
 > commit; rerun to produce"). So the run-ids below are **provenance stamps, not files in
 > the repo**. The durable, per-commit record is **CI**, which regenerates the full suite
-> on Windows/Linux and uploads the evidence as run artifacts. Local macOS run-ids are
+> on Windows/Linux/macOS and uploads the evidence as run artifacts. Local macOS run-ids are
 > reproducible with the commands in each section (they were produced on a dirty feature
 > worktree, so they stamp behavior, not a committed SHA).
 >
-> **Authoritative current state — CI run [29170858813](https://github.com/tuanworlddev/jdesk/actions/runs/29170858813)
-> on commit `4567c5c`: all 8 jobs green** (`windows-x64-native`, `linux-x64-native`,
-> `security-{windows,linux}-x64`, `package-{windows,linux}-x64`, `core-unit-jdk25`,
-> `gradle-plugin-functional`).
+> **Authoritative current state — CI run [29187403208](https://github.com/tuanworlddev/jdesk/actions/runs/29187403208)
+> on remediation commit `cd962ff`: all 11 required jobs plus `release-gate` green.**
+> This covers unit/coverage, Gradle plugin functional tests, and native, security, and
+> package execution on Windows x64, Linux x64, and macOS ARM64.
 
 ## Native smoke
 
 | Platform | Status | Evidence | WebView version |
 | --- | --- | --- | --- |
-| Windows x64 | PASS (28/28) | CI run 29151082737 job `windows-x64-native`, artifact `windows-x64-native-evidence`, provider `windows-webview2`, evidence verifier green | WebView2 Evergreen on Windows Server 2025 |
-| macOS ARM64 | PASS (33/33) | Local real hardware (macOS arm64), runs 1783786098-4d5f87f18232b697 + 1783786141-cbdefa21a3dd2e5c (stress + 2 GiB stream), verifier `VERIFY OK: 2/2` (local build/evidence at generation; not committed — see the evidence note above). Runs are from the 2026-07-11 feature worktree (commit pending); they supersede 1783741626/1783741637 | WKWebView (system WebKit) |
-| Linux x64 | PASS | CI run 29139086672 (branch), provider `linux-webkitgtk`, evidence `1783743433-2f0db9f6f5b9b528`, verifier green | WebKitGTK 4.1 (libwebkit2gtk-4.1) |
+| Windows x64 | PASS | CI run 29187403208 job `windows-x64-native`, artifact `windows-x64-native-evidence`, provider `windows-webview2`, verifier green | WebView2 Evergreen on Windows Server 2025 |
+| macOS ARM64 | PASS | CI run 29187403208 job `macos-arm64-native`, artifact `macos-arm64-native-evidence`, plus local remediation run 1783846302-deb600a45fd34b54; provider `macos-wkwebview`, verifier green | WKWebView (system WebKit) |
+| Linux x64 | PASS | CI run 29187403208 job `linux-x64-native`, artifact `linux-x64-native-evidence`, provider `linux-webkitgtk`, verifier green | WebKitGTK 4.1 (libwebkit2gtk-4.1) |
 
 ## Package smoke
 
 | Platform | Status | Evidence | Package checksum |
 | --- | --- | --- | --- |
-| Windows x64 | PASS | CI run 29151082737 (`package-windows-x64`); jpackage app-image launched without Gradle, category `package`, evidence verifier green | — |
-| macOS ARM64 | PASS | jpackage app-image `JDeskSmoke.app` executed directly; run 1783741694-0ba04a314ebd5e40, category `package`, 21/21, exit 0 | — |
-| Linux x64 | PASS | CI run 29140603452 `package-linux-x64`: app-image launched without Gradle under Xvfb (category `package`) + DEB installer built (`jdesksmoke_1.0.0_amd64.deb`, sha256 2c12b580…, UNSIGNED) | — |
+| Windows x64 | PASS | CI run 29187403208 (`package-windows-x64`); app-image launched without Gradle and MSI created, verifier green | UNSIGNED |
+| macOS ARM64 | PASS | CI run 29187403208 (`package-macos-arm64`); app-image launched without Gradle and DMG created, verifier green | UNSIGNED |
+| Linux x64 | PASS | CI run 29187403208 (`package-linux-x64`); app-image launched without Gradle under Xvfb and DEB created, verifier green | UNSIGNED |
 
 ## Security probes (section 17.6)
 
 | Platform | Status | Evidence |
 | --- | --- | --- |
-| Windows x64 | PASS | CI run 29140030589 job `security-windows-x64`, provider `windows-webview2`, artifact `security-windows-x64-evidence`, verifier green |
-| macOS ARM64 | PASS | Local run 1783786286-75a7f25a7d7a6ff9 (2026-07-11 feature worktree), provider `macos-wkwebview`, 22/22 (local; not committed) |
-| Linux x64 | PASS | CI run 29140030589 job `security-linux-x64`, provider `linux-webkitgtk`, artifact `security-linux-x64-evidence`, verifier green |
+| Windows x64 | PASS | CI run 29187403208 job `security-windows-x64`, provider `windows-webview2`, verifier green |
+| macOS ARM64 | PASS | CI run 29187403208 job `security-macos-arm64`, plus local remediation run 1783846340-4e4d073ef0fe9923; provider `macos-wkwebview`, verifier green |
+| Linux x64 | PASS | CI run 29187403208 job `security-linux-x64`, provider `linux-webkitgtk`, verifier green |
 
 ## Stress / leak (section 17.5)
 
