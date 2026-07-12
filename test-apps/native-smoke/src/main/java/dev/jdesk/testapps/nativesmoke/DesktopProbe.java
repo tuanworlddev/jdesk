@@ -69,7 +69,8 @@ public final class DesktopProbe {
         try {
             awaitReady(runtime);
             result = theme(runtime) + " " + clipboard(runtime) + " " + dockBadge(runtime)
-                    + " " + menu(runtime) + " " + icon(runtime) + " " + tray(runtime);
+                    + " " + menu(runtime) + " " + icon(runtime) + " " + tray(runtime)
+                    + " " + shortcut(runtime);
         } catch (Throwable t) {
             result = "ERROR " + t + " | cause=" + t.getCause();
             t.printStackTrace();
@@ -144,6 +145,16 @@ public final class DesktopProbe {
         Thread.sleep(100);
         handle.close(); // remove
         return "tray=OK(created+setTitle+removed, statusItem self-checked; click NOT auto-tested)";
+    }
+
+    private static String shortcut(JDeskRuntime runtime) throws Exception {
+        // A 4-modifier combo unlikely to collide; a returned Subscription means noErr.
+        dev.jdesk.api.Subscription sub = runtime
+                .registerGlobalShortcut("Cmd+Ctrl+Alt+Shift+K", () -> { })
+                .toCompletableFuture().get(5, TimeUnit.SECONDS);
+        Thread.sleep(50);
+        sub.close(); // unregister
+        return "shortcut=OK(RegisterEventHotKey noErr + unregister; keypress NOT auto-tested)";
     }
 
     /** Minimal, guaranteed-valid RGB PNG via java.util.zip (no java.desktop dependency). */

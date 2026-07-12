@@ -114,6 +114,12 @@ public interface PlatformApplication extends AutoCloseable {
                 "System tray is not supported by this platform adapter");
     }
 
+    /** Registers an OS-wide hotkey (UI thread); returns an unregister action. Default: unsupported. */
+    default Runnable registerGlobalShortcut(String accelerator, Runnable callback) {
+        throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                "Global shortcuts are not supported by this platform adapter");
+    }
+
     /** Blocks running the native event loop until {@link #requestStop()}. */
     void runEventLoop();
 

@@ -377,6 +377,13 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
         return tray;
     }
 
+    @Override
+    public Runnable registerGlobalShortcut(String accelerator, Runnable callback) {
+        requireOpen();
+        dispatcher.assertUiThread();
+        return MacGlobalShortcut.register(accelerator, callback);
+    }
+
     @Override public MessageDialogResult showMessageDialog(MessageDialog dialog) {
         requireOpen(); dispatcher.assertUiThread();
         MemorySegment alert = ObjC.send(ObjC.send(ObjC.cls("NSAlert"), "alloc"), "init");

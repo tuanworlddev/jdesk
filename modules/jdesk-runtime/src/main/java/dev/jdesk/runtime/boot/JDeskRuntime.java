@@ -480,6 +480,17 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
         });
     }
 
+    @Override public CompletionStage<dev.jdesk.api.Subscription> registerGlobalShortcut(
+            String accelerator, Runnable callback) {
+        java.util.Objects.requireNonNull(accelerator, "accelerator");
+        java.util.Objects.requireNonNull(callback, "callback");
+        return platformApp.ui().submit(() -> {
+            Runnable unregister = platformApp.registerGlobalShortcut(accelerator, callback);
+            return (dev.jdesk.api.Subscription) () ->
+                    platformApp.ui().submit(() -> { unregister.run(); return null; });
+        });
+    }
+
     private dev.jdesk.api.TrayHandle trayHandle(dev.jdesk.webview.spi.TrayControl control) {
         return new dev.jdesk.api.TrayHandle() {
             @Override public void setTitle(String title) {

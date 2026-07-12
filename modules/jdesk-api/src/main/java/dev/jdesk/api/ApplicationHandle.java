@@ -59,6 +59,13 @@ public interface ApplicationHandle {
      * returned {@link TrayHandle} to remove it.
      */
     CompletionStage<TrayHandle> createTrayItem(TraySpec spec, Consumer<String> onAction);
+
+    /**
+     * Registers an OS-wide hotkey (e.g. {@code "CmdOrCtrl+Shift+K"}; at least one modifier
+     * required) that runs {@code callback} on the UI thread when pressed, even while the app is
+     * unfocused. Close the returned {@link Subscription} to unregister.
+     */
+    CompletionStage<Subscription> registerGlobalShortcut(String accelerator, Runnable callback);
     CompletionStage<MessageDialogResult> showMessageDialog(MessageDialog dialog);
 
     /** Shows a native, app-modal open dialog. Result paths are empty when cancelled. */
