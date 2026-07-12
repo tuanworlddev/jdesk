@@ -265,6 +265,25 @@ There is **no Windows or Linux environment on the authoring machine**, so everyt
   cross-platform (jpackage handles Windows/Linux file associations natively). `InfoPlistCustomizer`
   + `scheme://` OS routing are macOS-specific; the Windows-registry / Linux-`.desktop` equivalents
   are not implemented.
-- **GAP-004 (desktop integration):** implemented on macOS only. The Windows (Win32/Shell) and
-  Linux (GTK) equivalents are a large, platform-specific surface and several APIs are
-  macOS-shaped (Dock badge, app menu bar); not implemented, stated plainly rather than stubbed.
+- **GAP-004 (desktop integration):** macOS 10/10. Windows/Linux implemented for the cleanly
+  feasible, self-contained APIs; the rest are documented with the exact native mechanism they
+  need rather than shipped as unverifiable struct FFM. Per-API status (all Win/Linux entries
+  compile-only, CI-verified):
+
+  | API | Windows | Linux |
+  | --- | --- | --- |
+  | `systemTheme` | **done** — `AppsUseLightTheme` registry | **done** — GTK theme name |
+  | `readClipboard`/`writeClipboard` | **done** — `RegisterClipboardFormatW` + `GlobalAlloc` | doc — GtkClipboard is target-based/async (text clipboard works) |
+  | `showNotification` | doc — needs `Shell_NotifyIcon` `NOTIFYICONDATAW` (exact offsets) or WinRT toast | **done** — libnotify |
+  | `setApplicationIcon` | doc — normally the packaged `.exe` resource (`jpackage --icon`); runtime needs GDI+ PNG→HICON | doc — `gtk_window_set_default_icon` via GdkPixbuf |
+  | `registerGlobalShortcut` | doc — `RegisterHotKey` + WM_HOTKEY in the message loop | doc — X11 `XGrabKey`; **no Wayland global shortcuts** |
+  | `createTrayItem` | doc — `Shell_NotifyIcon` (struct + WndProc for clicks) | doc — StatusNotifierItem/AppIndicator (DBus) |
+  | `setDockBadge` | doc — no dock; closest is `ITaskbarList3` overlay icon (COM + GDI) | doc — no dock; closest is Unity `LauncherEntry` (DBus) |
+  | `setApplicationMenu` | doc — **no global menu bar** (per-window `HMENU` model) | doc — no global menu bar (per-window / appmenu) |
+  | `showContextMenu` | doc — `TrackPopupMenu` on the HWND | doc — `gtk_menu_popup_at_pointer` |
+  | `onFileDrop` | doc — `DragAcceptFiles` + `WM_DROPFILES` | doc — `gtk_drag_dest_set` + `drag-data-received` |
+
+  "done" = implemented + compile-verified. "doc" = the exact mechanism is recorded above but
+  not implemented, because it is macOS-shaped, needs event-loop/WndProc/GTK-signal integration,
+  or requires exact struct offsets I cannot validate without a Windows/Linux environment —
+  shipping it unverified would be a false "done".
