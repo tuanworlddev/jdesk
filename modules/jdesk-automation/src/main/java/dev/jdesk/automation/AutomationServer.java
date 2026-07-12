@@ -180,6 +180,10 @@ final class AutomationServer implements AutomationSession {
             try {
                 handler.handle(exchange);
             } catch (RequestTooLargeException e) {
+                // The rejected body is deliberately not drained: draining attacker-sized
+                // input would defeat the resource limit. Tell the client this connection
+                // cannot be reused before closing the exchange and its request stream.
+                exchange.getResponseHeaders().set("Connection", "close");
                 sendJson(exchange, 413, Map.of("error", "request body too large"));
             } catch (Exception e) {
                 LOG.log(Level.DEBUG, "Automation request failed", e);

@@ -87,6 +87,7 @@ class AutomationServerTest {
                     .POST(HttpRequest.BodyPublishers.ofString("x".repeat(1024 * 1024 + 1)))
                     .build(), HttpResponse.BodyHandlers.ofString());
             assertThat(oversized.statusCode()).isEqualTo(413);
+            assertThat(oversized.headers().firstValue("Connection")).contains("close");
 
             // /input requires a selector and returns a structured ok/detail. The fake
             // webview yields an empty evaluate result, so the dispatch reports not-ok.
