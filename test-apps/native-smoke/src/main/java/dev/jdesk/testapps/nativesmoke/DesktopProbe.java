@@ -67,7 +67,7 @@ public final class DesktopProbe {
         try {
             awaitReady(runtime);
             result = theme(runtime) + " " + clipboard(runtime) + " " + dockBadge(runtime)
-                    + " " + menu(runtime);
+                    + " " + menu(runtime) + " " + icon(runtime);
         } catch (Throwable t) {
             result = "ERROR " + t + " | cause=" + t.getCause();
             t.printStackTrace();
@@ -120,6 +120,60 @@ public final class DesktopProbe {
         // return proves the menu is installed. The click->listener path is NOT auto-tested.
         runtime.setApplicationMenu(spec, id -> { }).toCompletableFuture().get(5, TimeUnit.SECONDS);
         return "menuInstall=OK(2 top items, arity self-checked; click NOT auto-tested)";
+    }
+
+    private static String icon(JDeskRuntime runtime) throws Exception {
+        byte[] png = makePng(32, 32);
+        // The macOS impl throws unless NSImage decoded the PNG and applicationIconImage took,
+        // so a clean return proves the icon was really set. (Visual is not auto-verified.)
+        runtime.setApplicationIcon(png).toCompletableFuture().get(5, TimeUnit.SECONDS);
+        return "icon=OK(" + png.length + "B PNG set, applicationIconImage self-checked)";
+    }
+
+    /** Minimal, guaranteed-valid RGB PNG via java.util.zip (no java.desktop dependency). */
+    private static byte[] makePng(int width, int height) throws Exception {
+        byte[] raw = new byte[height * (1 + width * 3)];
+        int p = 0;
+        for (int y = 0; y < height; y++) {
+            raw[p++] = 0; // filter: none
+            for (int x = 0; x < width; x++) {
+                raw[p++] = 30;
+                raw[p++] = (byte) 120;
+                raw[p++] = (byte) 220;
+            }
+        }
+        java.io.ByteArrayOutputStream png = new java.io.ByteArrayOutputStream();
+        png.write(new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A});
+        java.io.ByteArrayOutputStream ihdr = new java.io.ByteArrayOutputStream();
+        ihdr.write(intBytes(width));
+        ihdr.write(intBytes(height));
+        ihdr.write(new byte[] {8, 2, 0, 0, 0}); // 8-bit RGB, no interlace
+        writeChunk(png, "IHDR", ihdr.toByteArray());
+        java.util.zip.Deflater deflater = new java.util.zip.Deflater();
+        deflater.setInput(raw);
+        deflater.finish();
+        byte[] compressed = new byte[raw.length + 64];
+        int n = deflater.deflate(compressed);
+        deflater.end();
+        writeChunk(png, "IDAT", java.util.Arrays.copyOf(compressed, n));
+        writeChunk(png, "IEND", new byte[0]);
+        return png.toByteArray();
+    }
+
+    private static byte[] intBytes(int v) {
+        return new byte[] {(byte) (v >>> 24), (byte) (v >>> 16), (byte) (v >>> 8), (byte) v};
+    }
+
+    private static void writeChunk(java.io.ByteArrayOutputStream out, String type, byte[] data)
+            throws Exception {
+        out.write(intBytes(data.length));
+        byte[] typeBytes = type.getBytes(StandardCharsets.US_ASCII);
+        out.write(typeBytes);
+        out.write(data);
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update(typeBytes);
+        crc.update(data);
+        out.write(intBytes((int) crc.getValue()));
     }
 
     private static boolean osReportsDarkMode() {

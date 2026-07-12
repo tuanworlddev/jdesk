@@ -49,6 +49,9 @@ public interface ApplicationHandle {
      * is allowed. On platforms without a global menu bar this is a no-op.
      */
     CompletionStage<Void> setApplicationMenu(MenuSpec menu, Consumer<String> onAction);
+
+    /** Sets the application (Dock/taskbar) icon from PNG bytes. */
+    CompletionStage<Void> setApplicationIcon(byte[] pngData);
     CompletionStage<MessageDialogResult> showMessageDialog(MessageDialog dialog);
 
     /** Shows a native, app-modal open dialog. Result paths are empty when cancelled. */

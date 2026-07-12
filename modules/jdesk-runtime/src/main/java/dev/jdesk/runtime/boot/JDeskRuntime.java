@@ -463,6 +463,11 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
         java.util.Objects.requireNonNull(onAction, "onAction");
         return platformApp.ui().submit(() -> { platformApp.setApplicationMenu(menu, onAction); return null; });
     }
+    @Override public CompletionStage<Void> setApplicationIcon(byte[] pngData) {
+        java.util.Objects.requireNonNull(pngData, "pngData");
+        byte[] copy = pngData.clone();
+        return platformApp.ui().submit(() -> { platformApp.setApplicationIcon(copy); return null; });
+    }
     @Override public CompletionStage<dev.jdesk.api.MessageDialogResult> showMessageDialog(
             dev.jdesk.api.MessageDialog dialog) {
         java.util.Objects.requireNonNull(dialog, "dialog");

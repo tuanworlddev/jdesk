@@ -328,6 +328,43 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
         MacMenu.install(nsApp, menu, onAction);
     }
 
+    @Override
+    public void setApplicationIcon(byte[] pngData) {
+        requireOpen();
+        dispatcher.assertUiThread();
+        java.util.Objects.requireNonNull(pngData, "pngData");
+        MemorySegment pool = ObjC.autoreleasePoolPush();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment buffer = arena.allocate(Math.max(1, pngData.length));
+            if (pngData.length > 0) {
+                MemorySegment.copy(pngData, 0, buffer, JAVA_BYTE, 0, pngData.length);
+            }
+            MemorySegment nsData;
+            try {
+                nsData = (MemorySegment) ObjC.msgSend(FunctionDescriptor.of(
+                        ADDRESS, ADDRESS, ADDRESS, ADDRESS, JAVA_LONG)).invokeExact(
+                        ObjC.cls("NSData"), ObjC.sel("dataWithBytes:length:"),
+                        buffer, (long) pngData.length);
+            } catch (Throwable t) {
+                throw ObjC.rethrow(t);
+            }
+            MemorySegment image = ObjC.send(
+                    ObjC.send(ObjC.cls("NSImage"), "alloc"), "initWithData:", nsData);
+            if (image.equals(MemorySegment.NULL)) {
+                throw new JDeskException(ErrorCode.INVALID_REQUEST,
+                        "Could not decode application icon image (expected PNG bytes)");
+            }
+            ObjC.autorelease(image);
+            ObjC.sendVoid(nsApp, "setApplicationIconImage:", image);
+            // Structural self-check: the icon really took.
+            if (ObjC.send(nsApp, "applicationIconImage").equals(MemorySegment.NULL)) {
+                throw new JDeskException(ErrorCode.ILLEGAL_STATE, "Application icon was not set");
+            }
+        } finally {
+            ObjC.autoreleasePoolPop(pool);
+        }
+    }
+
     @Override public MessageDialogResult showMessageDialog(MessageDialog dialog) {
         requireOpen(); dispatcher.assertUiThread();
         MemorySegment alert = ObjC.send(ObjC.send(ObjC.cls("NSAlert"), "alloc"), "init");

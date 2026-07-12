@@ -101,6 +101,12 @@ public interface PlatformApplication extends AutoCloseable {
             java.util.function.Consumer<String> onAction) {
     }
 
+    /** Sets the application icon from PNG bytes (UI thread). Default: unsupported. */
+    default void setApplicationIcon(byte[] pngData) {
+        throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                "Application icon is not supported by this platform adapter");
+    }
+
     /** Blocks running the native event loop until {@link #requestStop()}. */
     void runEventLoop();
 

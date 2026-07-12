@@ -102,6 +102,7 @@ Available from [`InvocationContext.application()`](#invocationcontext) and
 | `CompletionStage<Void> writeClipboard(String type, byte[] data)` | Writes binary clipboard data under a type/UTI (max 64 MiB). |
 | `CompletionStage<Void> setDockBadge(String label)` | Sets the Dock badge label, or clears it when blank. |
 | `CompletionStage<Void> setApplicationMenu(MenuSpec menu, Consumer<String> onAction)` | Installs the app menu bar; a chosen `MenuItem.Action` reports its id to `onAction`. macOS only; no-op elsewhere. `MenuSpec.of(...)`, `MenuItem.submenu/action/separator`, accelerators like `"CmdOrCtrl+S"`. |
+| `CompletionStage<Void> setApplicationIcon(byte[] pngData)` | Sets the application (Dock) icon from PNG bytes. macOS. |
 | `CompletionStage<MessageDialogResult> showMessageDialog(MessageDialog dialog)` | Shows a native message dialog. |
 | `CompletionStage<FileDialogResult> showOpenDialog(FileDialog.OpenDialog dialog)` | Shows a native, app-modal open dialog (see [Dialogs & printing](../guides/dialogs-and-printing.md)). |
 | `CompletionStage<FileDialogResult> showSaveDialog(FileDialog.SaveDialog dialog)` | Shows a native, app-modal save dialog. |
