@@ -424,7 +424,10 @@ public final class CommandDispatcher implements AutoCloseable {
         if (cause instanceof JDeskException jde) {
             return envelopes.errorResult(id, jde.code(), jde.publicMessage(), jde.details());
         }
-        LOG.log(Level.ERROR, "Command {0} failed internally", id, cause);
+        // Supplier + Throwable overload: passing `cause` as a trailing vararg to
+        // log(Level, String, Object...) would treat it as a format parameter and drop
+        // the stack trace entirely, leaving INTERNAL_ERROR failures undebuggable.
+        LOG.log(Level.ERROR, () -> "Command " + id + " failed internally", cause);
         return envelopes.errorResult(id, ErrorCode.INTERNAL_ERROR, "Command failed");
     }
 

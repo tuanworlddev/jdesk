@@ -620,6 +620,44 @@ class CommandDispatcherTest {
                 .doesNotContain("NullPointerException");
     }
 
+    @Test
+    void internalErrorLogsCauseStackTraceForDebugging() throws Exception {
+        // BUG-001 regression: errorFor() must hand the cause to the Throwable logging
+        // overload. The old log(Level, String, Object...) form treated the Throwable as a
+        // message parameter, so the stack trace never reached the JVM log and command
+        // failures were effectively undebuggable. The redacted public response is checked
+        // above; here we assert the *internal* log keeps the full cause.
+        java.util.logging.Logger jul =
+                java.util.logging.Logger.getLogger("dev.jdesk.runtime.ipc.CommandDispatcher");
+        java.util.concurrent.atomic.AtomicReference<Throwable> logged =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.logging.Handler capture = new java.util.logging.Handler() {
+            @Override public void publish(java.util.logging.LogRecord record) {
+                if (record.getThrown() != null) {
+                    logged.compareAndSet(null, record.getThrown());
+                }
+            }
+            @Override public void flush() {}
+            @Override public void close() {}
+        };
+        java.util.logging.Level previousLevel = jul.getLevel();
+        jul.addHandler(capture);
+        jul.setLevel(java.util.logging.Level.ALL);
+        try {
+            String nonce = handshake(dispatcher, responder);
+            dispatcher.onMessage(invoke("bug1-1", "test.npe", null, nonce), ORIGIN);
+            assertError(awaitResultFor("bug1-1", responder), ErrorCode.INTERNAL_ERROR);
+            assertThat(logged.get())
+                    .as("errorFor must log the cause with its stack trace")
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessage("secret internal detail");
+            assertThat(logged.get().getStackTrace()).isNotEmpty();
+        } finally {
+            jul.removeHandler(capture);
+            jul.setLevel(previousLevel);
+        }
+    }
+
     // ---- close ----
 
     @Test
