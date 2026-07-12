@@ -152,6 +152,17 @@ final class WindowsDesktop {
         }
     }
 
+    /** No dock on Windows; the closest is an ITaskbarList3 overlay icon (COM + GDI). No-op. */
+    static void setDockBadge(String label) {
+    }
+
+    /**
+     * The Windows application icon is the packaged {@code .exe} resource (set at package time
+     * via {@code jpackage --icon}); a runtime PNG→HICON change needs GDI+. Documented no-op.
+     */
+    static void setApplicationIcon(byte[] pngData) {
+    }
+
     private static int registerFormat(String type) {
         try (Arena arena = Arena.ofConfined()) {
             return (int) REGISTER_CLIPBOARD_FORMAT.invokeExact(wide(arena, type));

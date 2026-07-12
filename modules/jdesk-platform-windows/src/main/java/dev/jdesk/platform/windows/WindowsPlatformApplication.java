@@ -90,6 +90,27 @@ final class WindowsPlatformApplication extends NativeHandle implements PlatformA
         requireOpen(); dispatcher.assertUiThread();
         WindowsDesktop.writeClipboard(type, data);
     }
+    @Override public void setDockBadge(String label) {
+        requireOpen(); dispatcher.assertUiThread();
+        WindowsDesktop.setDockBadge(label);
+    }
+    @Override public void setApplicationIcon(byte[] pngData) {
+        requireOpen(); dispatcher.assertUiThread();
+        WindowsDesktop.setApplicationIcon(pngData);
+    }
+    @Override public Runnable registerGlobalShortcut(String accelerator, Runnable callback) {
+        requireOpen(); dispatcher.assertUiThread();
+        return WindowsShellIntegration.registerHotkey(accelerator, callback);
+    }
+    @Override public dev.jdesk.webview.spi.TrayControl createTrayItem(dev.jdesk.api.TraySpec spec,
+            java.util.function.Consumer<String> onAction) {
+        requireOpen(); dispatcher.assertUiThread();
+        return WindowsShellIntegration.createTray(spec, onAction);
+    }
+    @Override public void showNotification(String title, String body) {
+        requireOpen(); dispatcher.assertUiThread();
+        WindowsShellIntegration.notify(title, body);
+    }
 
     @Override public void openExternal(URI uri) {
         requireOpen(); dispatcher.assertUiThread(); Win32.openExternal(uri.toString());

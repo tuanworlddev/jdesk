@@ -247,6 +247,22 @@ final class Gtk {
     static final MethodHandle GTK_CLIPBOARD_SET_TEXT = dl("gtk_clipboard_set_text",FunctionDescriptor.ofVoid(ADDRESS,ADDRESS,JAVA_INT));
     static final MethodHandle GTK_CLIPBOARD_STORE = dl("gtk_clipboard_store",FunctionDescriptor.ofVoid(ADDRESS));
 
+    // ---- binary clipboard (custom target atoms) ----
+    static final MethodHandle GDK_ATOM_INTERN = dl("gdk_atom_intern",
+            FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT));
+    static final MethodHandle GTK_CLIPBOARD_WAIT_FOR_CONTENTS = dl(
+            "gtk_clipboard_wait_for_contents", FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS));
+    static final MethodHandle GTK_CLIPBOARD_SET_WITH_DATA = dl("gtk_clipboard_set_with_data",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
+    static final MethodHandle GTK_SELECTION_DATA_GET_LENGTH = dl("gtk_selection_data_get_length",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS));
+    static final MethodHandle GTK_SELECTION_DATA_GET_DATA = dl("gtk_selection_data_get_data",
+            FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle GTK_SELECTION_DATA_SET = dl("gtk_selection_data_set",
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, JAVA_INT, ADDRESS, JAVA_INT));
+    static final MethodHandle GTK_SELECTION_DATA_FREE = dl("gtk_selection_data_free",
+            FunctionDescriptor.ofVoid(ADDRESS));
+
     // ---- WebKitGTK 4.1 ----
     static final MethodHandle WEBKIT_WEB_CONTEXT_GET_DEFAULT = dl(
             "webkit_web_context_get_default", FunctionDescriptor.of(ADDRESS));

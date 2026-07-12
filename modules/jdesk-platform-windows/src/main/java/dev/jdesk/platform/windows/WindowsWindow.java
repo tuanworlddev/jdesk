@@ -29,6 +29,7 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
 final class WindowsWindow extends NativeHandle implements PlatformWindow {
     private static final Logger LOG = System.getLogger(WindowsWindow.class.getName());
     private static final String WINDOW_CLASS = "JDeskWindow";
+    private static final int WM_DROPFILES = 0x0233;
     private static final AtomicBoolean CLASS_REGISTERED = new AtomicBoolean();
     /** WndProc dispatch table: HWND address -> window. */
     private static final Map<Long, WindowsWindow> WINDOWS = new ConcurrentHashMap<>();
@@ -44,6 +45,7 @@ final class WindowsWindow extends NativeHandle implements PlatformWindow {
     private final List<Runnable> closedHandlers = new CopyOnWriteArrayList<>();
     private final int minWidth;
     private final int minHeight;
+    private volatile java.util.function.Consumer<List<java.nio.file.Path>> fileDropListener;
     private boolean destroyed;
 
     WindowsWindow(WindowsPlatformApplication app, NativeWindowConfig config) {
@@ -151,6 +153,16 @@ final class WindowsWindow extends NativeHandle implements PlatformWindow {
                     }
                     return Win32.defWindowProc(hwnd, msg, wParam, lParam);
                 }
+                case WM_DROPFILES -> {
+                    var listener = window.fileDropListener;
+                    if (listener != null) {
+                        var paths = WindowsFileDrop.extractPaths(wParam); // wParam is the HDROP
+                        if (!paths.isEmpty()) {
+                            listener.accept(paths);
+                        }
+                    }
+                    return 0;
+                }
                 case Win32.WM_DESTROY -> {
                     window.onDestroyed();
                     return 0;
@@ -182,6 +194,26 @@ final class WindowsWindow extends NativeHandle implements PlatformWindow {
     @Override
     public PlatformWebView webView() {
         return webView;
+    }
+
+    @Override
+    public java.util.Optional<String> showContextMenu(dev.jdesk.api.MenuSpec menu) {
+        requireOpen();
+        return WindowsMenu.showContextMenu(hwnd, menu);
+    }
+
+    @Override
+    public Runnable onFileDrop(
+            java.util.function.Consumer<List<java.nio.file.Path>> listener) {
+        requireOpen();
+        this.fileDropListener = listener;
+        WindowsFileDrop.setAccept(hwnd, true);
+        return () -> {
+            this.fileDropListener = null;
+            if (!destroyed) {
+                WindowsFileDrop.setAccept(hwnd, false);
+            }
+        };
     }
 
     @Override

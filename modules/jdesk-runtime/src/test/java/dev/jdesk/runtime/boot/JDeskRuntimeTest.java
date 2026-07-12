@@ -330,6 +330,60 @@ class JDeskRuntimeTest {
             ui.shutdown();
         }
 
+        // --- GAP-004 desktop integration (recording fakes) ---
+        volatile dev.jdesk.api.SystemTheme theme = dev.jdesk.api.SystemTheme.DARK;
+        final java.util.Map<String, byte[]> binaryClipboard =
+                new java.util.concurrent.ConcurrentHashMap<>();
+        volatile String dockBadge;
+        volatile dev.jdesk.api.MenuSpec appMenu;
+        volatile byte[] appIcon;
+        final List<String> notifications = new CopyOnWriteArrayList<>();
+        final List<String> registeredShortcuts = new CopyOnWriteArrayList<>();
+        final AtomicInteger shortcutUnregisters = new AtomicInteger();
+        final List<String> trayEvents = new CopyOnWriteArrayList<>();
+        final AtomicInteger trayRemovals = new AtomicInteger();
+        final List<String> printedFiles = new CopyOnWriteArrayList<>();
+
+        @Override public void printFile(dev.jdesk.api.PrintJob job) {
+            printedFiles.add(job.filePath());
+        }
+
+        @Override public dev.jdesk.api.SystemTheme systemTheme() { return theme; }
+        @Override public byte[] readClipboard(String type) { return binaryClipboard.get(type); }
+        @Override public void writeClipboard(String type, byte[] data) {
+            binaryClipboard.put(type, data.clone());
+        }
+        @Override public void setDockBadge(String label) { this.dockBadge = label; }
+        @Override public void setApplicationMenu(dev.jdesk.api.MenuSpec menu,
+                Consumer<String> onAction) { this.appMenu = menu; }
+        @Override public void setApplicationIcon(byte[] pngData) { this.appIcon = pngData.clone(); }
+        @Override public void showNotification(String title, String body) {
+            notifications.add(title + ":" + body);
+        }
+        @Override public Runnable registerGlobalShortcut(String accelerator, Runnable callback) {
+            registeredShortcuts.add(accelerator);
+            return shortcutUnregisters::incrementAndGet;
+        }
+        @Override public dev.jdesk.webview.spi.TrayControl createTrayItem(
+                dev.jdesk.api.TraySpec spec, Consumer<String> onAction) {
+            trayEvents.add("create:" + spec.title());
+            return new dev.jdesk.webview.spi.TrayControl() {
+                @Override public void setTitle(String title) { trayEvents.add("title:" + title); }
+                @Override public void remove() { trayRemovals.incrementAndGet(); }
+            };
+        }
+        @Override public dev.jdesk.api.SecretStore secrets(String applicationId) {
+            return new dev.jdesk.api.SecretStore() {
+                final java.util.Map<String, String> values =
+                        new java.util.concurrent.ConcurrentHashMap<>();
+                @Override public Optional<String> get(String key) {
+                    return Optional.ofNullable(values.get(key));
+                }
+                @Override public void put(String key, String value) { values.put(key, value); }
+                @Override public void delete(String key) { values.remove(key); }
+            };
+        }
+
         boolean stopWasRequested() {
             return stopRequested.getCount() == 0;
         }
@@ -481,6 +535,93 @@ class JDeskRuntimeTest {
                     .isEqualTo(new WindowBounds(170, 140, 360, 260));
             // Applied after show(): on macOS setting the frame before ordering-in is lost.
             assertThat(window.boundsSetAfterShow).isTrue();
+        }
+    }
+
+    @Test
+    void nativeDesktopIntegrationDelegatesToThePlatform() throws Exception {
+        try (RunningRuntime running = new RunningRuntime(List.of(RunningRuntime.window("main")))) {
+            running.awaitReady();
+            ApplicationHandle app = running.listener.readyHandle;
+            FakeApp fake = running.provider.app;
+
+            // theme + text/binary clipboard (binary is copied in and back out)
+            assertThat(app.systemTheme().toCompletableFuture().get(5, TimeUnit.SECONDS))
+                    .isEqualTo(dev.jdesk.api.SystemTheme.DARK);
+            assertThat(app.readClipboardText().toCompletableFuture().get(5, TimeUnit.SECONDS))
+                    .isEqualTo("clipboard");
+            app.writeClipboardText("hi").toCompletableFuture().get(5, TimeUnit.SECONDS);
+            app.writeClipboard("app/x", new byte[] {1, 2, 3})
+                    .toCompletableFuture().get(5, TimeUnit.SECONDS);
+            Optional<byte[]> roundTrip =
+                    app.readClipboard("app/x").toCompletableFuture().get(5, TimeUnit.SECONDS);
+            assertThat(roundTrip).isPresent();
+            assertThat(roundTrip.get()).containsExactly(1, 2, 3);
+            assertThat(app.readClipboard("absent").toCompletableFuture().get(5, TimeUnit.SECONDS))
+                    .isEmpty();
+
+            // dock badge, application menu, application icon
+            app.setDockBadge("7").toCompletableFuture().get(5, TimeUnit.SECONDS);
+            assertThat(fake.dockBadge).isEqualTo("7");
+            app.setApplicationMenu(dev.jdesk.api.MenuSpec.of(
+                            dev.jdesk.api.MenuItem.action("q", "Quit")), id -> { })
+                    .toCompletableFuture().get(5, TimeUnit.SECONDS);
+            assertThat(fake.appMenu).isNotNull();
+            app.setApplicationIcon(new byte[] {9}).toCompletableFuture().get(5, TimeUnit.SECONDS);
+            assertThat(fake.appIcon).containsExactly(9);
+
+            // desktop notification
+            app.showNotification("Title", "Body").toCompletableFuture().get(5, TimeUnit.SECONDS);
+            assertThat(fake.notifications).containsExactly("Title:Body");
+
+            // global shortcut register then unsubscribe (unsubscribe marshals to the UI thread)
+            Subscription shortcut = app.registerGlobalShortcut("CmdOrCtrl+K", () -> { })
+                    .toCompletableFuture().get(5, TimeUnit.SECONDS);
+            assertThat(fake.registeredShortcuts).containsExactly("CmdOrCtrl+K");
+            shortcut.close();
+            app.systemTheme().toCompletableFuture().get(5, TimeUnit.SECONDS); // drain UI submits
+            assertThat(fake.shortcutUnregisters.get()).isEqualTo(1);
+
+            // tray create + title update + close
+            dev.jdesk.api.TrayHandle tray = app.createTrayItem(dev.jdesk.api.TraySpec.of("Tray",
+                            dev.jdesk.api.MenuSpec.of(dev.jdesk.api.MenuItem.action("q", "Quit"))),
+                            id -> { })
+                    .toCompletableFuture().get(5, TimeUnit.SECONDS);
+            tray.setTitle("Updated");
+            tray.close();
+            app.systemTheme().toCompletableFuture().get(5, TimeUnit.SECONDS); // drain UI submits
+            assertThat(fake.trayEvents).contains("create:Tray", "title:Updated");
+            assertThat(fake.trayRemovals.get()).isEqualTo(1);
+
+            // OS secret store round-trip
+            dev.jdesk.api.SecretStore secrets = app.secrets();
+            secrets.put("token", "abc");
+            assertThat(secrets.get("token")).contains("abc");
+            secrets.delete("token");
+            assertThat(secrets.get("token")).isEmpty();
+        }
+    }
+
+    @Test
+    void printFileValidatesReadabilityThenDelegatesOffThread() throws Exception {
+        java.nio.file.Path doc = java.nio.file.Files.createTempFile("jdesk-print", ".txt");
+        try (RunningRuntime running = new RunningRuntime(List.of(RunningRuntime.window("main")))) {
+            running.awaitReady();
+            ApplicationHandle app = running.listener.readyHandle;
+            FakeApp fake = running.provider.app;
+
+            app.printFile(dev.jdesk.api.PrintJob.of(doc.toString()))
+                    .toCompletableFuture().get(5, TimeUnit.SECONDS);
+            assertThat(fake.printedFiles).containsExactly(doc.toString());
+
+            // A missing/unreadable file is rejected platform-agnostically before any shell-out.
+            assertThatThrownBy(() -> app.printFile(
+                            dev.jdesk.api.PrintJob.of(doc.resolveSibling("gone.txt").toString()))
+                    .toCompletableFuture().get(5, TimeUnit.SECONDS))
+                    .isInstanceOf(java.util.concurrent.ExecutionException.class)
+                    .hasRootCauseInstanceOf(JDeskException.class);
+        } finally {
+            java.nio.file.Files.deleteIfExists(doc);
         }
     }
 

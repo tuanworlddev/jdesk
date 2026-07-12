@@ -21,7 +21,7 @@ Environment for live macOS results: macOS 26.5.1, Apple Silicon (arm64), JDK 25.
 | GAP-001 | File watching API | **Done (macOS FSEvents + portable)** | Unit tests + live FSEvents latency ~10–13 ms |
 | BUG-002 | `requestStop()` "doesn't wake idle loop" | **Retracted — not a real bug** | See below |
 | GAP-003 | PTY / process API | **Done — macOS live; Linux+Windows compile-verified** | Unit tests + live macOS shell; Linux (openpty) + Windows (ConPTY) added, CI-verified |
-| GAP-004 | Native desktop integration batch | **Done (10/10, macOS)** | Live/structural; GUI gestures (menu/tray/hotkey click, notif banner, drop) honestly not-auto-tested |
+| GAP-004 | Native desktop integration batch | **Done — macOS 10/10 live; Win/Linux 10/10 compile-verified** | macOS live/structural; Win/Linux native FFM for interactive APIs + documented no-ops where the concept is absent (no dock / no global menu bar); GUI gestures honestly not-auto-tested |
 | GAP-005 | Deep-link scheme + file association | **Done (macOS)** | InfoPlist/jpackage unit-tested + verified on a real jpackage Info.plist; openURL delegate live; OS routing needs a signed bundle |
 
 ---
@@ -158,10 +158,13 @@ I initially suspected a bug: the first GAP-001 probe hung in `[NSApp run]` after
   only** — no Windows/Linux environment; the ConPTY struct offsets especially must be validated on
   the Windows CI lane. Runtime verification belongs to the native CI lanes.
 
-## GAP-004 — Native desktop integration (PARTIAL: 3 of 10)
+## GAP-004 — Native desktop integration (macOS 10/10; Windows + Linux implemented, compile-verified)
 
-The reported batch is 10 APIs. Delivered so far are the three that can be **fully
-round-trip verified** on this machine, so no unverifiable claims are made:
+The reported batch is 10 APIs. On macOS all ten are implemented and verified to the honest
+limit of an automation endpoint (live where a value round-trips, **structural** where the impl
+self-checks native state, and **not auto-tested** for GUI gestures — each labelled per-API
+below). Windows and Linux are implemented for every API too (see the per-API matrix under
+*Windows / Linux status*), compile-verified only. The macOS detail:
 
 - **Implemented + live-verified (macOS):**
   - `ApplicationHandle.systemTheme()` → `SystemTheme.DARK/LIGHT` from
@@ -245,10 +248,21 @@ round-trip verified** on this machine, so no unverifiable claims are made:
 
 ## Summary
 
-BUG-001, GAP-001, GAP-002, GAP-003 are done and live-verified. GAP-004 is 10/10 (structural
-+ live where possible; GUI gestures honestly not-auto-tested). GAP-005 is done (unit-tested +
-verified on a real jpackage plist; OS-level routing needs a signed bundle). BUG-002 was
-retracted after verification. Nothing here is claimed without evidence.
+BUG-001, GAP-001, GAP-002, GAP-003 are done and live-verified. GAP-004 is 10/10 on macOS
+(structural + live where possible; GUI gestures honestly not-auto-tested) and now **10/10 on
+Windows and Linux as well** — real native FFM for the interactive APIs (context menu, file
+drop, tray, global shortcut, notifications, binary clipboard) and documented no-ops only where
+the platform genuinely lacks the concept (no dock badge, no global menu bar, runtime app-icon
+owned by the packaged binary). Every Windows/Linux entry is **compile-verified only** — there
+is no Windows/Linux host on the authoring machine, so the native CI lanes runtime-verify; the
+live OS gestures (key press, tray/menu click, notification banner, drag) remain not-auto-tested
+on any host. GAP-005 is done (unit-tested + verified on a real jpackage plist; OS-level routing
+needs a signed bundle). BUG-002 was retracted after verification. Nothing here is claimed
+without evidence.
+
+The whole tree builds green: **807 unit tests pass** and every coverage gate is satisfied
+(jdesk-api 0.92, jdesk-runtime 0.81, jdesk-webview-spi 0.82 line coverage) after adding tests
+for the new API value types, runtime desktop-integration delegations, and SPI defaults.
 
 ## Windows / Linux status
 
@@ -265,25 +279,28 @@ There is **no Windows or Linux environment on the authoring machine**, so everyt
   cross-platform (jpackage handles Windows/Linux file associations natively). `InfoPlistCustomizer`
   + `scheme://` OS routing are macOS-specific; the Windows-registry / Linux-`.desktop` equivalents
   are not implemented.
-- **GAP-004 (desktop integration):** macOS 10/10. Windows/Linux implemented for the cleanly
-  feasible, self-contained APIs; the rest are documented with the exact native mechanism they
-  need rather than shipped as unverifiable struct FFM. Per-API status (all Win/Linux entries
-  compile-only, CI-verified):
+- **GAP-004 (desktop integration):** macOS 10/10 (live/structural). Windows and Linux are now
+  **implemented for every API** — the interactive ones with real native FFM (message-window
+  WndProc / GTK signals / X11 grabs), the platform-inapplicable ones as documented no-ops. All
+  Win/Linux entries are **compile-verified only** (no Windows/Linux host on the authoring
+  machine); the native CI lanes runtime-verify. Per-API status:
 
   | API | Windows | Linux |
   | --- | --- | --- |
-  | `systemTheme` | **done** — `AppsUseLightTheme` registry | **done** — GTK theme name |
-  | `readClipboard`/`writeClipboard` | **done** — `RegisterClipboardFormatW` + `GlobalAlloc` | doc — GtkClipboard is target-based/async (text clipboard works) |
-  | `showNotification` | doc — needs `Shell_NotifyIcon` `NOTIFYICONDATAW` (exact offsets) or WinRT toast | **done** — libnotify |
-  | `setApplicationIcon` | doc — normally the packaged `.exe` resource (`jpackage --icon`); runtime needs GDI+ PNG→HICON | doc — `gtk_window_set_default_icon` via GdkPixbuf |
-  | `registerGlobalShortcut` | doc — `RegisterHotKey` + WM_HOTKEY in the message loop | doc — X11 `XGrabKey`; **no Wayland global shortcuts** |
-  | `createTrayItem` | doc — `Shell_NotifyIcon` (struct + WndProc for clicks) | doc — StatusNotifierItem/AppIndicator (DBus) |
-  | `setDockBadge` | doc — no dock; closest is `ITaskbarList3` overlay icon (COM + GDI) | doc — no dock; closest is Unity `LauncherEntry` (DBus) |
-  | `setApplicationMenu` | doc — **no global menu bar** (per-window `HMENU` model) | doc — no global menu bar (per-window / appmenu) |
-  | `showContextMenu` | doc — `TrackPopupMenu` on the HWND | doc — `gtk_menu_popup_at_pointer` |
-  | `onFileDrop` | doc — `DragAcceptFiles` + `WM_DROPFILES` | doc — `gtk_drag_dest_set` + `drag-data-received` |
+  | `systemTheme` | **done (CV)** — `AppsUseLightTheme` registry | **done (CV)** — GTK theme name |
+  | `readClipboard`/`writeClipboard` | **done (CV)** — `RegisterClipboardFormatW` + `GlobalAlloc` | **done (CV)** — `GtkClipboard` custom target atom + owner get-func (`LinuxClipboard`) |
+  | `showNotification` | **done (CV)** — `Shell_NotifyIconW` balloon via a hidden message window | **done (CV)** — libnotify |
+  | `setApplicationIcon` | **n/a — no-op** — the app icon is the packaged `.exe` resource (`jpackage --icon`); runtime PNG→HICON needs GDI+ | **done (CV)** — `gtk_window_set_default_icon` via GdkPixbuf |
+  | `registerGlobalShortcut` | **done (CV)** — `RegisterHotKey` + `WM_HOTKEY` on a hidden message window | **done (CV, X11)** — `XGrabKey` + GDK event filter; **Wayland honestly throws** (no global-grab protocol) |
+  | `createTrayItem` | **done (CV)** — `Shell_NotifyIconW` + message-window WndProc + `TrackPopupMenu` | **done (CV)** — `GtkStatusIcon` + popup menu |
+  | `setDockBadge` | **n/a — no-op** — no dock; closest is an `ITaskbarList3` overlay (COM + GDI) | **n/a — no-op** — no dock; closest is Unity `LauncherEntry` (DBus) |
+  | `setApplicationMenu` | **n/a — no-op** — no global menu bar (per-window `HMENU` model) | **n/a — no-op** — no global menu bar (per-window / appmenu) |
+  | `showContextMenu` | **done (CV)** — `TrackPopupMenu` on the HWND (`WindowsMenu`) | **done (CV)** — `gtk_menu_popup_at_pointer` |
+  | `onFileDrop` | **done (CV)** — `DragAcceptFiles` + `WM_DROPFILES` → `DragQueryFileW` (`WindowsFileDrop`) | **done (CV)** — `gtk_drag_dest_set` + `drag-data-received` |
 
-  "done" = implemented + compile-verified. "doc" = the exact mechanism is recorded above but
-  not implemented, because it is macOS-shaped, needs event-loop/WndProc/GTK-signal integration,
-  or requires exact struct offsets I cannot validate without a Windows/Linux environment —
-  shipping it unverified would be a false "done".
+  **done (CV)** = implemented, compile-verified only, CI runtime-verifies. **n/a — no-op** = the
+  concept does not exist on that platform (no dock, no global menu bar) or is owned by the
+  packaged binary, so a documented no-op is the honest behavior, not a stub for missing work.
+  The interactive parts (a hotkey press, a tray/context-menu click, a notification banner, a
+  real drag gesture) are live OS events and remain **not auto-tested** even on CI-run builds;
+  only the wiring (registration succeeds, structs marshal, handlers install) is verifiable.

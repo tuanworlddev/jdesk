@@ -58,6 +58,32 @@ class PlatformApplicationDefaultsTest {
     }
 
     @Test
+    void nativeIntegrationDefaultsThrowOrNoOpAsDocumented() {
+        // Unsupported desktop-integration calls fail loudly (GAP-004).
+        assertThatThrownBy(BARE::systemTheme).isInstanceOf(JDeskException.class);
+        assertThatThrownBy(() -> BARE.readClipboard("app/x")).isInstanceOf(JDeskException.class);
+        assertThatThrownBy(() -> BARE.writeClipboard("app/x", new byte[] {1}))
+                .isInstanceOf(JDeskException.class);
+        assertThatThrownBy(() -> BARE.setDockBadge("3")).isInstanceOf(JDeskException.class);
+        assertThatThrownBy(() -> BARE.setApplicationIcon(new byte[] {1}))
+                .isInstanceOf(JDeskException.class);
+        assertThatThrownBy(() -> BARE.createTrayItem(
+                dev.jdesk.api.TraySpec.of("t", dev.jdesk.api.MenuSpec.of()), id -> { }))
+                .isInstanceOf(JDeskException.class);
+        assertThatThrownBy(() -> BARE.registerGlobalShortcut("CmdOrCtrl+K", () -> { }))
+                .isInstanceOf(JDeskException.class);
+        assertThatThrownBy(() -> BARE.showNotification("t", "b")).isInstanceOf(JDeskException.class);
+
+        // Menu bar / open-url handler are no-ops on adapters without those concepts.
+        BARE.setApplicationMenu(dev.jdesk.api.MenuSpec.of(), id -> { });
+        BARE.setOpenUrlHandler(uri -> { });
+
+        // File-watch / PTY backends are optional capabilities; absent by default.
+        org.assertj.core.api.Assertions.assertThat(BARE.fileWatchBackend()).isEmpty();
+        org.assertj.core.api.Assertions.assertThat(BARE.ptyBackend()).isEmpty();
+    }
+
+    @Test
     void openDialogFilterListIsAcceptedEmpty() {
         // Sanity on the record path used above.
         assertThatThrownBy(() -> BARE.showOpenDialog(

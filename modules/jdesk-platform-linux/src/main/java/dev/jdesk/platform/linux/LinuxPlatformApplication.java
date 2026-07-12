@@ -425,6 +425,16 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
     @Override public void writeClipboardText(String text){requireOpen();dispatcher.assertUiThread();try(Arena arena=Arena.ofConfined()){
         MemorySegment cb=clipboard();Gtk.GTK_CLIPBOARD_SET_TEXT.invokeExact(cb,arena.allocateFrom(text),-1);Gtk.GTK_CLIPBOARD_STORE.invokeExact(cb);
     }catch(Throwable t){throw Gtk.rethrow(t);}}
+    @Override public byte[] readClipboard(String type){requireOpen();dispatcher.assertUiThread();try{
+        return LinuxClipboard.read(clipboard(), type);
+    }catch(JDeskException e){throw e;}catch(Throwable t){throw Gtk.rethrow(t);}}
+    @Override public void writeClipboard(String type, byte[] data){requireOpen();dispatcher.assertUiThread();try{
+        LinuxClipboard.write(clipboard(), type, data);
+    }catch(JDeskException e){throw e;}catch(Throwable t){throw Gtk.rethrow(t);}}
+    @Override public Runnable registerGlobalShortcut(String accelerator, Runnable callback){
+        requireOpen(); dispatcher.assertUiThread();
+        return LinuxGlobalShortcut.register(accelerator, callback);
+    }
     @Override public MessageDialogResult showMessageDialog(MessageDialog dialog) {
         requireOpen(); dispatcher.assertUiThread();
         try (Arena arena = Arena.ofConfined()) {
