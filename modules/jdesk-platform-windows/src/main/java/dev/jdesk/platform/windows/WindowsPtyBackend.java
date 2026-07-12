@@ -32,15 +32,16 @@ import java.util.function.Consumer;
  * signals, so {@code terminate}/{@code kill}/{@code close} use {@code TerminateProcess} (after
  * {@code ClosePseudoConsole}, which asks the child to exit).
  *
- * <p>Runtime status (Windows 11, {@code WindowsPtyProbe}): opening a child, streamed output,
- * a propagated exit code, resize and kill are all verified. Small structs are passed as packed
- * {@code JAVA_INT}s (COORD) and pointer-bearing buffers are 8-byte aligned. <b>Known open
- * issue:</b> an interactive shell (e.g. bare {@code cmd.exe}) is not fully isolated in the
- * pseudoconsole — the child inherits the parent console and a {@code write()} does not reach
- * its stdin, even though every {@code CreateProcessW} input (valid HPCON, {@code cb} = 112,
- * attribute list, {@code EXTENDED_STARTUPINFO_PRESENT}) is correct and matches the Microsoft
- * ConPTY sample. Running a command and reading its output works; a live REPL does not yet.
- * ConPTY needs Windows 10 1809+.
+ * <p>Runtime status (Windows 11, {@code WindowsPtyProbe} + {@code WindowsPtyBackendTest}):
+ * opening a child, streamed output, a propagated exit code, resize and kill are all verified.
+ * Small structs are passed as packed {@code JAVA_INT}s (COORD) and pointer-bearing buffers are
+ * 8-byte aligned (defensive). <b>Environment note (not a framework bug):</b> in some
+ * environments an interactive shell (bare {@code cmd.exe}) inherits the parent console instead
+ * of attaching to the pseudoconsole, so a {@code write()} does not reach its stdin. This was
+ * traced to an OS-level behavior, not this code: a native C# P/Invoke reproduction of the exact
+ * same ConPTY sequence (CreatePipe / CreatePseudoConsole / UpdateProcThreadAttribute
+ * PSEUDOCONSOLE / CreateProcessW EXTENDED) behaves identically on this Windows 11 22621 host.
+ * Running a command and reading its output works. ConPTY needs Windows 10 1809+.
  */
 final class WindowsPtyBackend implements PtyBackend {
     private static final Logger LOG = System.getLogger(WindowsPtyBackend.class.getName());
@@ -61,11 +62,10 @@ final class WindowsPtyBackend implements PtyBackend {
 
     private static final MethodHandle CREATE_PIPE = down("CreatePipe",
             FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS, JAVA_INT));
-    // COORD is a 4-byte {SHORT X, SHORT Y} struct passed BY VALUE. The x64 ABI passes such a
-    // small struct packed into a single 32-bit register, so we model it as a JAVA_INT
-    // (X = low 16 bits, Y = high 16 bits). Passing it as a by-value struct layout made FFM
-    // misplace the following handle arguments, so CreatePseudoConsole built a broken console
-    // and the child fell back to inheriting the parent console.
+    // COORD is a 4-byte {SHORT X, SHORT Y} struct passed BY VALUE; the x64 ABI packs it into a
+    // single 32-bit register, so we model it as a JAVA_INT (X = low 16 bits, Y = high 16 bits).
+    // Defensive only — small structs by value are an FFM footgun; behavior is identical to the
+    // struct layout (a C# P/Invoke reproduction with a real COORD struct behaves the same).
     private static final MethodHandle CREATE_PSEUDO_CONSOLE = down("CreatePseudoConsole",
             FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, ADDRESS, JAVA_INT, ADDRESS));
     private static final MethodHandle RESIZE_PSEUDO_CONSOLE = down("ResizePseudoConsole",
@@ -142,9 +142,6 @@ final class WindowsPtyBackend implements PtyBackend {
             MemorySegment process = procInfo.get(ADDRESS, 0);
             MemorySegment thread = procInfo.get(ADDRESS, 8);
             closeHandle(thread);
-            // Close the pseudoconsole's ends only AFTER CreateProcessW has attached the child:
-            // closing them earlier (before the child connects) leaves the child's stdin at EOF,
-            // so an interactive shell exits immediately. The pseudoconsole keeps its own dups.
             closeHandle(inputRead);
             closeHandle(outputWrite);
             return new WinPtySession(arena, hpc, process, inputWrite, outputRead, output);
