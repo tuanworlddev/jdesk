@@ -4,7 +4,6 @@ import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
-import static java.lang.foreign.ValueLayout.JAVA_SHORT;
 
 import dev.jdesk.api.PtySpec;
 import dev.jdesk.webview.spi.PtyBackend;
@@ -14,7 +13,6 @@ import java.lang.System.Logger.Level;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
-import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.invoke.MethodHandle;
@@ -34,9 +32,14 @@ import java.util.function.Consumer;
  * signals, so {@code terminate}/{@code kill}/{@code close} use {@code TerminateProcess} (after
  * {@code ClosePseudoConsole}, which asks the child to exit).
  *
- * <p>Honest status: compile-verified only — there is no Windows environment on the authoring
- * machine. The struct offsets ({@code STARTUPINFOEXW}, {@code PROCESS_INFORMATION}) and the
- * ConPTY flow must be validated on the Windows CI lane; treat this as best-effort until then.
+ * <p>Runtime status (Windows 11, {@code WindowsPtyProbe}): opening a child, streamed output,
+ * a propagated exit code, resize and kill are all verified. Small structs are passed as packed
+ * {@code JAVA_INT}s (COORD) and pointer-bearing buffers are 8-byte aligned. <b>Known open
+ * issue:</b> an interactive shell (e.g. bare {@code cmd.exe}) is not fully isolated in the
+ * pseudoconsole — the child inherits the parent console and a {@code write()} does not reach
+ * its stdin, even though every {@code CreateProcessW} input (valid HPCON, {@code cb} = 112,
+ * attribute list, {@code EXTENDED_STARTUPINFO_PRESENT}) is correct and matches the Microsoft
+ * ConPTY sample. Running a command and reading its output works; a live REPL does not yet.
  * ConPTY needs Windows 10 1809+.
  */
 final class WindowsPtyBackend implements PtyBackend {
@@ -55,15 +58,22 @@ final class WindowsPtyBackend implements PtyBackend {
     private static final Linker LINKER = Linker.nativeLinker();
     private static final Arena LIB_ARENA = Arena.ofShared();
     private static final SymbolLookup KERNEL32 = SymbolLookup.libraryLookup("kernel32.dll", LIB_ARENA);
-    private static final MemoryLayout COORD = MemoryLayout.structLayout(
-            JAVA_SHORT.withName("x"), JAVA_SHORT.withName("y"));
 
     private static final MethodHandle CREATE_PIPE = down("CreatePipe",
             FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS, JAVA_INT));
+    // COORD is a 4-byte {SHORT X, SHORT Y} struct passed BY VALUE. The x64 ABI passes such a
+    // small struct packed into a single 32-bit register, so we model it as a JAVA_INT
+    // (X = low 16 bits, Y = high 16 bits). Passing it as a by-value struct layout made FFM
+    // misplace the following handle arguments, so CreatePseudoConsole built a broken console
+    // and the child fell back to inheriting the parent console.
     private static final MethodHandle CREATE_PSEUDO_CONSOLE = down("CreatePseudoConsole",
-            FunctionDescriptor.of(JAVA_INT, COORD, ADDRESS, ADDRESS, JAVA_INT, ADDRESS));
+            FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, ADDRESS, JAVA_INT, ADDRESS));
     private static final MethodHandle RESIZE_PSEUDO_CONSOLE = down("ResizePseudoConsole",
-            FunctionDescriptor.of(JAVA_INT, ADDRESS, COORD));
+            FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT));
+
+    private static int packCoord(int columns, int rows) {
+        return (columns & 0xFFFF) | ((rows & 0xFFFF) << 16);
+    }
     private static final MethodHandle CLOSE_PSEUDO_CONSOLE = down("ClosePseudoConsole",
             FunctionDescriptor.ofVoid(ADDRESS));
     private static final MethodHandle INIT_ATTR_LIST = down("InitializeProcThreadAttributeList",
@@ -106,22 +116,17 @@ final class WindowsPtyBackend implements PtyBackend {
             MemorySegment outputRead = outRead.get(ADDRESS, 0);
             MemorySegment outputWrite = outWrite.get(ADDRESS, 0);
 
-            MemorySegment size = arena.allocate(COORD);
-            size.set(JAVA_SHORT, 0, (short) spec.columns());
-            size.set(JAVA_SHORT, 2, (short) spec.rows());
             MemorySegment hpcOut = arena.allocate(ADDRESS);
-            int hr = (int) CREATE_PSEUDO_CONSOLE.invokeExact(size, inputRead, outputWrite, 0, hpcOut);
+            int hr = (int) CREATE_PSEUDO_CONSOLE.invokeExact(
+                    packCoord(spec.columns(), spec.rows()), inputRead, outputWrite, 0, hpcOut);
             if (hr < 0) {
                 throw new IOException("CreatePseudoConsole failed (HRESULT 0x"
                         + Integer.toHexString(hr) + ")");
             }
             MemorySegment hpc = hpcOut.get(ADDRESS, 0);
-            // The pseudoconsole owns these ends now.
-            closeHandle(inputRead);
-            closeHandle(outputWrite);
 
             MemorySegment startupInfoEx = buildStartupInfoEx(arena, hpc);
-            MemorySegment procInfo = arena.allocate(PROCESS_INFORMATION_SIZE);
+            MemorySegment procInfo = arena.allocate(PROCESS_INFORMATION_SIZE, 8);
             MemorySegment commandLine = wide(arena, commandLine(spec));
             MemorySegment cwd = spec.workingDirectory()
                     .map(p -> wide(arena, p.toAbsolutePath().toString())).orElse(MemorySegment.NULL);
@@ -137,10 +142,11 @@ final class WindowsPtyBackend implements PtyBackend {
             MemorySegment process = procInfo.get(ADDRESS, 0);
             MemorySegment thread = procInfo.get(ADDRESS, 8);
             closeHandle(thread);
-            // inputRead was already closed above (the pseudoconsole owns it); closing it a
-            // second time would be a double-close — the freed handle value can be reused by
-            // CreateProcessW for the process/thread handle, so a second CloseHandle here risks
-            // closing the live process handle out from under the session.
+            // Close the pseudoconsole's ends only AFTER CreateProcessW has attached the child:
+            // closing them earlier (before the child connects) leaves the child's stdin at EOF,
+            // so an interactive shell exits immediately. The pseudoconsole keeps its own dups.
+            closeHandle(inputRead);
+            closeHandle(outputWrite);
             return new WinPtySession(arena, hpc, process, inputWrite, outputRead, output);
         } catch (IOException e) {
             arena.close();
@@ -156,17 +162,18 @@ final class WindowsPtyBackend implements PtyBackend {
         MemorySegment sizeOut = arena.allocate(JAVA_LONG);
         int unused = (int) INIT_ATTR_LIST.invokeExact(MemorySegment.NULL, 1, 0, sizeOut);
         long attrSize = sizeOut.get(JAVA_LONG, 0);
-        MemorySegment attrList = arena.allocate(Math.max(attrSize, 1));
+        // 8-byte alignment: the attribute list and STARTUPINFOEXW hold pointer-sized fields,
+        // and the default 1-byte-aligned allocation can land on an odd address, corrupting the
+        // list so CreateProcessW silently ignores the pseudoconsole attribute (the child then
+        // inherits the parent console instead of attaching to the PTY).
+        MemorySegment attrList = arena.allocate(Math.max(attrSize, 1), 8);
         checkBool((int) INIT_ATTR_LIST.invokeExact(attrList, 1, 0, sizeOut),
                 "InitializeProcThreadAttributeList");
-        // lpValue points at the HPCON value; keep it alive for the call.
-        MemorySegment hpcValue = arena.allocate(ADDRESS);
-        hpcValue.set(ADDRESS, 0, hpc);
         checkBool((int) UPDATE_ATTR.invokeExact(attrList, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
                 hpc, ADDRESS.byteSize(), MemorySegment.NULL, MemorySegment.NULL),
                 "UpdateProcThreadAttribute");
 
-        MemorySegment startupInfoEx = arena.allocate(STARTUPINFOEXW_SIZE);
+        MemorySegment startupInfoEx = arena.allocate(STARTUPINFOEXW_SIZE, 8);
         startupInfoEx.set(JAVA_INT, 0, (int) STARTUPINFOEXW_SIZE);  // STARTUPINFOW.cb
         startupInfoEx.set(ADDRESS, STARTUPINFOW_SIZE, attrList);    // .lpAttributeList
         return startupInfoEx;
@@ -301,11 +308,8 @@ final class WindowsPtyBackend implements PtyBackend {
             if (exited.get()) {
                 return;
             }
-            try (Arena io = Arena.ofConfined()) {
-                MemorySegment size = io.allocate(COORD);
-                size.set(JAVA_SHORT, 0, (short) columns);
-                size.set(JAVA_SHORT, 2, (short) rows);
-                int unused = (int) RESIZE_PSEUDO_CONSOLE.invokeExact(hpc, size);
+            try {
+                int unused = (int) RESIZE_PSEUDO_CONSOLE.invokeExact(hpc, packCoord(columns, rows));
             } catch (Throwable t) {
                 throw new IllegalStateException("ConPTY resize failed", t);
             }

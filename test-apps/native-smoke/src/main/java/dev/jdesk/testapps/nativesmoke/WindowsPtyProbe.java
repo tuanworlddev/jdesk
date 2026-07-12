@@ -152,12 +152,6 @@ public final class WindowsPtyProbe {
                 + " exit=" + exitStr;
     }
 
-    /**
-     * Interactive input to a long-lived shell. Honest status: {@code cmd.exe} launched in the
-     * pseudoconsole currently receives EOF on stdin and exits after its banner, so a write
-     * never reaches it. Reported as a note (not pass/fail) — a known ConPTY input-wiring gap
-     * to investigate; output-read/exit/resize/kill above are confirmed working.
-     */
     private static String interactiveNote(JDeskRuntime runtime) throws InterruptedException {
         Live live = new Live(runtime, List.of("cmd.exe"), 80, 24);
         Thread.sleep(600);

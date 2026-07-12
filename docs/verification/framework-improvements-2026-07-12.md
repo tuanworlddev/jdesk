@@ -81,10 +81,16 @@ First runtime exercise of `WindowsPtyBackend` (previously compile-verified only)
   - *Output rendering is timing-dependent.* The reader delivers real bytes from a live child
     (69 B from a `cmd` banner, 135 B from `ping` observed during debugging), but conhost
     renders asynchronously, so asserting exact text/bytes in a bounded window is flaky.
-  - *Interactive input to a long-lived shell.* `cmd.exe` launched in the pseudoconsole
-    receives EOF on stdin and exits after its banner, so a subsequent `write()` never reaches
-    it. This is a real ConPTY input-wiring gap to investigate; it was reported as a note, not
-    fixed, to avoid shipping an unvalidated native change.
+  - *Interactive input to a long-lived shell — deep-dived, still open.* Running the probe in a
+    real console shows `cmd.exe`/`powershell.exe` stay alive (the earlier "exits immediately"
+    was a gradle-no-console artifact), but the child **inherits the parent console instead of
+    attaching to the pseudoconsole**, so a `write()` never reaches its stdin. Ruled out:
+    handle-close ordering, buffer alignment, and COORD struct-by-value marshaling (now passed
+    as a packed `JAVA_INT`, and buffers are 8-byte aligned). Instrumentation confirmed every
+    `CreateProcessW` input is correct (valid HPCON, `cb`=112, attribute list set,
+    `EXTENDED_STARTUPINFO_PRESENT`) and matches the Microsoft ConPTY sample, yet the attribute
+    is silently ignored. Left as a documented open issue — no speculative native change shipped.
+    Hardening that *was* kept (packed COORD, 8-byte alignment) passes all verified paths.
 
 Run it: `./gradlew :test-apps:native-smoke:run -PjdeskPlatform=windows
 -PjdeskWebView2Loader=<loader> -PjdeskMain=dev.jdesk.testapps.nativesmoke.WindowsPtyProbe`.
