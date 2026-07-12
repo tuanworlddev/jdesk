@@ -18,14 +18,19 @@ class CupsPrintingTest {
 
     @Test
     void buildCommandMapsAllOptionsDeterministically() {
+        // buildCommand absolutizes the file argument for lp; compute the expected path the
+        // same way so the option-mapping assertions stay platform-independent (on Windows an
+        // absolutized "/tmp/a.pdf" gains a drive and backslashes).
+        String fileA = Path.of("/tmp/a.pdf").toAbsolutePath().toString();
+        String fileB = Path.of("/tmp/b.pdf").toAbsolutePath().toString();
         // Full option set — covers every branch without spawning lp (portable).
         assertThat(CupsPrinting.buildCommand(PrintJob.of("/tmp/a.pdf")
                 .toPrinter("Zebra").withCopies(3).withPaperSize("Custom.4x6in")))
                 .containsSubsequence("lp", "-d", "Zebra", "-n", "3", "-o",
-                        "media=Custom.4x6in", "/tmp/a.pdf");
+                        "media=Custom.4x6in", fileA);
         // Defaults — no printer, single copy, no media: just lp + file.
         assertThat(CupsPrinting.buildCommand(PrintJob.of("/tmp/b.pdf")))
-                .containsExactly("lp", "/tmp/b.pdf");
+                .containsExactly("lp", fileB);
     }
 
     @Test

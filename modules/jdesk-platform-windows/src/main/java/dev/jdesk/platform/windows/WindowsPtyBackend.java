@@ -137,7 +137,10 @@ final class WindowsPtyBackend implements PtyBackend {
             MemorySegment process = procInfo.get(ADDRESS, 0);
             MemorySegment thread = procInfo.get(ADDRESS, 8);
             closeHandle(thread);
-            closeHandle(inputRead); // idempotent-safe; already closed above
+            // inputRead was already closed above (the pseudoconsole owns it); closing it a
+            // second time would be a double-close — the freed handle value can be reused by
+            // CreateProcessW for the process/thread handle, so a second CloseHandle here risks
+            // closing the live process handle out from under the session.
             return new WinPtySession(arena, hpc, process, inputWrite, outputRead, output);
         } catch (IOException e) {
             arena.close();

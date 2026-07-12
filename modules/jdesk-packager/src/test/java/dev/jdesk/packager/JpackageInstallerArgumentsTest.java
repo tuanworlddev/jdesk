@@ -18,11 +18,13 @@ class JpackageInstallerArgumentsTest {
                 .appVersion("1.2.3")
                 .build()
                 .toArguments();
+        // jpackage receives platform-native paths (backslashes on Windows), so compare
+        // against Path.toString() rather than hard-coded forward slashes.
         assertThat(args).containsExactly(
                 "--type", "dmg",
                 "--name", "Example",
-                "--app-image", "build/jdesk/package/Example.app",
-                "--dest", "build/jdesk/installer",
+                "--app-image", Path.of("build/jdesk/package/Example.app").toString(),
+                "--dest", Path.of("build/jdesk/installer").toString(),
                 "--app-version", "1.2.3");
     }
 

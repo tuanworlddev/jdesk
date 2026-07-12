@@ -12,3 +12,8 @@ local.properties
 
 # Generated native/package evidence (spec 18) — never commit; rerun to produce
 /evidence/
+
+# Locally fetched WebView2 SDK/loader for Windows native runs (see CI: fetched per-run)
+.wv2sdk/
+wv2sdk/
+wv2.zip

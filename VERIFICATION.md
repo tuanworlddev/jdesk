@@ -14,6 +14,17 @@ This file is updated **only from machine-generated reports** (spec sections 18, 
 > This covers unit/coverage, Gradle plugin functional tests, and native, security, and
 > package execution on Windows x64, Linux x64, and macOS ARM64.
 
+**Local Windows verification — 2026-07-12 (real Windows 11 x64, WebView2 150.0.4078.65).**
+First run of the suite on a real Windows machine: `./gradlew check --continue` passed (844
+tests, 0 failures, all coverage gates green), the real-WebView2 native smoke passed 47/47
+(run `1783830500-8f2ac267604ddc64`, verifier `problems=0`), and the real-WebView2 security
+probe passed 22/22 (run `1783830661-3046008384e44aff`, verifier `problems=0`). The checkout
+surfaced five cross-platform defects that failed `check` on Windows while passing on the
+Linux/macOS CI lanes — a missing `.gitattributes` (CRLF rewrote LF golden/API-baseline
+fixtures), two POSIX-path test assertions, a Windows-only JaCoCo dip from the `lp`-only
+`CupsPrinting` branch, and a `WindowsPtyBackend` double-close — all fixed. See the
+[Windows local verification report](docs/verification/windows-local-2026-07-12.md).
+
 Enterprise-hardening commit `c27b9b8` is additionally verified locally on macOS ARM64:
 clean `check`, TypeScript tests, generated-consumer jlink/jpackage/native smoke, mounted
 DMG, 122/122 package checksums, CycloneDX 1.7 parsing, and native stress evidence
