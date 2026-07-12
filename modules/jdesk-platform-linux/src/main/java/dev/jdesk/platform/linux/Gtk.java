@@ -75,6 +75,13 @@ final class Gtk {
     static final int CAIRO_STATUS_WRITE_ERROR = 11;
 
     // ---- GLib ----
+    static final MethodHandle GTK_SETTINGS_GET_DEFAULT = dl("gtk_settings_get_default",
+            FunctionDescriptor.of(ADDRESS));
+    // void g_object_get(gpointer, const gchar* first_property, ..., NULL) — variadic.
+    static final MethodHandle G_OBJECT_GET = LINKER.downcallHandle(
+            LOOKUP.findOrThrow("g_object_get"),
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS, ADDRESS),
+            Linker.Option.firstVariadicArg(1));
     static final MethodHandle G_FREE = dl("g_free",
             FunctionDescriptor.ofVoid(ADDRESS));
     static final MethodHandle G_MAIN_CONTEXT_INVOKE_FULL = dl("g_main_context_invoke_full",

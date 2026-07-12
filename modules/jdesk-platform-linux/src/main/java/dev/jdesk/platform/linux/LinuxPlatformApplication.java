@@ -377,6 +377,15 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
         return java.util.Optional.of(backend);
     }
 
+    @Override public dev.jdesk.api.SystemTheme systemTheme() {
+        requireOpen(); dispatcher.assertUiThread();
+        return LinuxDesktop.systemTheme();
+    }
+    @Override public void showNotification(String title, String body) {
+        requireOpen(); dispatcher.assertUiThread();
+        LinuxDesktop.showNotification(title, body);
+    }
+
     @Override public void openExternal(URI uri) {
         requireOpen(); dispatcher.assertUiThread();
         try (Arena arena = Arena.ofConfined()) {
