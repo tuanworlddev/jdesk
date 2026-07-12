@@ -5,8 +5,10 @@ Commit audited: `81b9f1c796f91cf7bc5f89d8ec966a9b007fe72c` with a dirty worktree
 ## Resolved since the audit (2026-07-11, verified live on macOS ARM64)
 
 Evidence: native-smoke runs `1783786098-4d5f87f18232b697` + `1783786141-cbdefa21a3dd2e5c`,
-security-probe run `1783786286-75a7f25a7d7a6ff9` (archived under `evidence/`), plus the
-"Feature evidence — 2026-07-11" section of `VERIFICATION.md`. Windows/Linux share the code
+security-probe run `1783786286-75a7f25a7d7a6ff9` (local `build/evidence/`, **not committed** —
+`.gitignore` excludes `/evidence/`; the run-ids are provenance stamps, not files in the repo,
+and the durable per-commit record is CI — see the note at the top of `VERIFICATION.md`), plus
+the "Feature evidence — 2026-07-11" section of `VERIFICATION.md`. Windows/Linux share the code
 paths but remain compile-verified only until runs on those operating systems.
 
 - **P0.1 (partially)**: named `vanilla`/`react`/`vue`/`svelte` templates and a `maven` template exist in `TemplateCatalog`; `basic`/`structured` are now zero-Node (no bundler, no package.json).
@@ -30,7 +32,7 @@ paths but remain compile-verified only until runs on those operating systems.
 - **Handler thread-model docs fixed**: handlers always ran on virtual threads, but the docs' own example pushed work onto the common ForkJoinPool via `supplyAsync` — the guide now says "just block" and shows the correct concurrent-fetch pattern.
 - **Framework templates now use jdesk-client + generated TS bindings** (react/vanilla/vue/svelte) instead of a hand-rolled ~80-line bridge; `ui/src/generated/` gitignored; dev-loop state save/restore pattern documented.
 
-### Batch 3 (2026-07-12, runs 1783793227/1783793252)
+### Batch 3 (2026-07-12; macOS native-smoke run 1783794305 + CI run 29162068874)
 
 - **Native file dialogs** (`ApplicationHandle.showOpenDialog`/`showSaveDialog`): app-modal, follow the app appearance — replaces `osascript choose file`. macOS NSOpenPanel/NSSavePanel live-verified (save round trip returns the typed path); Windows comdlg32 and Linux GtkFileChooser implemented, compile-verified.
 - **Printing**: `WindowHandle.print()` opens the OS print dialog for the page (macOS NSPrintOperation live; Linux webkit_print_operation compile; Windows WebView2 print UI is a documented gap). `ApplicationHandle.printFile(PrintJob)` sends a PDF straight to a printer with printer/paper/copies (macOS+Linux CUPS `lp`, live-verified reaching the spooler; Windows ShellExecute print, no copies/paper).

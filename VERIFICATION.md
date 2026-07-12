@@ -2,12 +2,24 @@
 
 This file is updated **only from machine-generated reports** (spec sections 18, 23). A cell may claim a pass only if evidence exists under `build/evidence/<run-id>/` (local) or as a CI artifact, produced by the same commit being tested. Statuses: `NOT STARTED`, `IN PROGRESS`, `PASS (evidence: <run-id or CI link>)`, `FAIL`, `UNVERIFIED`, `BLOCKED`.
 
+> **Evidence is not committed** (`.gitignore` excludes `/evidence/`; spec 18: "never
+> commit; rerun to produce"). So the run-ids below are **provenance stamps, not files in
+> the repo**. The durable, per-commit record is **CI**, which regenerates the full suite
+> on Windows/Linux and uploads the evidence as run artifacts. Local macOS run-ids are
+> reproducible with the commands in each section (they were produced on a dirty feature
+> worktree, so they stamp behavior, not a committed SHA).
+>
+> **Authoritative current state — CI run [29170858813](https://github.com/tuanworlddev/jdesk/actions/runs/29170858813)
+> on commit `4567c5c`: all 8 jobs green** (`windows-x64-native`, `linux-x64-native`,
+> `security-{windows,linux}-x64`, `package-{windows,linux}-x64`, `core-unit-jdk25`,
+> `gradle-plugin-functional`).
+
 ## Native smoke
 
 | Platform | Status | Evidence | WebView version |
 | --- | --- | --- | --- |
 | Windows x64 | PASS (28/28) | CI run 29151082737 job `windows-x64-native`, artifact `windows-x64-native-evidence`, provider `windows-webview2`, evidence verifier green | WebView2 Evergreen on Windows Server 2025 |
-| macOS ARM64 | PASS (33/33) | Local real hardware (macOS arm64), runs 1783786098-4d5f87f18232b697 + 1783786141-cbdefa21a3dd2e5c (stress + 2 GiB stream), verifier `VERIFY OK: 2/2`, archived under `evidence/native-smoke/`. Runs are from the 2026-07-11 feature worktree (commit pending); they supersede 1783741626/1783741637 | WKWebView (system WebKit) |
+| macOS ARM64 | PASS (33/33) | Local real hardware (macOS arm64), runs 1783786098-4d5f87f18232b697 + 1783786141-cbdefa21a3dd2e5c (stress + 2 GiB stream), verifier `VERIFY OK: 2/2` (local build/evidence at generation; not committed — see the evidence note above). Runs are from the 2026-07-11 feature worktree (commit pending); they supersede 1783741626/1783741637 | WKWebView (system WebKit) |
 | Linux x64 | PASS | CI run 29139086672 (branch), provider `linux-webkitgtk`, evidence `1783743433-2f0db9f6f5b9b528`, verifier green | WebKitGTK 4.1 (libwebkit2gtk-4.1) |
 
 ## Package smoke
@@ -23,7 +35,7 @@ This file is updated **only from machine-generated reports** (spec sections 18, 
 | Platform | Status | Evidence |
 | --- | --- | --- |
 | Windows x64 | PASS | CI run 29140030589 job `security-windows-x64`, provider `windows-webview2`, artifact `security-windows-x64-evidence`, verifier green |
-| macOS ARM64 | PASS | Local run 1783786286-75a7f25a7d7a6ff9 (2026-07-11 feature worktree), provider `macos-wkwebview`, 22/22, archived under `evidence/security-probe/` |
+| macOS ARM64 | PASS | Local run 1783786286-75a7f25a7d7a6ff9 (2026-07-11 feature worktree), provider `macos-wkwebview`, 22/22 (local; not committed) |
 | Linux x64 | PASS | CI run 29140030589 job `security-linux-x64`, provider `linux-webkitgtk`, artifact `security-linux-x64-evidence`, verifier green |
 
 ## Stress / leak (section 17.5)
@@ -60,8 +72,10 @@ buffer the requested window fully (bounded by the Range slice now, but not chunk
 ## Feature evidence — 2026-07-11 batch 2 (macOS ARM64, local real hardware)
 
 Runs 1783791506-d5c10bf0667a4010 (41/41) and 1783791575-09e1e6d35ee29915 (stress+stream,
-43/43), security-probe 1783788948-01ce5170829275d3 (22/22); verifier green; archived
-under `evidence/`. The same native-smoke suite also runs on the Windows and Linux CI
+43/43), security-probe 1783788948-01ce5170829275d3 (22/22); verifier green; local
+build/evidence (not committed — see the evidence note above; the native-smoke run-ids are
+provenance stamps that have since been pruned, the security-probe run is still on disk).
+The same native-smoke suite also runs on the Windows and Linux CI
 lanes (real WebView2 / WebKitGTK): the SecretStore probe exercises DPAPI on Windows and a
 provisioned gnome-keyring on Linux, and the async-serving assertion is macOS-only (both
 other platforms still serve scheme requests synchronously — documented in
@@ -89,7 +103,7 @@ paths are therefore verified on all three platforms — no longer compile-only.
 ## Feature evidence — 2026-07-12 batch 3 (macOS ARM64, local real hardware)
 
 Runs 1783794868-9b2701ced93788b0 (45/45) and 1783794305-fa5b6399e5527fdd (stress+stream,
-47/47); verifier green; archived under `evidence/`. Interactive native panels were driven
+47/47); verifier green; local build/evidence (not committed — see the evidence note above). Interactive native panels were driven
 by a `System Events` driver against a packaged `.app` (guarded to only send keystrokes
 when JDeskSmoke is frontmost, so nothing leaks to other apps).
 
@@ -111,7 +125,7 @@ headless CI). `WindowHandle.print()` is macOS (NSPrintOperation, live) + Linux
 ## Feature evidence — 2026-07-12 batch 4 (DX from the Dragon7 friction report)
 
 Runs 1783809395-75b906d28a0f9f3e (46/46) and 1783809410-0e37e6d9c1cedfbe (stress+stream,
-48/48); verifier green; archived under `evidence/`. These address the DX/API findings from
+48/48); verifier green; local build/evidence (not committed — see the evidence note above). These address the DX/API findings from
 building a real-time multiplayer game on JDesk.
 
 | Capability | Status (macOS) | Evidence |
