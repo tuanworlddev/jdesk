@@ -170,6 +170,12 @@ Remaining before a signed v1 release (honestly incomplete, not claimed done): si
   is an optional module excluded from production runtime images; production warnings are
   errors. Local real-native/package evidence is recorded in
   `docs/verification/remediation-2026-07-12.md`.
+- [x] Enterprise readiness hardening (2026-07-12): public API baseline, production
+  updater coordinator and rollback contract, managed policy, bounded support bundle,
+  CycloneDX 1.7 dependency inventory, security automation, installer extraction gates,
+  and enforced performance budgets. Local current-commit verification is recorded in
+  `docs/verification/enterprise-readiness-2026-07-12.md`; the new cross-platform CI run is
+  pending GitHub email verification for the repository owner account.
 
 ## Known deviations / notes
 

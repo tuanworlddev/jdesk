@@ -14,6 +14,14 @@ This file is updated **only from machine-generated reports** (spec sections 18, 
 > This covers unit/coverage, Gradle plugin functional tests, and native, security, and
 > package execution on Windows x64, Linux x64, and macOS ARM64.
 
+Enterprise-hardening commit `c27b9b8` is additionally verified locally on macOS ARM64:
+clean `check`, TypeScript tests, generated-consumer jlink/jpackage/native smoke, mounted
+DMG, 122/122 package checksums, CycloneDX 1.7 parsing, and native stress evidence
+`1783851900-c0b1eb7b955c39e1` (startup 251 ms, 10,000 IPC with 0 mismatch, p95 7 ms,
+p99 9 ms, RSS 293,568,512 bytes). Its new cross-platform CI/CodeQL runs remain pending
+because GitHub rejected the push until the owner account verifies its email. See the
+[enterprise readiness report](docs/verification/enterprise-readiness-2026-07-12.md).
+
 ## Native smoke
 
 | Platform | Status | Evidence | WebView version |
