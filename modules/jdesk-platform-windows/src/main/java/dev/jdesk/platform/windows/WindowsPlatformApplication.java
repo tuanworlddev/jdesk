@@ -78,6 +78,19 @@ final class WindowsPlatformApplication extends NativeHandle implements PlatformA
         return java.util.Optional.of(backend);
     }
 
+    @Override public dev.jdesk.api.SystemTheme systemTheme() {
+        requireOpen(); dispatcher.assertUiThread();
+        return WindowsDesktop.systemTheme();
+    }
+    @Override public byte[] readClipboard(String type) {
+        requireOpen(); dispatcher.assertUiThread();
+        return WindowsDesktop.readClipboard(type);
+    }
+    @Override public void writeClipboard(String type, byte[] data) {
+        requireOpen(); dispatcher.assertUiThread();
+        WindowsDesktop.writeClipboard(type, data);
+    }
+
     @Override public void openExternal(URI uri) {
         requireOpen(); dispatcher.assertUiThread(); Win32.openExternal(uri.toString());
     }
