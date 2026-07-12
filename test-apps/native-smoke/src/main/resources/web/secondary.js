@@ -5,3 +5,4 @@ document.addEventListener("jdesk-message", function (event) {
     window.__routeTarget = message.payload.target;
   }
 });
+window.__routeReady = "ready";

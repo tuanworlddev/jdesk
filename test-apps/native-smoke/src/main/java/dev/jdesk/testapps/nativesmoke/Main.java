@@ -757,14 +757,16 @@ public final class Main {
                         runtime.openWindow(WindowConfig.builder().id(right.value()).title("right")
                                 .size(320, 240).entry("jdesk://app/index-secondary.html").build())
                                 .toCompletableFuture().get(10, TimeUnit.SECONDS);
-                        Thread.sleep(300);
+                        awaitJavascriptValue(runtime, left,
+                                "window.__routeReady || ''", "ready", Duration.ofSeconds(10));
+                        awaitJavascriptValue(runtime, right,
+                                "window.__routeReady || ''", "ready", Duration.ofSeconds(10));
                         runtime.emitter(left).emit("route.probe", Map.of("target", "left"));
                         runtime.emitter(right).emit("route.probe", Map.of("target", "right"));
-                        Thread.sleep(200);
-                        String leftValue = runtime.evaluate(left, "window.__routeTarget || ''")
-                                .toCompletableFuture().get(5, TimeUnit.SECONDS);
-                        String rightValue = runtime.evaluate(right, "window.__routeTarget || ''")
-                                .toCompletableFuture().get(5, TimeUnit.SECONDS);
+                        String leftValue = awaitJavascriptValue(runtime, left,
+                                "window.__routeTarget || ''", "left", Duration.ofSeconds(5));
+                        String rightValue = awaitJavascriptValue(runtime, right,
+                                "window.__routeTarget || ''", "right", Duration.ofSeconds(5));
                         return new RoutingResponse("left".equals(leftValue)
                                 && "right".equals(rightValue), leftValue, rightValue);
                     } catch (Exception e) {
@@ -813,6 +815,21 @@ public final class Main {
                     reportLatch.countDown();
                     return CompletableFuture.completedFuture(new Ack(true));
                 }));
+    }
+
+    private static String awaitJavascriptValue(JDeskRuntime runtime, WindowId windowId,
+            String script, String expected, Duration timeout) throws Exception {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        String value = "";
+        do {
+            value = runtime.evaluate(windowId, script)
+                    .toCompletableFuture().get(2, TimeUnit.SECONDS);
+            if (expected.equals(value)) {
+                return value;
+            }
+            Thread.sleep(50);
+        } while (System.nanoTime() < deadline);
+        return value;
     }
 
     private static PlatformProvider loadProvider() {
