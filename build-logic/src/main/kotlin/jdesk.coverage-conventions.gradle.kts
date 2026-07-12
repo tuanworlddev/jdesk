@@ -19,9 +19,14 @@ tasks.named<JacocoReport>("jacocoTestReport") {
 
 tasks.named<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
     dependsOn(tasks.named("test"))
-    classDirectories.setFrom(classDirectories.files.map {
-        fileTree(it) { exclude("module-info.class") }
-    })
+    // Use the compiled class dirs directly (built-by compileJava) via asFileTree so the
+    // task dependency is preserved. Reading classDirectories.files eagerly and wrapping the
+    // result in a plain fileTree strips that dependency (Gradle 9 validation error).
+    classDirectories.setFrom(
+        sourceSets["main"].output.classesDirs.asFileTree.matching {
+            exclude("module-info.class")
+        }
+    )
     violationRules {
         rule {
             limit {
