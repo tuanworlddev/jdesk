@@ -110,7 +110,7 @@ final class WindowsFileDialog {
     }
 
     /** comdlg32 filter: pairs of NUL-terminated "label" + "*.ext;*.ext", double-NUL end. */
-    private static MemorySegment buildFilter(Arena arena, List<FileDialog.Filter> filters) {
+    static MemorySegment buildFilter(Arena arena, List<FileDialog.Filter> filters) {
         if (filters.isEmpty()) {
             return null;
         }
@@ -153,7 +153,7 @@ final class WindowsFileDialog {
      * (Explorer style): directory, NUL, then file names each NUL-terminated, double-NUL
      * end; a lone path (no second segment) means one file was chosen.
      */
-    private static List<String> readSelection(MemorySegment buffer, boolean multi) {
+    static List<String> readSelection(MemorySegment buffer, boolean multi) {
         List<String> segments = new ArrayList<>();
         StringBuilder current = new StringBuilder();
         for (long i = 0; i < MAX_PATH_CHARS; i++) {
