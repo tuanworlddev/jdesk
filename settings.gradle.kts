@@ -22,6 +22,7 @@ include(
     ":modules:jdesk-api",
     ":modules:jdesk-bom",
     ":modules:jdesk-runtime",
+    ":modules:jdesk-automation",
     ":modules:jdesk-webview-spi",
     ":modules:jdesk-native-ffm",
     ":modules:jdesk-platform-windows",

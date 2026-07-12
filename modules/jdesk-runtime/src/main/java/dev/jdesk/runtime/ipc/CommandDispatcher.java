@@ -22,6 +22,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -47,10 +50,12 @@ public final class CommandDispatcher implements AutoCloseable {
     private final Function<String, CompletionStage<Void>> responder;
     private final InvocationTracker tracker;
     private final ExecutorService commandExecutor;
+    private final ThreadPoolExecutor ingressExecutor;
     private final ScheduledExecutorService scheduler;
     private final Duration navigationGrace;
     private final EventOverflowPolicy overflowPolicy;
     private final ApplicationHandle applicationHandle;
+    private final Semaphore frontendEventPermits;
 
     private volatile NavigationSession session;
     private volatile boolean helloCompleted;
@@ -123,12 +128,17 @@ public final class CommandDispatcher implements AutoCloseable {
         this.navigationGrace = navigationGrace;
         this.tracker = new InvocationTracker(limits.maxInFlightPerWindow());
         this.commandExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        this.ingressExecutor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(limits.maxQueuedEventsPerWindow()),
+                Thread.ofVirtual().name("jdesk-ingress-" + windowId + "-", 0).factory(),
+                new ThreadPoolExecutor.AbortPolicy());
         this.scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "jdesk-timeout-" + windowId);
             thread.setDaemon(true);
             return thread;
         });
         this.overflowPolicy = overflowPolicy;
+        this.frontendEventPermits = new Semaphore(limits.maxInFlightPerWindow());
         this.session = new NavigationSession();
         this.eventQueue = newEventQueue(overflowPolicy);
     }
@@ -161,7 +171,22 @@ public final class CommandDispatcher implements AutoCloseable {
         return eventQueue.pending();
     }
 
-    /** Raw message from the WebView bridge. Never throws; protocol errors become results. */
+    /**
+     * Enqueues a raw native message without parsing or blocking the caller. The bounded,
+     * serial ingress preserves WebView message order while keeping work off the UI thread.
+     */
+    public void postMessage(String raw, String origin) {
+        if (closed) {
+            return;
+        }
+        try {
+            ingressExecutor.execute(() -> onMessage(raw, origin));
+        } catch (RejectedExecutionException e) {
+            LOG.log(Level.WARNING, "IPC ingress queue full for {0}; dropping message", windowId);
+        }
+    }
+
+    /** Synchronous protocol entry point used by the ingress worker and focused unit tests. */
     public void onMessage(String raw, String origin) {
         if (closed) {
             return;
@@ -242,13 +267,60 @@ public final class CommandDispatcher implements AutoCloseable {
         if(!current.accepts(event.nonce())||!helloCompleted)return;
         CommandDefinition definition=frontendEvents.find(event.event()).orElse(null);if(definition==null)return;
         PermissionDecision decision=capabilityEngine.evaluate(definition,windowId,origin,current);if(!decision.allowed())return;
-        commandExecutor.execute(()->{try{
-            Object payload=definition.requestType()==Void.class?null:codec.decode(
-                    event.payloadJson().orElseThrow(()->new JDeskException(ErrorCode.INVALID_REQUEST,"Event requires payload")),
+        if (!frontendEventPermits.tryAcquire()) {
+            LOG.log(Level.WARNING, "Frontend event limit reached for {0}; dropping {1}",
+                    windowId, event.event());
+            return;
+        }
+        try {
+            commandExecutor.execute(() -> runFrontendEvent(definition, event));
+        } catch (RejectedExecutionException e) {
+            frontendEventPermits.release();
+        }
+    }
+
+    private void runFrontendEvent(CommandDefinition definition,
+            IncomingEnvelope.FrontendEvent event) {
+        Thread worker = Thread.currentThread();
+        java.util.concurrent.atomic.AtomicBoolean terminal =
+                new java.util.concurrent.atomic.AtomicBoolean();
+        Duration timeout = definition.timeout().orElse(limits.defaultCommandTimeout());
+        ScheduledFuture<?> timeoutTask = scheduler.schedule(() -> {
+            if (!terminal.get()) {
+                worker.interrupt();
+                LOG.log(Level.WARNING, "Frontend event timed out for {0}: {1}",
+                        windowId, event.event());
+            }
+        }, timeout.toMillis(), TimeUnit.MILLISECONDS);
+        try {
+            Object payload = definition.requestType() == Void.class ? null : codec.decode(
+                    event.payloadJson().orElseThrow(() -> new JDeskException(
+                            ErrorCode.INVALID_REQUEST, "Event requires payload")),
                     definition.requestType());
-            CompletionStage<?> stage=definition.handler().invoke(payload,new EventContext(event.event()));
-            if(stage!=null)stage.exceptionally(failure->{LOG.log(Level.WARNING,"Frontend event handler failed",failure);return null;});
-        }catch(Throwable failure){LOG.log(Level.WARNING,"Rejected frontend event",failure);}});
+            CompletionStage<?> stage = definition.handler().invoke(payload,
+                    new EventContext(event.event()));
+            if (stage == null) {
+                throw new JDeskException(ErrorCode.INTERNAL_ERROR,
+                        "Frontend event handler returned no result");
+            }
+            stage.whenComplete((ignored, failure) -> {
+                if (terminal.compareAndSet(false, true)) {
+                    timeoutTask.cancel(false);
+                    frontendEventPermits.release();
+                    if (failure != null) {
+                        LOG.log(Level.WARNING, "Frontend event handler failed", failure);
+                    }
+                }
+            });
+        } catch (Throwable failure) {
+            if (terminal.compareAndSet(false, true)) {
+                timeoutTask.cancel(false);
+                frontendEventPermits.release();
+                LOG.log(Level.WARNING, "Rejected frontend event", failure);
+            }
+        } finally {
+            Thread.interrupted();
+        }
     }
 
     private final class EventContext implements InvocationContext {
@@ -341,6 +413,27 @@ public final class CommandDispatcher implements AutoCloseable {
     }
 
     private void handleStreamInvoke(IncomingEnvelope.Invoke invoke, NavigationSession current) {
+        InvocationTracker.Invocation invocation = tracker.tryBegin(invoke.id(), current);
+        if (invocation == null) {
+            respond(current, envelopes.errorResult(invoke.id(), ErrorCode.LIMIT_EXCEEDED,
+                    "Too many in-flight requests"));
+            return;
+        }
+        try {
+            commandExecutor.execute(() -> runStreamInvocation(invoke, invocation));
+        } catch (RejectedExecutionException e) {
+            terminate(invocation, envelopes.errorResult(invoke.id(), ErrorCode.WINDOW_CLOSED,
+                    "Window is closing"), false);
+        }
+    }
+
+    private void runStreamInvocation(IncomingEnvelope.Invoke invoke,
+            InvocationTracker.Invocation invocation) {
+        invocation.bindWorker(Thread.currentThread());
+        ScheduledFuture<?> timeoutTask = scheduler.schedule(
+                () -> terminate(invocation, envelopes.errorResult(invoke.id(), ErrorCode.TIMEOUT,
+                        "Stream operation timed out"), true),
+                limits.defaultCommandTimeout().toMillis(), TimeUnit.MILLISECONDS);
         try {
             String payload = invoke.payloadJson().orElseThrow(() ->
                     new JDeskException(ErrorCode.INVALID_REQUEST, "Stream command requires payload"));
@@ -354,12 +447,17 @@ public final class CommandDispatcher implements AutoCloseable {
                 default -> throw new JDeskException(ErrorCode.UNKNOWN_COMMAND,
                         "Unknown stream command");
             };
-            respond(current, envelopes.successResult(invoke.id(), value));
+            timeoutTask.cancel(false);
+            terminate(invocation, envelopes.successResult(invoke.id(), value), false);
         } catch (Throwable failure) {
+            timeoutTask.cancel(false);
             JDeskException jde = failure instanceof JDeskException j ? j :
                     new JDeskException(ErrorCode.SERIALIZATION_ERROR, "Invalid stream request");
-            respond(current, envelopes.errorResult(
-                    invoke.id(), jde.code(), jde.publicMessage(), jde.details()));
+            terminate(invocation, envelopes.errorResult(
+                    invoke.id(), jde.code(), jde.publicMessage(), jde.details()), false);
+        } finally {
+            invocation.bindWorker(null);
+            Thread.interrupted();
         }
     }
 
@@ -386,9 +484,7 @@ public final class CommandDispatcher implements AutoCloseable {
                     if (failure != null) {
                         terminate(invocation, errorFor(invoke.id(), failure, invocation), false);
                     } else {
-                        Object response = value instanceof BinaryStream binary
-                                ? streams.register(binary) : value;
-                        terminate(invocation, envelopes.successResult(invoke.id(), response), false);
+                        completeSuccess(invocation, invoke.id(), value);
                     }
                 } catch (Throwable encodingFailure) {
                     terminate(invocation,
@@ -401,6 +497,27 @@ public final class CommandDispatcher implements AutoCloseable {
         } finally {
             invocation.bindWorker(null);
             Thread.interrupted(); // clear a late interrupt so the pooled carrier is clean
+        }
+    }
+
+    private void completeSuccess(InvocationTracker.Invocation invocation, String id, Object value) {
+        if (!(value instanceof BinaryStream binary)) {
+            terminate(invocation, envelopes.successResult(id, value), false);
+            return;
+        }
+        if (!invocation.tryTerminate()) {
+            return;
+        }
+        tracker.remove(invocation.id());
+        StreamManager.Descriptor descriptor = null;
+        try {
+            descriptor = streams.register(binary);
+            respond(invocation.session(), envelopes.successResult(id, descriptor));
+        } catch (Throwable failure) {
+            if (descriptor != null) {
+                streams.cancel(descriptor.streamId());
+            }
+            respond(invocation.session(), errorFor(id, failure, invocation));
         }
     }
 
@@ -537,6 +654,7 @@ public final class CommandDispatcher implements AutoCloseable {
                 tracker.remove(invocation.id());
             }
         }
+        ingressExecutor.shutdownNow();
         commandExecutor.shutdown();
         scheduler.shutdown();
         try {

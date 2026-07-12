@@ -9,6 +9,7 @@ dependencies {
     constraints {
         api(project(":modules:jdesk-api"))
         api(project(":modules:jdesk-runtime"))
+        api(project(":modules:jdesk-automation"))
         api(project(":modules:jdesk-webview-spi"))
         api(project(":modules:jdesk-native-ffm"))
         api(project(":modules:jdesk-codegen"))

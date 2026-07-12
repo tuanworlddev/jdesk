@@ -24,6 +24,9 @@ public final class EvidenceVerifier {
 
     private final ObjectMapper mapper = new ObjectMapper();
 
+    public EvidenceVerifier() {
+    }
+
     /** All problems found for one evidence run directory; empty means valid. */
     public List<String> verify(Path runDir) {
         List<String> problems = new ArrayList<>();
@@ -152,7 +155,7 @@ public final class EvidenceVerifier {
             problems.add("PASSED manifest lists no files");
             return;
         }
-        files.fields().forEachRemaining(entry -> {
+        files.properties().forEach(entry -> {
             Path file = runDir.resolve(entry.getKey());
             if (!Files.isRegularFile(file)) {
                 problems.add("manifest-listed file missing: " + entry.getKey());

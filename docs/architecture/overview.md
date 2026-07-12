@@ -17,6 +17,7 @@ the wire format in [ipc-protocol.md](ipc-protocol.md), and the security posture 
 | --- | --- |
 | `jdesk-api` | Public, Java-only API surface: `JDeskApplication`, `ApplicationHandle`/`WindowHandle`, `WindowConfig`/`WindowId`, `CommandRegistry`/`CommandDefinition`, `InvocationContext`, `CapabilitySet`/`PermissionDecision`, `EventEmitter`/`Subscription`, `UiDispatcher`, `PlatformInfo`, lifecycle hooks, annotations and public errors. No AWT/Swing/JavaFX, runtime implementation classes or native types. ([ADR-001](ADR-001-java25-jpms-ffm.md)) |
 | `jdesk-runtime` | Pure-Java engine: lifecycle state machine, IPC protocol v1, capability engine (deny-by-default, evaluated before deserialization), asset resolver, `JsonCodec` SPI (defensive Jackson default), command dispatch onto virtual threads, limits/cancellation/backpressure. Only JSON/configuration packages are exported; boot, IPC and lifecycle implementations stay internal. Provides the `JDeskBootstrap` that `JDeskApplication.run()` locates. |
+| `jdesk-automation` | Optional token-gated loopback HTTP provider for E2E runs. Loaded through `AutomationProvider` only with `-Djdesk.automation=true`; exclude it from production runtime images, which then contain neither this module nor `jdk.httpserver`. |
 | `jdesk-webview-spi` | The platform SPI (`PlatformProvider`, `PlatformApplication`, `PlatformWindow`, `PlatformWebView`) that runtime talks to and adapters implement. See [section 8](../../JDESK_CORE_FRAMEWORK_SPEC.md). |
 | `jdesk-native-ffm` | Shared FFM helpers. The package is `dev.jdesk.ffm` (not `native`, a Java keyword) per [ADR-001](ADR-001-java25-jpms-ffm.md). Arena/callback lifetime primitives used by all adapters. |
 | `jdesk-platform-windows` | Win32 + WebView2 adapter (COM, STA message pump). Provider id `windows-webview2`. |
@@ -42,7 +43,7 @@ JS  commands.greeting.greet({name})     // typed wrapper, jdesk-client
       │  invoke envelope {v,kind:"invoke",id,command,payload,nonce}
       ▼
 Native WebView message channel  ──►  PlatformWebView.onMessage (UI thread)
-      │  copy string, dispatch OFF the UI thread immediately
+      │  enqueue into the bounded serial ingress; return immediately
       ▼
 Runtime bridge / dispatcher
       │  1. validate nonce (reject stale navigation session)

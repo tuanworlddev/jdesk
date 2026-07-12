@@ -16,6 +16,9 @@ import dev.jdesk.api.WindowConfig;
 import dev.jdesk.api.WindowId;
 import dev.jdesk.api.WindowHandle;
 import dev.jdesk.runtime.assets.AssetResolver;
+import dev.jdesk.runtime.automation.AutomationHost;
+import dev.jdesk.runtime.automation.AutomationProvider;
+import dev.jdesk.runtime.automation.AutomationSession;
 import dev.jdesk.runtime.capability.CapabilityEngine;
 import dev.jdesk.runtime.capability.OriginNormalizer;
 import dev.jdesk.runtime.ipc.CommandDispatcher;
@@ -55,7 +58,7 @@ import java.util.function.Consumer;
  * dispatcher per window over the platform SPI. Platform-agnostic by construction —
  * the same wiring runs against every adapter and against test fakes in unit tests.
  */
-public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
+public final class JDeskRuntime implements ApplicationHandle, AutomationHost, AutoCloseable {
     private static final Logger LOG = System.getLogger(JDeskRuntime.class.getName());
     /** Forwarded page console output; its own logger name so apps can filter/route it. */
     private static final Logger PAGE_CONSOLE = System.getLogger("dev.jdesk.webview.console");
@@ -77,6 +80,7 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
     private final LifecycleStateMachine lifecycle;
     private final CapabilityEngine capabilityEngine;
     private final NavigationPolicy navigationPolicy;
+    private final Consumer<List<String>> activationHandler;
     private final Map<WindowId, WindowRuntime> windows = new ConcurrentHashMap<>();
     private final Set<WindowId> windowIds = ConcurrentHashMap.newKeySet();
     private final AtomicInteger openWindows = new AtomicInteger();
@@ -85,7 +89,7 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
     private FileWatchManager fileWatchManager;
     private PtyManager ptyManager;
     private final Set<dev.jdesk.webview.spi.TrayControl> trayItems = ConcurrentHashMap.newKeySet();
-    private volatile AutomationServer automationServer;
+    private volatile AutomationSession automationSession;
 
     /** Per-window wiring: dispatcher plus the tracked current top-level origin. */
     private final class WindowRuntime implements WindowHandle {
@@ -168,9 +172,16 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
     }
 
     public JDeskRuntime(ApplicationSpec spec, PlatformProvider provider, RuntimeOptions options) {
+        this(spec, provider, options, spec.activationHandler());
+    }
+
+    JDeskRuntime(ApplicationSpec spec, PlatformProvider provider, RuntimeOptions options,
+            Consumer<List<String>> activationHandler) {
         this.spec = spec;
         this.provider = provider;
         this.options = options;
+        this.activationHandler = java.util.Objects.requireNonNull(
+                activationHandler, "activationHandler");
         this.lifecycle = new LifecycleStateMachine(spec.lifecycleListeners());
         this.windowStateStore = new WindowStateStore(spec.id());
 
@@ -200,13 +211,13 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
         // opt-in), so other apps' NSApp delegate is untouched.
         if (spec.singleInstance()) {
             platformApp.setOpenUrlHandler(uri ->
-                    spec.activationHandler().accept(List.of(uri.toString())));
+                    activationHandler.accept(List.of(uri.toString())));
         }
         DevAssetWatcher assetWatcher = null;
         try {
             // Start automation before any window exists so console output emitted
             // during the initial page load is already captured in its buffer.
-            automationServer = AutomationServer.startIfEnabled(this, spec.id()).orElse(null);
+            automationSession = startAutomationIfEnabled();
             for (WindowConfig config : spec.windows()) {
                 windowIds.add(config.id());
                 createWindowOnUiThread(config);
@@ -220,8 +231,8 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
             lifecycle.ready(this);
             platformApp.runEventLoop();
         } finally {
-            if (automationServer != null) {
-                automationServer.close();
+            if (automationSession != null) {
+                automationSession.close();
             }
             if (assetWatcher != null) {
                 assetWatcher.close();
@@ -232,8 +243,30 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
     }
 
     /** Ids of currently open windows (automation endpoint). */
-    Set<WindowId> openWindowIds() {
+    @Override
+    public Set<WindowId> openWindowIds() {
         return Set.copyOf(windows.keySet());
+    }
+
+    private AutomationSession startAutomationIfEnabled() {
+        if (!Boolean.getBoolean("jdesk.automation")) {
+            return null;
+        }
+        List<AutomationProvider> providers = java.util.ServiceLoader
+                .load(AutomationProvider.class).stream()
+                .map(java.util.ServiceLoader.Provider::get).toList();
+        if (providers.size() != 1) {
+            throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                    "Automation requested but expected exactly one AutomationProvider, found "
+                            + providers.size()
+                            + ". Add dev.jdesk:jdesk-automation at runtime for E2E runs.");
+        }
+        try {
+            return providers.getFirst().start(this, spec.id());
+        } catch (Exception e) {
+            throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                    "Automation endpoint could not start", e);
+        }
     }
 
     private void reloadAllWindows() {
@@ -272,7 +305,7 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
                         PAGE_CONSOLE.log(consoleLevel(level), "[{0}] {1}",
                                 launchConfig.id(), message);
                     }
-                    AutomationServer automationSink = automationServer;
+                    AutomationSession automationSink = automationSession;
                     if (automationSink != null) {
                         automationSink.recordConsole(launchConfig.id(), level, message);
                     }
@@ -287,7 +320,7 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
             openWindows.incrementAndGet();
 
             window.webView().onMessage(raw ->
-                    dispatcher.onMessage(raw, windowRuntime.currentOrigin));
+                    dispatcher.postMessage(raw, windowRuntime.currentOrigin));
             window.webView().onNavigation(request -> navigationPolicy.decide(request));
             window.webView().onNavigationCommitted(uri -> {
                 dispatcher.onNavigationCommitted();
@@ -652,6 +685,11 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
         }
         return platformApp.ui().submit(() -> windowRuntime.window.webView().snapshot())
                 .thenCompose(stage -> stage);
+    }
+
+    @Override
+    public CompletionStage<byte[]> snapshotPng(WindowId windowId) {
+        return snapshot(windowId).thenApply(WebViewSnapshot::png);
     }
 
     /** Returns native engine diagnostics for evidence and support tooling. */

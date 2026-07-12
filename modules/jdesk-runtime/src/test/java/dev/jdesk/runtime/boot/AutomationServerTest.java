@@ -83,6 +83,11 @@ class AutomationServerTest {
             assertThat(mapper.readTree(evaluated.body()).has("value")).isTrue();
             assertThat(mapper.readTree(evaluated.body()).has("result")).isTrue();
 
+            HttpResponse<String> oversized = client.send(authorized(base + "/evaluate", token)
+                    .POST(HttpRequest.BodyPublishers.ofString("x".repeat(1024 * 1024 + 1)))
+                    .build(), HttpResponse.BodyHandlers.ofString());
+            assertThat(oversized.statusCode()).isEqualTo(413);
+
             // /input requires a selector and returns a structured ok/detail. The fake
             // webview yields an empty evaluate result, so the dispatch reports not-ok.
             HttpResponse<String> noSelector = client.send(authorized(base + "/input", token)

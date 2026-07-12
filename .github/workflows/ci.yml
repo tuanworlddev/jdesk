@@ -7,6 +7,7 @@ name: ci
 on:
   push:
     branches: [main, 'dev/**']
+    tags: ['v*']
   pull_request:
 
 permissions:
@@ -356,6 +357,114 @@ jobs:
           path: package-evidence/**
           if-no-files-found: warn
 
-  # Added in Phase 4: macos-arm64-native, package-macos-arm64 (Phase 7 consolidated pass; verified locally on real hardware meanwhile)
-  # Added in Phase 6: security probes
-  # Added in Phase 7: evidence verification and consolidated status
+  macos-arm64-native:
+    runs-on: macos-14-arm
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      - name: Run native smoke (real WKWebView)
+        run: ./gradlew --no-configuration-cache :test-apps:native-smoke:run "-PjdeskPlatform=macos" "-PjdeskStress=true" --stacktrace
+      - name: Verify evidence (anti-fake)
+        run: ./gradlew --no-configuration-cache :test-apps:native-smoke:verifyEvidence "-PjdeskPlatform=macos"
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macos-arm64-native-evidence
+          path: test-apps/native-smoke/build/evidence/**
+          if-no-files-found: warn
+
+  security-macos-arm64:
+    runs-on: macos-14-arm
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      - name: Run security probes (real WKWebView)
+        run: ./gradlew --no-configuration-cache :test-apps:security-probe:run "-PjdeskPlatform=macos" --stacktrace
+      - name: Verify evidence (anti-fake)
+        run: ./gradlew --no-configuration-cache :test-apps:security-probe:verifyEvidence "-PjdeskPlatform=macos"
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-macos-arm64-evidence
+          path: test-apps/security-probe/build/evidence/**
+          if-no-files-found: warn
+
+  package-macos-arm64:
+    runs-on: macos-14-arm
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      - name: Build install distribution
+        run: ./gradlew :test-apps:native-smoke:installDist "-PjdeskPlatform=macos" --stacktrace
+      - name: Build app image with jpackage
+        run: |
+          jpackage --type app-image --name JDeskSmoke \
+            --module-path test-apps/native-smoke/build/install/native-smoke/lib \
+            --module dev.jdesk.testapps.nativesmoke/dev.jdesk.testapps.nativesmoke.Main \
+            --add-modules dev.jdesk.platform.macos \
+            --java-options "--enable-native-access=dev.jdesk.platform.macos" \
+            --java-options "--illegal-native-access=deny" \
+            --java-options "-XstartOnFirstThread" \
+            --java-options "-Djdesk.evidence.dir=$GITHUB_WORKSPACE/package-evidence" \
+            --java-options "-Djdesk.evidence.category=package" \
+            --java-options "-Djdesk.smoke.fullProbes=false" \
+            --dest build/jpackage
+      - name: Launch packaged app without Gradle
+        run: ./build/jpackage/JDeskSmoke.app/Contents/MacOS/JDeskSmoke
+      - name: Create unsigned DMG installer
+        run: |
+          jpackage --type dmg --name JDeskSmoke --app-image build/jpackage/JDeskSmoke.app \
+            --app-version 1.0.0 --dest build/installer
+          shasum -a 256 build/installer/*.dmg | tee -a package-evidence/installer.sha256
+          shasum -a 256 build/jpackage/JDeskSmoke.app/Contents/MacOS/JDeskSmoke \
+            | tee package-evidence/launcher.sha256
+      - name: Verify evidence (anti-fake)
+        run: ./gradlew :test-apps:native-smoke:verifyEvidence "-PjdeskPlatform=macos" "-PjdeskEvidenceVerifyDir=$GITHUB_WORKSPACE/package-evidence"
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: package-macos-arm64-evidence
+          path: package-evidence/**
+          if-no-files-found: warn
+
+  release-gate:
+    if: always()
+    runs-on: ubuntu-latest
+    needs:
+      - core-unit-jdk25
+      - gradle-plugin-functional
+      - windows-x64-native
+      - linux-x64-native
+      - macos-arm64-native
+      - security-windows-x64
+      - security-linux-x64
+      - security-macos-arm64
+      - package-windows-x64
+      - package-linux-x64
+      - package-macos-arm64
+    steps:
+      - name: Require every verification job to pass
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: echo "$NEEDS_JSON" | jq -e 'all(.[]; .result == "success")'

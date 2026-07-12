@@ -89,6 +89,13 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
             c.defaultDependencies(deps -> deps.add(
                     dependencies.create("dev.jdesk:jdesk-testkit:" + PluginVersion.get())));
         });
+        Configuration jdeskAutomation = project.getConfigurations().create("jdeskAutomation", c -> {
+            c.setCanBeConsumed(false);
+            c.setDescription("Optional automation provider used only by run/jdeskDev;"
+                    + " never included in production package inputs.");
+            c.defaultDependencies(deps -> deps.add(
+                    dependencies.create("dev.jdesk:jdesk-automation:" + PluginVersion.get())));
+        });
 
         // Toolchain-derived providers (lazy, configuration-cache safe).
         JavaToolchainService toolchains =
@@ -170,6 +177,9 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
         tasks.withType(JavaExec.class)
                 .matching(t -> t.getName().equals(ApplicationPlugin.TASK_RUN_NAME))
                 .configureEach(t -> {
+                    if (Boolean.getBoolean("jdesk.automation")) {
+                        t.classpath(jdeskAutomation);
+                    }
                     t.dependsOn(frontendBuild);
                     Provider<File> dist = frontend.getDistDirectory()
                             .map(directory -> directory.getAsFile());
@@ -218,6 +228,9 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
                     project.getExtensions().getByType(SourceSetContainer.class);
             SourceSet main = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
             t.getRuntimeClasspath().from(main.getRuntimeClasspath());
+            if (Boolean.getBoolean("jdesk.automation")) {
+                t.getRuntimeClasspath().from(jdeskAutomation);
+            }
             t.dependsOn(project.getConfigurations().getByName(
                     JavaPlugin.RUNTIME_CLASSPATH_CONFIGURATION_NAME));
             t.getApplicationResources().from(

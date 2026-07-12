@@ -164,6 +164,12 @@ Remaining before a signed v1 release (honestly incomplete, not claimed done): si
   restart; a TestKit session edits a live app from v1 to v2 and verifies the restart.
 - [x] `jdesk create` ships runnable `basic` and four-layer `structured` templates with a
   bundled Gradle wrapper; both templates were generated and compiled as external builds.
+- [x] Architecture remediation (2026-07-12): update bytes are re-hashed at activation
+  under a process lock and atomic manifest; IPC ingress/streams/frontend events are
+  bounded end-to-end; activations have one serial non-UI thread contract; HTTP automation
+  is an optional module excluded from production runtime images; production warnings are
+  errors. Local real-native/package evidence is recorded in
+  `docs/verification/remediation-2026-07-12.md`.
 
 ## Known deviations / notes
 

@@ -14,9 +14,12 @@ java {
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     options.release = 25
-    // Warning policy (documented in docs/development/quality.md): all warnings on,
-    // -Werror deferred until static analysis baseline lands in Phase 1.
-    options.compilerArgs.addAll(listOf("-Xlint:all,-processing", "-parameters"))
+    // FFM entry points intentionally call restricted APIs and are controlled by the
+    // launcher's native-access flags. Every other production warning fails compilation.
+    options.compilerArgs.addAll(listOf("-Xlint:all,-processing,-restricted", "-parameters"))
+    if (name == JavaPlugin.COMPILE_JAVA_TASK_NAME) {
+        options.compilerArgs.add("-Werror")
+    }
 }
 
 tasks.withType<Test>().configureEach {

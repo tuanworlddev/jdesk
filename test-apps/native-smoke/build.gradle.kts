@@ -8,6 +8,7 @@ dependencies {
     implementation(project(":modules:jdesk-runtime"))
     implementation(project(":modules:jdesk-webview-spi"))
     implementation(project(":modules:jdesk-testkit"))
+    runtimeOnly(project(":modules:jdesk-automation"))
     compileOnly(libs.jackson.databind)
     // The platform adapter is selected per-OS at run time; native runs add it via
     // -PjdeskPlatform. No adapter => startup fails loudly (never a fake).

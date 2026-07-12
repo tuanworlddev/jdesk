@@ -1,11 +1,12 @@
-package dev.jdesk.runtime.boot;
+package dev.jdesk.automation;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.jdesk.api.WindowId;
+import dev.jdesk.runtime.automation.AutomationHost;
+import dev.jdesk.runtime.automation.AutomationSession;
 import dev.jdesk.runtime.json.JacksonJsonCodec;
 import dev.jdesk.runtime.json.JsonCodec;
-import dev.jdesk.webview.spi.WebViewSnapshot;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.System.Logger;
@@ -24,8 +25,8 @@ import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -43,9 +44,10 @@ import java.util.concurrent.TimeUnit;
  * {@code GET /snapshot?window=<id>} (PNG), {@code GET /console?window=<id>} (captured
  * page console lines).
  */
-final class AutomationServer implements AutoCloseable {
+final class AutomationServer implements AutomationSession {
     private static final Logger LOG = System.getLogger(AutomationServer.class.getName());
     private static final int CONSOLE_BUFFER = 500;
+    private static final int MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 
     /** POST /evaluate request body (public for JSON binding). */
     public record EvaluateRequest(String window, String script) {
@@ -66,27 +68,16 @@ final class AutomationServer implements AutoCloseable {
             String key) {
     }
 
-    private final JDeskRuntime runtime;
+    private final AutomationHost host;
     private final HttpServer server;
+    private final ExecutorService executor;
     private final byte[] tokenBytes;
     private final Path descriptorFile;
     private final JsonCodec codec = new JacksonJsonCodec();
     private final ArrayDeque<ConsoleLine> consoleLines = new ArrayDeque<>();
 
-    static Optional<AutomationServer> startIfEnabled(JDeskRuntime runtime, String applicationId) {
-        if (!Boolean.getBoolean("jdesk.automation")) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(new AutomationServer(runtime, applicationId));
-        } catch (IOException e) {
-            LOG.log(Level.WARNING, "Automation endpoint could not start", e);
-            return Optional.empty();
-        }
-    }
-
-    private AutomationServer(JDeskRuntime runtime, String applicationId) throws IOException {
-        this.runtime = runtime;
+    AutomationServer(AutomationHost host, String applicationId) throws IOException {
+        this.host = host;
         byte[] random = new byte[32];
         new SecureRandom().nextBytes(random);
         String token = HexFormat.of().formatHex(random);
@@ -94,36 +85,48 @@ final class AutomationServer implements AutoCloseable {
 
         this.server = HttpServer.create(
                 new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
-        server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
+        this.executor = Executors.newVirtualThreadPerTaskExecutor();
+        server.setExecutor(executor);
         server.createContext("/windows", exchange -> guarded(exchange, this::handleWindows));
         server.createContext("/evaluate", exchange -> guarded(exchange, this::handleEvaluate));
         server.createContext("/snapshot", exchange -> guarded(exchange, this::handleSnapshot));
         server.createContext("/console", exchange -> guarded(exchange, this::handleConsole));
         server.createContext("/input", exchange -> guarded(exchange, this::handleInput));
-        server.start();
-
         String configured = System.getProperty("jdesk.automation.dir");
         Path directory = configured == null || configured.isBlank()
                 ? Path.of(System.getProperty("user.home"), ".jdesk", "automation")
                 : Path.of(configured);
         Files.createDirectories(directory);
+        restrictDirectoryToOwner(directory);
         this.descriptorFile = directory.resolve(applicationId + ".json");
         // Owner-only BEFORE the token hits the disk: create the file with restricted
         // permissions (or restrict the empty file where atomic create-with-attrs is
         // unsupported), then write the content.
-        Files.deleteIfExists(descriptorFile);
         try {
-            Files.createFile(descriptorFile,
-                    java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
-                            java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")));
-        } catch (UnsupportedOperationException e) {
-            Files.createFile(descriptorFile);
-            restrictToOwner(descriptorFile);
+            Files.deleteIfExists(descriptorFile);
+            try {
+                Files.createFile(descriptorFile,
+                        java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                                java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")));
+            } catch (UnsupportedOperationException e) {
+                Files.createFile(descriptorFile);
+                restrictToOwner(descriptorFile);
+            }
+            Files.writeString(descriptorFile, codec.encode(Map.of(
+                    "pid", ProcessHandle.current().pid(),
+                    "port", server.getAddress().getPort(),
+                    "token", token)));
+            server.start();
+        } catch (IOException | RuntimeException e) {
+            server.stop(0);
+            executor.shutdownNow();
+            try {
+                Files.deleteIfExists(descriptorFile);
+            } catch (IOException cleanupFailure) {
+                e.addSuppressed(cleanupFailure);
+            }
+            throw e;
         }
-        Files.writeString(descriptorFile, codec.encode(Map.of(
-                "pid", ProcessHandle.current().pid(),
-                "port", server.getAddress().getPort(),
-                "token", token)));
         // Deliberately does NOT print the token; the descriptor file carries it.
         System.out.println("JDESK-AUTOMATION port=" + server.getAddress().getPort()
                 + " descriptor=" + descriptorFile.toAbsolutePath());
@@ -140,8 +143,18 @@ final class AutomationServer implements AutoCloseable {
         }
     }
 
+    private static void restrictDirectoryToOwner(Path directory) throws IOException {
+        var view = Files.getFileAttributeView(directory,
+                java.nio.file.attribute.PosixFileAttributeView.class);
+        if (view != null) {
+            view.setPermissions(java.nio.file.attribute.PosixFilePermissions.fromString(
+                    "rwx------"));
+        }
+    }
+
     /** Records one captured page-console line (called from the runtime's console sink). */
-    void recordConsole(WindowId windowId, String level, String message) {
+    @Override
+    public void recordConsole(WindowId windowId, String level, String message) {
         ConsoleLine line = new ConsoleLine(windowId.value(), level, message);
         synchronized (consoleLines) {
             if (consoleLines.size() >= CONSOLE_BUFFER) {
@@ -166,6 +179,8 @@ final class AutomationServer implements AutoCloseable {
             }
             try {
                 handler.handle(exchange);
+            } catch (RequestTooLargeException e) {
+                sendJson(exchange, 413, Map.of("error", "request body too large"));
             } catch (Exception e) {
                 LOG.log(Level.DEBUG, "Automation request failed", e);
                 sendJson(exchange, 500, Map.of("error", String.valueOf(e.getMessage())));
@@ -174,7 +189,7 @@ final class AutomationServer implements AutoCloseable {
     }
 
     private void handleWindows(HttpExchange exchange) throws IOException {
-        List<String> ids = runtime.openWindowIds().stream().map(WindowId::value).sorted().toList();
+        List<String> ids = host.openWindowIds().stream().map(WindowId::value).sorted().toList();
         sendJson(exchange, 200, Map.of("windows", ids));
     }
 
@@ -183,7 +198,7 @@ final class AutomationServer implements AutoCloseable {
             sendJson(exchange, 405, Map.of("error", "POST required"));
             return;
         }
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        String body = readBody(exchange);
         EvaluateRequest request = codec.decode(body, EvaluateRequest.class);
         if (request.script() == null || request.script().isBlank()) {
             sendJson(exchange, 400, Map.of("error", "script is required"));
@@ -196,7 +211,7 @@ final class AutomationServer implements AutoCloseable {
         // throwing expression yields result:null with the raw string in `value`.
         String wrapped = "(function(){try{return JSON.stringify((function(){return ("
                 + request.script() + ");})());}catch(e){return undefined;}})()";
-        String raw = runtime.evaluate(new WindowId(window), wrapped)
+        String raw = host.evaluate(new WindowId(window), wrapped)
                 .toCompletableFuture().get(15, TimeUnit.SECONDS);
         Map<String, Object> response = new java.util.LinkedHashMap<>();
         response.put("value", String.valueOf(raw));
@@ -221,7 +236,7 @@ final class AutomationServer implements AutoCloseable {
             sendJson(exchange, 405, Map.of("error", "POST required"));
             return;
         }
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        String body = readBody(exchange);
         InputRequest request = codec.decode(body, InputRequest.class);
         String window = request.window() == null ? "main" : request.window();
         if (request.selector() == null || request.selector().isBlank()) {
@@ -230,7 +245,7 @@ final class AutomationServer implements AutoCloseable {
         }
         // Wrap in JSON.stringify so the boolean serializes to "true"/"false" on every
         // engine (a bare JS boolean stringifies to "1"/"0" on WKWebView).
-        String raw = runtime.evaluate(new WindowId(window),
+        String raw = host.evaluate(new WindowId(window),
                         "JSON.stringify(" + inputScript(request) + ")")
                 .toCompletableFuture().get(15, TimeUnit.SECONDS);
         boolean ok = "true".equals(raw);
@@ -287,12 +302,12 @@ final class AutomationServer implements AutoCloseable {
 
     private void handleSnapshot(HttpExchange exchange) throws Exception {
         String window = queryParams(exchange).getOrDefault("window", "main");
-        WebViewSnapshot snapshot = runtime.snapshot(new WindowId(window))
+        byte[] snapshot = host.snapshotPng(new WindowId(window))
                 .toCompletableFuture().get(30, TimeUnit.SECONDS);
         exchange.getResponseHeaders().set("Content-Type", "image/png");
-        exchange.sendResponseHeaders(200, snapshot.png().length);
+        exchange.sendResponseHeaders(200, snapshot.length);
         try (OutputStream out = exchange.getResponseBody()) {
-            out.write(snapshot.png());
+            out.write(snapshot);
         }
     }
 
@@ -325,6 +340,24 @@ final class AutomationServer implements AutoCloseable {
         return params;
     }
 
+    private static String readBody(HttpExchange exchange)
+            throws IOException, RequestTooLargeException {
+        long declared = exchange.getRequestHeaders().getFirst("Content-Length") == null
+                ? -1 : Long.parseLong(exchange.getRequestHeaders().getFirst("Content-Length"));
+        if (declared > MAX_REQUEST_BODY_BYTES) {
+            throw new RequestTooLargeException();
+        }
+        byte[] bytes = exchange.getRequestBody().readNBytes(MAX_REQUEST_BODY_BYTES + 1);
+        if (bytes.length > MAX_REQUEST_BODY_BYTES) {
+            throw new RequestTooLargeException();
+        }
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private static final class RequestTooLargeException extends Exception {
+        private static final long serialVersionUID = 1L;
+    }
+
     private void sendJson(HttpExchange exchange, int status, Object body) throws IOException {
         byte[] bytes = codec.encode(body).getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -337,6 +370,7 @@ final class AutomationServer implements AutoCloseable {
     @Override
     public void close() {
         server.stop(0);
+        executor.shutdownNow();
         try {
             Files.deleteIfExists(descriptorFile);
         } catch (IOException e) {

@@ -2,10 +2,11 @@
 
 ## Compiler warnings
 
-All modules compile with `-Xlint:all,-processing`. Policy (spec section 21): warnings
-are surfaced in every build; `-Werror` is enabled once the Phase 1 static-analysis
-baseline lands, so that new code cannot add warnings. Any suppression requires a
-review comment explaining why.
+Production sources compile with `-Xlint:all,-processing,-restricted -Werror`.
+The `restricted` category is excluded because platform adapters intentionally use FFM;
+native access is instead constrained by the packaged launcher's module-specific
+`--enable-native-access` and `--illegal-native-access=deny` flags. Any other suppression
+requires a review comment explaining why.
 
 ## Test categories
 

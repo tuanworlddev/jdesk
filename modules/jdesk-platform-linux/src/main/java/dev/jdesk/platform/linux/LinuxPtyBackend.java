@@ -283,7 +283,7 @@ final class LinuxPtyBackend implements PtyBackend {
                 long offset = 0;
                 while (offset < data.length) {
                     long n = (long) WRITE.invokeExact(master, buffer.asSlice(offset),
-                            (long) (data.length - offset));
+                            data.length - offset);
                     if (n <= 0) {
                         return;
                     }

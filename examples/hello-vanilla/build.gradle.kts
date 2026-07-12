@@ -10,6 +10,7 @@ description = "JDesk hello-vanilla example: a real consumer app built only on pu
 dependencies {
     implementation(project(":modules:jdesk-api"))
     implementation(project(":modules:jdesk-runtime"))
+    runtimeOnly(project(":modules:jdesk-automation"))
     compileOnly(libs.jackson.databind)
     // Compile-time command registration + TS binding generation (ADR-005).
     annotationProcessor(project(":modules:jdesk-codegen"))

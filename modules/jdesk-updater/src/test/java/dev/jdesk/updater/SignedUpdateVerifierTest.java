@@ -28,6 +28,7 @@ class SignedUpdateVerifierTest {
         VerifiedUpdate update = SignedUpdateVerifier.verify(file, 1024,
                 hash(file), signature(file, keys), keys.getPublic());
         assertThat(update.size()).isEqualTo(9);
+        assertThat(VerifiedUpdate.class.getConstructors()).isEmpty();
     }
 
     @Test void rejectsWrongHashWrongSignatureAndTampering() throws Exception {

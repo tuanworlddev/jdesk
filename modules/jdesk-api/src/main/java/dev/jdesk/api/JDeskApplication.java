@@ -146,6 +146,8 @@ public final class JDeskApplication {
         /**
          * Enforces one running process for this application id. Later launches deliver their
          * command-line arguments (including deep-link URIs) to {@code activationHandler}.
+         * Activations are serialized on a dedicated non-UI virtual thread; use
+         * {@link ApplicationHandle#ui()} before touching native UI state.
          */
         public Builder singleInstance(Consumer<List<String>> activationHandler) {
             this.singleInstance = true;

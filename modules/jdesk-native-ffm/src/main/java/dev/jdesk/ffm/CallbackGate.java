@@ -17,6 +17,9 @@ public final class CallbackGate {
     private int inFlight;
     private boolean closed;
 
+    public CallbackGate() {
+    }
+
     /** @return true when the caller may proceed; false when the gate is closed. */
     public boolean enter() {
         lock.lock();

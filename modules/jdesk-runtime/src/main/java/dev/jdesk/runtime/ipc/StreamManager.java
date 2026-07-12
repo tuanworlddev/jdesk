@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /** Per-navigation pull stream registry. A pull is the sole source of demand. */
 public final class StreamManager implements AutoCloseable {
     static final int MAX_CHUNK_BYTES = 256 * 1024;
+    static final int MAX_ACTIVE_STREAMS = 32;
     public record Descriptor(String streamId, long length, String contentType, String fileName) { }
     public record Pull(String streamId, int maxBytes) { }
     public record Chunk(String streamId, long offset, String data, boolean eof) { }
@@ -20,7 +21,11 @@ public final class StreamManager implements AutoCloseable {
 
     private final Map<String, Active> streams = new ConcurrentHashMap<>();
 
-    Descriptor register(BinaryStream stream) {
+    synchronized Descriptor register(BinaryStream stream) {
+        if (streams.size() >= MAX_ACTIVE_STREAMS) {
+            throw new JDeskException(ErrorCode.LIMIT_EXCEEDED,
+                    "Too many active binary streams");
+        }
         try {
             String id = UUID.randomUUID().toString();
             streams.put(id, new Active(stream.source().open()));

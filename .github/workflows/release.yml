@@ -1,14 +1,10 @@
-# Release: publish dev.jdesk:* to GitHub Packages and create a GitHub Release.
-# Triggered by pushing a v* tag (e.g. v0.1.0). Uses the built-in GITHUB_TOKEN, so no
-# external credentials are needed. GitHub Packages requires authentication to consume;
-# Maven Central (anonymous) publishing needs a Sonatype account + signing key and is a
-# follow-up (see docs/development/scaffolding-and-publishing.md).
+# Publishes only after the complete cross-platform CI workflow passes for the exact tag SHA.
 name: release
 
 on:
-  push:
-    tags: ["v*"]
-  workflow_dispatch:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
 
 permissions:
   contents: write
@@ -16,30 +12,51 @@ permissions:
 
 jobs:
   publish:
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - name: Resolve release tag for the verified SHA
+        id: release
+        shell: bash
+        run: |
+          mapfile -t tags < <(git tag --points-at HEAD --list 'v*')
+          if [[ ${#tags[@]} -eq 0 ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ ${#tags[@]} -ne 1 ]]; then
+            echo "Expected exactly one v* tag on verified SHA, found ${#tags[@]}" >&2
+            exit 1
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          echo "tag=${tags[0]}" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        if: steps.release.outputs.enabled == 'true'
         with:
           distribution: temurin
           java-version: '25'
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        if: steps.release.outputs.enabled == 'true'
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-      - name: Build and test
-        run: ./gradlew build --stacktrace
-      - name: Publish to GitHub Packages
+      - name: Publish verified libraries to GitHub Packages
+        if: steps.release.outputs.enabled == 'true'
         run: |
           ./gradlew publish --stacktrace \
             -PjdeskPublishUrl=https://maven.pkg.github.com/${{ github.repository }} \
             -PjdeskPublishUser=${{ github.actor }} \
             -PjdeskPublishToken=${{ secrets.GITHUB_TOKEN }}
-      - name: Create GitHub Release
+      - name: Create pre-release
+        if: steps.release.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          gh release create "$TAG" \
+          gh release create "$TAG" --target "${{ github.event.workflow_run.head_sha }}" \
             --title "JDesk $TAG" \
-            --notes "JDesk $TAG — pre-alpha. Artifacts published to GitHub Packages (dev.jdesk:*). See docs/verification/final-report.md for the verified platform matrix. GitHub Packages requires authentication to consume." \
+            --notes "Pre-alpha artifacts verified by the complete Windows, macOS, and Linux native/security/package CI matrix." \
             --prerelease || gh release edit "$TAG" --prerelease

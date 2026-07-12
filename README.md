@@ -20,7 +20,8 @@ Vue, and Svelte.
   live at 2 GiB.
 - OS-backed secret storage (macOS Keychain, Windows DPAPI, Linux Secret Service).
 - Structured command errors (`error.data`) and a page-console-to-Java logging bridge.
-- Opt-in automation endpoint for E2E tests, CI, and agents (`-Djdesk.automation=true`).
+- Optional automation module for E2E tests, CI, and agents (`jdesk-automation` plus
+  `-Djdesk.automation=true`); production images carry no HTTP server.
 - Window minimum size, start-maximized, and remembered bounds across runs.
 - Frontend HMR through the configured frontend development server — or a zero-Node dev
   loop with automatic in-app reload for static frontends.
@@ -250,8 +251,9 @@ See [packaging and signing](docs/packaging/packaging-and-signing.md).
 JDesk is pre-alpha and under active development. The core runtime and primary platform
 adapters are implemented and tested. The `create-jdesk-app` CLI is published to npm, and the
 `dev.jdesk:*` artifacts are published to GitHub Packages (v0.1.1). Maven Central publishing
-(for anonymous consumption), signed/notarized releases, secondary CPU architectures, and a
-macOS CI job are still pending.
+(for anonymous consumption), signed/notarized releases, and secondary CPU architectures
+are still pending. The CI definition now includes Windows, Linux, and macOS ARM64
+native/security/package gates; tagged publishing waits for the complete matrix.
 
 See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and the
 [implementation report](docs/verification/final-report.md) for the detailed status.

@@ -26,31 +26,37 @@ public final class RuntimeBootstrap implements JDeskBootstrap {
     }
 
     @Override
+    @SuppressWarnings("try")
     public int launch(ApplicationSpec spec, String[] args) {
         PlatformProvider provider = selectProvider(
                 ServiceLoader.load(PlatformProvider.class).stream()
                         .map(ServiceLoader.Provider::get)
                         .toList());
-        SingleInstanceSession instanceSession = null;
-        if (spec.singleInstance()) {
-            try {
-                String configured = System.getProperty("jdesk.instance.dir");
-                Path stateDirectory = configured == null || configured.isBlank()
-                        ? Path.of(System.getProperty("user.home"), ".jdesk", "instance")
-                        : Path.of(configured);
-                SingleInstanceResult result = SingleInstance.acquire(spec.id(), stateDirectory,
-                        Arrays.asList(args), spec.activationHandler());
-                if (!result.primary()) return 0;
-                instanceSession = result.session().orElseThrow();
-            } catch (SingleInstanceException e) {
-                throw new JDeskException(ErrorCode.ILLEGAL_STATE,
-                        "Single-instance coordination failed", e);
+        try (ActivationDispatcher activations = spec.singleInstance()
+                ? new ActivationDispatcher(spec.activationHandler()) : null) {
+            SingleInstanceSession instanceSession = null;
+            if (spec.singleInstance()) {
+                try {
+                    String configured = System.getProperty("jdesk.instance.dir");
+                    Path stateDirectory = configured == null || configured.isBlank()
+                            ? Path.of(System.getProperty("user.home"), ".jdesk", "instance")
+                            : Path.of(configured);
+                    SingleInstanceResult result = SingleInstance.acquire(spec.id(), stateDirectory,
+                            Arrays.asList(args), activations::dispatch);
+                    if (!result.primary()) {
+                        return 0;
+                    }
+                    instanceSession = result.session().orElseThrow();
+                } catch (SingleInstanceException e) {
+                    throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                            "Single-instance coordination failed", e);
+                }
             }
-        }
-        try (SingleInstanceSession session = instanceSession;
-             JDeskRuntime runtime = new JDeskRuntime(spec, provider,
-                     optionsFor(spec))) {
-            return runtime.run();
+            try (SingleInstanceSession session = instanceSession;
+                 JDeskRuntime runtime = new JDeskRuntime(spec, provider, optionsFor(spec),
+                         activations == null ? spec.activationHandler() : activations::dispatch)) {
+                return runtime.run();
+            }
         }
     }
 

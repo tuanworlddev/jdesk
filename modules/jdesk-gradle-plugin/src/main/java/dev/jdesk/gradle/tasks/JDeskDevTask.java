@@ -262,6 +262,13 @@ public abstract class JDeskDevTask extends DefaultTask {
             command.add("-XstartOnFirstThread");
         }
         command.add("-Djdesk.dev=true");
+        if (Boolean.getBoolean("jdesk.automation")) {
+            command.add("-Djdesk.automation=true");
+            String automationDirectory = System.getProperty("jdesk.automation.dir");
+            if (automationDirectory != null && !automationDirectory.isBlank()) {
+                command.add("-Djdesk.automation.dir=" + automationDirectory);
+            }
+        }
         String devUrl = getDevUrl().getOrNull();
         if (devUrl != null) {
             command.add("-Djdesk.devUrl=" + devUrl);

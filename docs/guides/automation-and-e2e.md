@@ -6,6 +6,18 @@ running app without OS-level screenshots and coordinate clicking.
 
 ## Start the app with automation enabled
 
+Automation is deliberately a separate runtime-only module. The JDesk Gradle plugin adds
+it to `run` and `jdeskDev`, but not to `jdeskPackage`. For a manually wired launcher, add
+it only to that launcher's E2E/dev configuration:
+
+```kotlin
+val e2eRuntimeOnly by configurations.creating
+
+dependencies {
+    e2eRuntimeOnly("dev.jdesk:jdesk-automation:<jdeskVersion>")
+}
+```
+
 ```bash
 java -Djdesk.automation=true ... your.app.Main
 # or in a Gradle run task: systemProperty("jdesk.automation", "true")
@@ -20,7 +32,9 @@ JDESK-AUTOMATION port=52731 descriptor=/Users/you/.jdesk/automation/<appId>.json
 The descriptor (`{pid, port, token}`, owner-only permissions; directory overridable via
 `-Djdesk.automation.dir=`) carries the per-run bearer token. The server binds
 127.0.0.1 only and answers nothing without `Authorization: Bearer <token>`. Without the
-system property, no server exists — production runs are unaffected.
+system property, no server exists. Production images that omit `jdesk-automation` also
+omit `jdk.httpserver`; requesting automation without the provider fails startup loudly.
+Request bodies are capped at 1 MiB.
 
 ## Endpoints
 
