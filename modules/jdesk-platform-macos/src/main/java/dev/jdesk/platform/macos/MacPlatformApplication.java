@@ -384,6 +384,32 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
         return MacGlobalShortcut.register(accelerator, callback);
     }
 
+    @Override
+    public void showNotification(String title, String body) {
+        requireOpen();
+        dispatcher.assertUiThread();
+        // NSUserNotification works without a signed bundle for dev; production should move to
+        // UNUserNotificationCenter (needs a signed bundle + permission). A nil center means
+        // even legacy delivery is unavailable here — report it honestly.
+        MemorySegment center = ObjC.send(
+                ObjC.cls("NSUserNotificationCenter"), "defaultUserNotificationCenter");
+        if (center.equals(MemorySegment.NULL)) {
+            throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                    "User notifications unavailable (needs a signed app bundle)");
+        }
+        MemorySegment pool = ObjC.autoreleasePoolPush();
+        try {
+            MemorySegment note = ObjC.send(
+                    ObjC.send(ObjC.cls("NSUserNotification"), "alloc"), "init");
+            ObjC.autorelease(note);
+            ObjC.sendVoid(note, "setTitle:", ObjC.nsString(title == null ? "" : title));
+            ObjC.sendVoid(note, "setInformativeText:", ObjC.nsString(body == null ? "" : body));
+            ObjC.sendVoid(center, "deliverNotification:", note);
+        } finally {
+            ObjC.autoreleasePoolPop(pool);
+        }
+    }
+
     @Override public MessageDialogResult showMessageDialog(MessageDialog dialog) {
         requireOpen(); dispatcher.assertUiThread();
         MemorySegment alert = ObjC.send(ObjC.send(ObjC.cls("NSAlert"), "alloc"), "init");

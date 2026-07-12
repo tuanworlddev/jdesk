@@ -66,6 +66,13 @@ public interface ApplicationHandle {
      * unfocused. Close the returned {@link Subscription} to unregister.
      */
     CompletionStage<Subscription> registerGlobalShortcut(String accelerator, Runnable callback);
+
+    /**
+     * Posts a desktop notification. In production, delivery/appearance requires a signed app
+     * bundle and the user's notification permission; the stage fails with
+     * {@link ErrorCode#ILLEGAL_STATE} where notifications are unavailable.
+     */
+    CompletionStage<Void> showNotification(String title, String body);
     CompletionStage<MessageDialogResult> showMessageDialog(MessageDialog dialog);
 
     /** Shows a native, app-modal open dialog. Result paths are empty when cancelled. */

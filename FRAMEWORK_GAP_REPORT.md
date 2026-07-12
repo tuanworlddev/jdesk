@@ -21,7 +21,7 @@ Environment for live macOS results: macOS 26.5.1, Apple Silicon (arm64), JDK 25.
 | GAP-001 | File watching API | **Done (macOS FSEvents + portable)** | Unit tests + live FSEvents latency ~10–13 ms |
 | BUG-002 | `requestStop()` "doesn't wake idle loop" | **Retracted — not a real bug** | See below |
 | GAP-003 | PTY / process API | **Done (macOS)** | Unit tests + live shell (tty, resize, exit code, no-orphan) |
-| GAP-004 | Native desktop integration batch | **Partial (7 of 10, macOS)** | Live: theme, clipboard, badge, menu, icon, tray, global-shortcut |
+| GAP-004 | Native desktop integration batch | **Partial (8 of 10, macOS)** | Live: theme, clipboard, badge, menu, icon, tray, shortcut, notification |
 | GAP-005 | Deep-link scheme + file association | Not started | — |
 
 ---
@@ -184,10 +184,14 @@ round-trip verified** on this machine, so no unverifiable claims are made:
     >=1 modifier. Verified **structurally**: `RegisterEventHotKey` returns `noErr`
     (`Cmd+Ctrl+Alt+Shift+K`) and unregister succeeds. The global *keypress* is an OS input
     event and is not auto-tested.
+  - `showNotification(title, body)` — legacy `NSUserNotification` for dev (nil center ->
+    `ILLEGAL_STATE`). Verified: the `deliverNotification:` call succeeds. Banner *display*
+    needs a signed bundle + permission (production: `UNUserNotificationCenter`) and is not
+    verified here.
   - SPI: `systemTheme`/`readClipboard`/`writeClipboard`/`setDockBadge` default to
     `ILLEGAL_STATE`; `setApplicationMenu` defaults to a no-op (Windows/Linux/test-fake
     unaffected). Harness: `DesktopProbe`.
-- **Not yet implemented (3 of 10):** context menu, notification, file-drop paths. These are the ones whose real
+- **Not yet implemented (2 of 10):** context menu, file-drop paths. These are the ones whose real
   behaviour is **GUI-interaction gated** — menu/tray/hotkey *activation*, notification
   *display* (needs a signed bundle), the file-drop *gesture*, and a context menu that blocks
   the UI thread until dismissed cannot be exercised from an automation endpoint. They will be

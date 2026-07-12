@@ -491,6 +491,10 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
         });
     }
 
+    @Override public CompletionStage<Void> showNotification(String title, String body) {
+        return platformApp.ui().submit(() -> { platformApp.showNotification(title, body); return null; });
+    }
+
     private dev.jdesk.api.TrayHandle trayHandle(dev.jdesk.webview.spi.TrayControl control) {
         return new dev.jdesk.api.TrayHandle() {
             @Override public void setTitle(String title) {

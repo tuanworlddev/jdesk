@@ -120,6 +120,12 @@ public interface PlatformApplication extends AutoCloseable {
                 "Global shortcuts are not supported by this platform adapter");
     }
 
+    /** Posts a desktop notification (UI thread). Default: unsupported. */
+    default void showNotification(String title, String body) {
+        throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                "Notifications are not supported by this platform adapter");
+    }
+
     /** Blocks running the native event loop until {@link #requestStop()}. */
     void runEventLoop();
 

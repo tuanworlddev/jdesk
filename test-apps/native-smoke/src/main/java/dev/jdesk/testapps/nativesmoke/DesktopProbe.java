@@ -70,7 +70,7 @@ public final class DesktopProbe {
             awaitReady(runtime);
             result = theme(runtime) + " " + clipboard(runtime) + " " + dockBadge(runtime)
                     + " " + menu(runtime) + " " + icon(runtime) + " " + tray(runtime)
-                    + " " + shortcut(runtime);
+                    + " " + shortcut(runtime) + " " + notification(runtime);
         } catch (Throwable t) {
             result = "ERROR " + t + " | cause=" + t.getCause();
             t.printStackTrace();
@@ -145,6 +145,20 @@ public final class DesktopProbe {
         Thread.sleep(100);
         handle.close(); // remove
         return "tray=OK(created+setTitle+removed, statusItem self-checked; click NOT auto-tested)";
+    }
+
+    private static String notification(JDeskRuntime runtime) {
+        try {
+            runtime.showNotification("JDesk", "probe").toCompletableFuture().get(5, TimeUnit.SECONDS);
+            return "notification=OK(deliver call succeeded; banner display NOT verified"
+                    + " — needs signed bundle)";
+        } catch (Exception e) {
+            Throwable root = e;
+            while (root.getCause() != null) {
+                root = root.getCause();
+            }
+            return "notification=UNAVAILABLE(" + root.getMessage() + " — expected unbundled)";
+        }
     }
 
     private static String shortcut(JDeskRuntime runtime) throws Exception {
