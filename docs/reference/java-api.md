@@ -97,10 +97,17 @@ Available from [`InvocationContext.application()`](#invocationcontext) and
 | `CompletionStage<Void> openExternal(URI uri)` | Opens an HTTP(S) URI in the OS default browser; rejects other schemes and credentials. |
 | `CompletionStage<String> readClipboardText()` | Reads the system clipboard as text. |
 | `CompletionStage<Void> writeClipboardText(String text)` | Writes clipboard text (max 1 MiB). |
+| `CompletionStage<SystemTheme> systemTheme()` | The OS light/dark appearance (`SystemTheme.LIGHT`/`DARK`). |
+| `CompletionStage<Optional<byte[]>> readClipboard(String type)` | Reads binary clipboard data of a type/UTI (e.g. `"public.png"`); empty when absent. |
+| `CompletionStage<Void> writeClipboard(String type, byte[] data)` | Writes binary clipboard data under a type/UTI (max 64 MiB). |
+| `CompletionStage<Void> setDockBadge(String label)` | Sets the Dock badge label, or clears it when blank. |
+| `CompletionStage<Void> setApplicationMenu(MenuSpec menu, Consumer<String> onAction)` | Installs the app menu bar; a chosen `MenuItem.Action` reports its id to `onAction`. macOS only; no-op elsewhere. `MenuSpec.of(...)`, `MenuItem.submenu/action/separator`, accelerators like `"CmdOrCtrl+S"`. |
 | `CompletionStage<MessageDialogResult> showMessageDialog(MessageDialog dialog)` | Shows a native message dialog. |
 | `CompletionStage<FileDialogResult> showOpenDialog(FileDialog.OpenDialog dialog)` | Shows a native, app-modal open dialog (see [Dialogs & printing](../guides/dialogs-and-printing.md)). |
 | `CompletionStage<FileDialogResult> showSaveDialog(FileDialog.SaveDialog dialog)` | Shows a native, app-modal save dialog. |
 | `CompletionStage<Void> printFile(PrintJob job)` | Sends a document file (typically a PDF) to a printer via the OS print system. |
+| `FileWatchHandle watchFiles(Path root, FileWatchOptions options, Consumer<List<FileWatchEvent>> listener)` | Watches a directory for changes; coalesced batches delivered off the UI thread (see [File watching](#file-watching)). |
+| `PtyHandle openPty(PtySpec spec, Consumer<byte[]> output)` | Starts a child process on a real pseudo-terminal; output streamed off the UI thread (see [Pseudo-terminals](#pseudo-terminals)). |
 | `void requestStop()` | Requests orderly application shutdown without blocking the caller. |
 
 ### `WindowHandle`
@@ -431,16 +438,26 @@ the [error codes reference](error-codes.md).
 `jdesk://app/<prefix>/...`, registered with
 [`Builder.assetRoute`](#jdeskapplicationbuilder). Handlers run off the UI thread;
 blocking I/O is fine. Responses stream through the asset pipeline: security headers are
-added, and Range requests get 206 automatically when `contentLength` is known. See
+added, and Range requests get 206 automatically when `contentLength` is known. `GET`/`HEAD`
+read; `POST` is the non-base64 **binary upload** channel — a page
+`fetch(url, {method:'POST', body})` arrives as `request.body()` (exact bytes). See
 [Serving assets](../guides/serving-assets.md).
 
 | Member | Meaning |
 | --- | --- |
 | `Optional<Response> serve(Request request) throws IOException` | Returns the response, or empty for a deterministic 404. `IOException` maps to a path-free 500. |
-| `record Request(String path, Map<String, String> headers)` | Path below the prefix (normalized, traversal-safe) and request headers (lower-case keys); `header(String)` looks up case-insensitively. |
+| `record Request(String path, String method, byte[] body, Map<String, String> headers)` | Path below the prefix (normalized, traversal-safe), HTTP method, raw upload bytes (empty for GET/HEAD), and request headers (lower-case keys); `header(String)` looks up case-insensitively. A `Request(String path, Map)` convenience constructor keeps GET routes source-compatible. |
 | `record Response(String contentType, long contentLength, Supplier<InputStream> body, Map<String, String> headers)` | Content type, byte length (-1 unknown; Range needs it known), fresh-stream supplier, extra response headers (e.g. `Cache-Control`). |
 | `static Response of(byte[] bytes, String contentType)` | Buffered response from bytes (defensive copy). |
 | `static Response of(Path file, String contentType) throws IOException` | Streamed response from a file; derives the length. |
+| `static Response empty()` | 200 with an empty body — the natural acknowledgement for an accepted upload. |
+
+**Upload limits.** POST bodies are capped by the `jdesk.assets.maxUploadBytes` system
+property (default 64 MiB); a larger body is rejected with **413** before the route runs.
+Methods outside `GET`/`HEAD`/`POST` get **405**; a POST that matches no route is a plain
+404 (the packaged asset source is read-only). Platform status: **macOS** delivers the
+POST body (live-verified byte-exact, see [Serving assets](../guides/serving-assets.md));
+**Windows/Linux** do not forward the request body yet (routes see an empty body).
 
 ### `FileDialog` / `FileDialogResult`
 
@@ -469,6 +486,51 @@ record PrintJob(String filePath, Optional<String> printerName, int copies,
 
 `PrintJob.of(filePath)` then `.toPrinter(name)` / `.withCopies(n)` /
 `.withPaperSize("A4")`. `copies` must be 1..99.
+
+## File watching
+
+`ApplicationHandle.watchFiles(root, options, listener)` watches a directory for changes
+and returns a `FileWatchHandle`. Raw OS events are coalesced within a window and delivered
+as batches on one dedicated background thread (never the UI thread); a throwing listener is
+logged and the watch survives. Close the handle — or let shutdown do it — to stop. Up to
+128 concurrent watches.
+
+| Type | Meaning |
+| --- | --- |
+| `record FileWatchEvent(Path path, Kind kind)` | One change; `Kind` is `CREATED`, `MODIFIED`, `DELETED`, or `OVERFLOW` (events dropped/coalesced — `path` is the root, rescan). |
+| `record FileWatchOptions(boolean recursive, Duration coalesceWindow)` | `FileWatchOptions.RECURSIVE` / `NON_RECURSIVE` constants; `withCoalesceWindow(d)`; window `0` delivers each batch immediately. |
+| `interface FileWatchHandle` | `isActive()`, `close()` (idempotent, any thread). |
+
+**Platform status (honest).** **macOS** uses FSEvents through FFM — live-verified
+event-driven at **~10–13 ms** for create/modify/delete, including Unicode paths and
+recursive subtrees, on a dedicated dispatch queue (never the UI thread). Because FSEvents
+reports *cumulative* per-path flags, `DELETED` is reliable (existence-checked) but the
+`CREATED` vs `MODIFIED` split is best-effort — a create-with-content may surface as
+`MODIFIED`; treat kinds as hints and stat the path when exact semantics matter.
+**Windows/Linux** use the portable `WatchService` backend (kernel-backed and event-driven
+there). The same portable backend also runs on macOS as a fallback, but the JDK degrades it
+to ~2 s polling there — which is exactly why FSEvents is the macOS backend.
+
+## Pseudo-terminals
+
+`ApplicationHandle.openPty(spec, output)` starts a child process attached to a real PTY (a
+shell, REPL, or any TTY program) and streams its output to the callback off the UI thread.
+The returned `PtyHandle` is the input/control side. Up to 64 concurrent sessions; all are
+closed at shutdown.
+
+| Type | Meaning |
+| --- | --- |
+| `record PtySpec(List<String> command, Optional<Path> workingDirectory, Map<String,String> environment, int columns, int rows)` | `PtySpec.of(argv...)` (80×24); `withSize`, `withWorkingDirectory`, `withEnvironment`. `TERM` defaults to `xterm-256color`. |
+| `interface PtyHandle` | `write(byte[])`, `resize(cols, rows)`, `isAlive()`, `exitCode()` (`OptionalInt`; 128+signal for signalled deaths), `terminate()` (SIGHUP), `kill()` (SIGKILL), `close()`. |
+
+**Platform status (honest).** **macOS** is implemented with public `openpty` + `posix_spawnp`
+(no `fork` inside the JVM) and live-verified on a real `/bin/sh`: a genuine controlling TTY
+(`/dev/ttys000`), `stty size` reflecting the initial `80×24` and a mid-run `resize(100,40)`,
+a propagated exit code (`exit 7` → `7`), and — because `POSIX_SPAWN_SETSID` makes the child a
+session/group leader and signals target the process group — killing the session reaps a
+backgrounded child too (no orphans). Reader/waiter run on platform daemon threads (they never
+pin a virtual-thread carrier). **Windows (ConPTY)** and **Linux (openpty/`libutil`)** are not
+implemented yet; `openPty` reports `ILLEGAL_STATE` there (PLATFORM-002).
 
 ## Secrets
 
