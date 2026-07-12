@@ -4,27 +4,40 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>JDesk Notes</title>
-  <!-- CSP-safe: external stylesheet + script only, no inline code. -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="toolbar">
+  <header class="topbar">
+    <button id="btn-sidebar" class="icon-btn" type="button" title="Toggle Files sidebar">&#9776;</button>
+    <div id="tabstrip" class="tabstrip"></div>
+    <button id="btn-newtab" class="icon-btn newtab" type="button" title="New tab (Ctrl+T)">+</button>
+    <div class="spacer"></div>
     <div class="actions">
-      <button id="btn-new" type="button" title="New (Ctrl+N)" disabled>New</button>
-      <button id="btn-open" type="button" title="Open… (Ctrl+O)" disabled>Open…</button>
+      <button id="btn-open" type="button" title="Open file (Ctrl+O)" disabled>Open&#8230;</button>
       <button id="btn-save" type="button" title="Save (Ctrl+S)" disabled>Save</button>
-      <button id="btn-save-as" type="button" title="Save As… (Ctrl+Shift+S)" disabled>Save As…</button>
+      <button id="btn-save-as" type="button" title="Save As (Ctrl+Shift+S)" disabled>Save As&#8230;</button>
     </div>
-    <div id="doc-title" class="doc-title">Untitled</div>
   </header>
 
-  <main class="editor-wrap">
-    <textarea id="editor" spellcheck="true" placeholder="Start typing…"
-              aria-label="Note contents" disabled></textarea>
-  </main>
+  <div class="body">
+    <aside id="sidebar" class="sidebar hidden">
+      <div class="sidebar-head">
+        <span class="sidebar-title">Files</span>
+        <button id="btn-open-folder" class="icon-btn" type="button" title="Open a folder">&#128193;</button>
+      </div>
+      <input id="sidebar-path-input" class="sidebar-path-input" type="text"
+             placeholder="Type a folder path, Enter&#8230;" spellcheck="false">
+      <div id="sidebar-path" class="sidebar-path">No folder opened</div>
+      <ul id="file-list" class="file-list"></ul>
+    </aside>
+
+    <main class="editor-wrap">
+      <textarea id="editor" spellcheck="true" placeholder="Start typing&#8230;" disabled></textarea>
+    </main>
+  </div>
 
   <footer class="statusbar">
-    <span id="status" class="status">connecting to the JDesk bridge…</span>
+    <span id="status" class="status">connecting to the JDesk bridge&#8230;</span>
     <span id="counts" class="counts"></span>
   </footer>
 

@@ -1,36 +1,113 @@
 "use strict";
-// JDesk Notes — vanilla bridge client (same wire protocol as hello-vanilla / the smoke page).
-// window.__jdesk.post(json) sends to Java; "jdesk-message" document events come back.
+// JDesk Notes — tabbed editor with a Files sidebar and session persistence, over the
+// vanilla JDesk bridge (window.__jdesk.post + "jdesk-message" document events).
 (function () {
   var pending = new Map();
   var nextId = 1;
   var nonceWaiters = [];
   var helloWaiter = null;
-
-  // Dialog commands (Open / Save As) are app-modal and may stay open while the user
-  // browses; give them a generous timeout. Plain writes resolve quickly.
   var DIALOG_TIMEOUT_MS = 5 * 60 * 1000;
   var CALL_TIMEOUT_MS = 30 * 1000;
 
   var el = {
-    btnNew: document.getElementById("btn-new"),
-    btnOpen: document.getElementById("btn-open"),
-    btnSave: document.getElementById("btn-save"),
-    btnSaveAs: document.getElementById("btn-save-as"),
-    title: document.getElementById("doc-title"),
+    tabstrip: document.getElementById("tabstrip"),
     editor: document.getElementById("editor"),
     status: document.getElementById("status"),
     counts: document.getElementById("counts"),
+    sidebar: document.getElementById("sidebar"),
+    sidebarPath: document.getElementById("sidebar-path"),
+    fileList: document.getElementById("file-list"),
+    btnSidebar: document.getElementById("btn-sidebar"),
+    btnNewTab: document.getElementById("btn-newtab"),
+    btnOpen: document.getElementById("btn-open"),
+    btnSave: document.getElementById("btn-save"),
+    btnSaveAs: document.getElementById("btn-save-as"),
+    btnOpenFolder: document.getElementById("btn-open-folder"),
+    sidebarPathInput: document.getElementById("sidebar-path-input"),
   };
 
-  // ---- document state ----
-  var currentPath = null;      // absolute path, or null when untitled
-  var currentName = "Untitled";
-  var savedContent = "";       // last persisted/loaded content
-  var busy = false;
+  // ---- tab model ----
+  var tabs = [];
+  var activeId = null;
+  var seq = 1;
+  var sessionTimer = null;
+  var ready = false;
 
-  function isDirty() {
-    return el.editor.value !== savedContent;
+  function activeTab() {
+    for (var i = 0; i < tabs.length; i++) { if (tabs[i].id === activeId) { return tabs[i]; } }
+    return null;
+  }
+  function isDirty(t) { return t.content !== t.savedContent; }
+
+  function makeTab(path, name, content) {
+    return { id: seq++, path: path || null, name: name || "Untitled",
+             content: content || "", savedContent: content || "" };
+  }
+
+  function addTab(tab, activate) {
+    tabs.push(tab);
+    if (activate !== false) { activeId = tab.id; }
+    renderTabs(); syncEditor(); render(); scheduleSession();
+  }
+
+  function setActive(id) {
+    if (id === activeId) { return; }
+    activeId = id;
+    renderTabs(); syncEditor(); render();
+    el.editor.focus();
+  }
+
+  function closeTab(id) {
+    var idx = -1;
+    for (var i = 0; i < tabs.length; i++) { if (tabs[i].id === id) { idx = i; break; } }
+    if (idx < 0) { return; }
+    var wasActive = tabs[idx].id === activeId;
+    tabs.splice(idx, 1);
+    if (tabs.length === 0) {
+      var t = makeTab(null, "Untitled", "");
+      tabs.push(t); activeId = t.id;
+    } else if (wasActive) {
+      activeId = tabs[Math.min(idx, tabs.length - 1)].id;
+    }
+    renderTabs(); syncEditor(); render(); scheduleSession();
+    el.editor.focus();
+  }
+
+  // ---- rendering ----
+  function renderTabs() {
+    el.tabstrip.textContent = "";
+    tabs.forEach(function (t) {
+      var tab = document.createElement("div");
+      tab.className = "tab" + (t.id === activeId ? " active" : "") + (isDirty(t) ? " dirty" : "");
+      tab.title = t.path || t.name;
+      var name = document.createElement("span");
+      name.className = "tab-name";
+      name.textContent = t.name;
+      tab.appendChild(name);
+      var close = document.createElement("button");
+      close.className = "tab-close"; close.type = "button"; close.textContent = "×";
+      close.title = "Close tab";
+      close.addEventListener("click", function (e) { e.stopPropagation(); closeTab(t.id); });
+      tab.appendChild(close);
+      tab.addEventListener("click", function () { setActive(t.id); });
+      el.tabstrip.appendChild(tab);
+    });
+  }
+
+  function syncEditor() {
+    var t = activeTab();
+    el.editor.value = t ? t.content : "";
+  }
+
+  function render() {
+    var t = activeTab();
+    var text = t ? t.content : "";
+    var lines = text.length === 0 ? 1 : text.split("\n").length;
+    el.counts.textContent = text.length + " chars · " + lines + " lines · " + tabs.length + " tabs";
+    var canAct = ready && t !== null;
+    el.btnOpen.disabled = !ready;
+    el.btnSaveAs.disabled = !canAct;
+    el.btnSave.disabled = !canAct || (t && !isDirty(t) && t.path !== null);
   }
 
   function setStatus(text, kind) {
@@ -38,193 +115,245 @@
     el.status.className = "status" + (kind ? " " + kind : "");
   }
 
-  function render() {
-    el.title.textContent = currentName;
-    el.title.classList.toggle("dirty", isDirty());
-    var text = el.editor.value;
-    var lines = text.length === 0 ? 1 : text.split("\n").length;
-    el.counts.textContent = text.length + " chars · " + lines + " lines";
-    var ready = !busy && !el.editor.disabled;
-    el.btnNew.disabled = !ready;
-    el.btnOpen.disabled = !ready;
-    el.btnSaveAs.disabled = !ready;
-    // Save is meaningful when there is something new to persist.
-    el.btnSave.disabled = !ready || (!isDirty() && currentPath !== null);
+  // ---- session persistence ----
+  function snapshotSession() {
+    return { activeId: activeId, tabs: tabs.map(function (t) {
+      return { path: t.path, name: t.name, content: t.content, savedContent: t.savedContent };
+    }) };
   }
-
-  // ---- bridge plumbing ----
-  function post(message) {
-    window.__jdesk.post(JSON.stringify(message));
+  function scheduleSession() {
+    if (sessionTimer) { clearTimeout(sessionTimer); }
+    sessionTimer = setTimeout(function () {
+      invoke("notes.saveSession", { json: JSON.stringify(snapshotSession()) }).catch(function () {});
+    }, 500);
   }
-
-  function invoke(command, payload, timeoutMs) {
-    return new Promise(function (resolve, reject) {
-      var id = "req-" + (nextId++);
-      var timer = setTimeout(function () {
-        pending.delete(id);
-        reject(new Error("client timeout for " + command));
-      }, timeoutMs || CALL_TIMEOUT_MS);
-      pending.set(id, { resolve: resolve, reject: reject, timer: timer });
-      try {
-        post({ v: 1, kind: "invoke", id: id, command: command,
-               payload: payload === undefined ? null : payload,
-               nonce: window.__jdesk.nonce });
-      } catch (e) {
-        clearTimeout(timer);
-        pending.delete(id);
-        reject(e);
-      }
-    });
-  }
-
-  function awaitNonce() {
-    return new Promise(function (resolve, reject) {
-      if (window.__jdesk && window.__jdesk.nonce) {
-        resolve(window.__jdesk.nonce);
-        return;
-      }
-      var timer = setTimeout(function () { reject(new Error("nonce timeout")); }, 10000);
-      nonceWaiters.push(function (nonce) { clearTimeout(timer); resolve(nonce); });
-    });
-  }
-
-  function hello() {
-    return new Promise(function (resolve, reject) {
-      var timer = setTimeout(function () { reject(new Error("hello timeout")); }, 10000);
-      helloWaiter = function (ack) { clearTimeout(timer); resolve(ack); };
-      post({ v: 1, kind: "hello", client: "jdesk-notes-page", clientVersion: "0.1.0",
-             nonce: window.__jdesk.nonce });
-    });
-  }
-
-  document.addEventListener("jdesk-message", function (event) {
-    var message;
+  function restoreSession(json) {
+    var ok = false;
     try {
-      message = JSON.parse(event.detail);
-    } catch (e) {
-      return;
-    }
-    if (message.kind === "nonce") {
-      window.__jdesk.nonce = message.nonce;
-      nonceWaiters.splice(0).forEach(function (waiter) { waiter(message.nonce); });
-    } else if (message.kind === "helloAck" && helloWaiter) {
-      var w = helloWaiter;
-      helloWaiter = null;
-      w(message);
-    } else if (message.kind === "result") {
-      var entry = pending.get(message.id);
-      if (!entry) { return; }
-      pending.delete(message.id);
-      clearTimeout(entry.timer);
-      if (message.ok) {
-        entry.resolve(message.value);
-      } else {
-        var error = new Error(message.error.message);
-        error.code = message.error.code;
-        entry.reject(error);
+      if (json && json.trim()) {
+        var s = JSON.parse(json);
+        if (s && s.tabs && s.tabs.length) {
+          tabs = s.tabs.map(function (t) {
+            return { id: seq++, path: t.path || null, name: t.name || "Untitled",
+                     content: t.content || "", savedContent: t.savedContent || "" };
+          });
+          activeId = tabs.some(function (t) { return t.id === s.activeId; }) ? s.activeId : tabs[0].id;
+          ok = true;
+        }
       }
-    }
-  });
+    } catch (e) { ok = false; }
+    if (!ok) { tabs = [makeTab(null, "Untitled", "")]; activeId = tabs[0].id; }
+    renderTabs(); syncEditor(); render();
+  }
 
   // ---- actions ----
+  var busy = false;
   function withBusy(label, fn) {
-    if (busy) { return; }
-    busy = true;
-    render();
-    setStatus(label, null);
-    Promise.resolve()
-      .then(fn)
-      .catch(function (error) {
-        setStatus((error.code ? error.code + " — " : "") + error.message, "error");
-      })
-      .finally(function () {
-        busy = false;
-        render();
-        el.editor.focus();
-      });
+    if (busy) { return Promise.resolve(); }
+    busy = true; setStatus(label, null);
+    return Promise.resolve().then(fn).catch(function (error) {
+      setStatus((error.code ? error.code + " - " : "") + error.message, "error");
+    }).finally(function () { busy = false; render(); el.editor.focus(); });
   }
 
-  function doNew() {
-    withBusy("New note", function () {
-      el.editor.value = "";
-      currentPath = null;
-      currentName = "Untitled";
-      savedContent = "";
-      setStatus("new note", "ok");
-    });
-  }
+  function newTab() { addTab(makeTab(null, "Untitled", "")); el.editor.focus(); }
 
-  function doOpen() {
-    withBusy("Opening…", function () {
+  function openFile() {
+    return withBusy("Opening…", function () {
       return invoke("notes.open", {}, DIALOG_TIMEOUT_MS).then(function (res) {
-        if (res.cancelled) {
-          setStatus("open cancelled", null);
-          return;
-        }
-        el.editor.value = res.content;
-        currentPath = res.path;
-        currentName = res.name;
-        savedContent = res.content;
+        if (res.cancelled) { setStatus("open cancelled"); return; }
+        openInTab(res);
         setStatus("opened " + res.path, "ok");
       });
     });
   }
 
-  function doSave() {
-    if (currentPath === null) {
-      doSaveAs();
-      return;
+  function openPath(path) {
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].path === path) { setActive(tabs[i].id); return Promise.resolve(); }
     }
-    withBusy("Saving…", function () {
-      var content = el.editor.value;
-      return invoke("notes.save", { path: currentPath, content: content }).then(function (res) {
-        savedContent = content;
-        currentName = res.name;
+    return withBusy("Opening…", function () {
+      return invoke("notes.readFile", { path: path }).then(function (res) {
+        openInTab(res); setStatus("opened " + res.path, "ok");
+      });
+    });
+  }
+
+  function openInTab(res) {
+    var cur = activeTab();
+    if (cur && cur.path === null && cur.content === "" && !isDirty(cur)) {
+      cur.path = res.path; cur.name = res.name; cur.content = res.content; cur.savedContent = res.content;
+    } else {
+      tabs.push({ id: seq++, path: res.path, name: res.name, content: res.content, savedContent: res.content });
+      activeId = tabs[tabs.length - 1].id;
+    }
+    renderTabs(); syncEditor(); render(); scheduleSession();
+  }
+
+  function saveActive() {
+    var t = activeTab();
+    if (!t) { return Promise.resolve(); }
+    if (t.path === null) { return saveAsActive(); }
+    return withBusy("Saving…", function () {
+      return invoke("notes.save", { path: t.path, content: t.content }).then(function (res) {
+        t.savedContent = t.content; t.name = res.name;
+        renderTabs(); render(); scheduleSession();
         setStatus("saved " + res.path, "ok");
       });
     });
   }
 
-  function doSaveAs() {
-    withBusy("Save As…", function () {
-      var content = el.editor.value;
-      var suggested = currentName && currentName !== "Untitled" ? currentName : "untitled.txt";
-      return invoke("notes.saveAs", { suggestedName: suggested, content: content },
-          DIALOG_TIMEOUT_MS).then(function (res) {
-        if (res.cancelled) {
-          setStatus("save cancelled", null);
-          return;
-        }
-        currentPath = res.path;
-        currentName = res.name;
-        savedContent = content;
-        setStatus("saved " + res.path, "ok");
+  function saveAsActive() {
+    var t = activeTab();
+    if (!t) { return Promise.resolve(); }
+    return withBusy("Save As…", function () {
+      var suggested = t.name && t.name !== "Untitled" ? t.name : "untitled.txt";
+      return invoke("notes.saveAs", { suggestedName: suggested, content: t.content }, DIALOG_TIMEOUT_MS)
+        .then(function (res) {
+          if (res.cancelled) { setStatus("save cancelled"); return; }
+          t.path = res.path; t.name = res.name; t.savedContent = t.content;
+          renderTabs(); render(); scheduleSession();
+          setStatus("saved " + res.path, "ok");
+        });
+    });
+  }
+
+  // ---- sidebar (Files) ----
+  function toggleSidebar() { el.sidebar.classList.toggle("hidden"); }
+
+  function openFolder() {
+    return withBusy("Open folder…", function () {
+      return invoke("notes.openFolder", {}, DIALOG_TIMEOUT_MS).then(function (listing) {
+        if (listing.cancelled) { setStatus("folder cancelled"); return; }
+        el.sidebar.classList.remove("hidden");
+        renderFolder(listing);
+        setStatus("folder " + listing.path, "ok");
       });
     });
   }
 
-  el.btnNew.addEventListener("click", doNew);
-  el.btnOpen.addEventListener("click", doOpen);
-  el.btnSave.addEventListener("click", doSave);
-  el.btnSaveAs.addEventListener("click", doSaveAs);
-  el.editor.addEventListener("input", render);
+  function listDir(path) {
+    return withBusy("Listing…", function () {
+      return invoke("notes.listDir", { path: path }).then(function (listing) { renderFolder(listing); });
+    });
+  }
 
+  function parentOf(p) {
+    var norm = p.replace(/[\\/]+$/, "");
+    var i = Math.max(norm.lastIndexOf("\\"), norm.lastIndexOf("/"));
+    return i > 0 ? norm.slice(0, i) : null;
+  }
+
+  function renderFolder(listing) {
+    el.sidebarPath.textContent = listing.path;
+    el.sidebarPath.title = listing.path;
+    el.fileList.textContent = "";
+    var parent = parentOf(listing.path);
+    if (parent) {
+      var up = document.createElement("li");
+      up.className = "up"; up.innerHTML = '<span class="ic">⬆</span>..';
+      up.addEventListener("click", function () { listDir(parent); });
+      el.fileList.appendChild(up);
+    }
+    listing.entries.forEach(function (entry) {
+      var li = document.createElement("li");
+      li.className = entry.dir ? "dir" : "file";
+      var icon = entry.dir ? "📁" : "📄";
+      li.innerHTML = '<span class="ic">' + icon + "</span>";
+      li.appendChild(document.createTextNode(entry.name));
+      li.title = entry.path;
+      li.addEventListener("click", function () {
+        if (entry.dir) { listDir(entry.path); } else { openPath(entry.path); }
+      });
+      el.fileList.appendChild(li);
+    });
+  }
+
+  // ---- bridge plumbing ----
+  function post(m) { window.__jdesk.post(JSON.stringify(m)); }
+  function invoke(command, payload, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var id = "req-" + (nextId++);
+      var timer = setTimeout(function () { pending.delete(id); reject(new Error("client timeout for " + command)); },
+        timeoutMs || CALL_TIMEOUT_MS);
+      pending.set(id, { resolve: resolve, reject: reject, timer: timer });
+      try {
+        post({ v: 1, kind: "invoke", id: id, command: command,
+               payload: payload === undefined ? null : payload, nonce: window.__jdesk.nonce });
+      } catch (e) { clearTimeout(timer); pending.delete(id); reject(e); }
+    });
+  }
+  function awaitNonce() {
+    return new Promise(function (resolve, reject) {
+      if (window.__jdesk && window.__jdesk.nonce) { resolve(window.__jdesk.nonce); return; }
+      var timer = setTimeout(function () { reject(new Error("nonce timeout")); }, 10000);
+      nonceWaiters.push(function (n) { clearTimeout(timer); resolve(n); });
+    });
+  }
+  function hello() {
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () { reject(new Error("hello timeout")); }, 10000);
+      helloWaiter = function (ack) { clearTimeout(timer); resolve(ack); };
+      post({ v: 1, kind: "hello", client: "jdesk-notes-page", clientVersion: "0.2.0", nonce: window.__jdesk.nonce });
+    });
+  }
+  document.addEventListener("jdesk-message", function (event) {
+    var message;
+    try { message = JSON.parse(event.detail); } catch (e) { return; }
+    if (message.kind === "nonce") {
+      window.__jdesk.nonce = message.nonce;
+      nonceWaiters.splice(0).forEach(function (w) { w(message.nonce); });
+    } else if (message.kind === "helloAck" && helloWaiter) {
+      var w = helloWaiter; helloWaiter = null; w(message);
+    } else if (message.kind === "result") {
+      var entry = pending.get(message.id);
+      if (!entry) { return; }
+      pending.delete(message.id); clearTimeout(entry.timer);
+      if (message.ok) { entry.resolve(message.value); }
+      else { var err = new Error(message.error.message); err.code = message.error.code; entry.reject(err); }
+    }
+  });
+
+  // ---- wiring ----
+  el.btnNewTab.addEventListener("click", newTab);
+  el.btnOpen.addEventListener("click", openFile);
+  el.btnSave.addEventListener("click", saveActive);
+  el.btnSaveAs.addEventListener("click", saveAsActive);
+  el.btnSidebar.addEventListener("click", toggleSidebar);
+  el.btnOpenFolder.addEventListener("click", openFolder);
+  el.sidebarPathInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      var path = el.sidebarPathInput.value.trim();
+      if (path) { listDir(path); }
+    }
+  });
+  el.editor.addEventListener("input", function () {
+    var t = activeTab();
+    if (t) { t.content = el.editor.value; }
+    var dirtyTab = document.querySelector(".tab.active");
+    if (t && dirtyTab) { dirtyTab.classList.toggle("dirty", isDirty(t)); }
+    render(); scheduleSession();
+  });
   document.addEventListener("keydown", function (e) {
     if (!(e.ctrlKey || e.metaKey)) { return; }
     var key = e.key.toLowerCase();
-    if (key === "s" && e.shiftKey) { e.preventDefault(); doSaveAs(); }
-    else if (key === "s") { e.preventDefault(); doSave(); }
-    else if (key === "o") { e.preventDefault(); doOpen(); }
-    else if (key === "n") { e.preventDefault(); doNew(); }
+    if (key === "s" && e.shiftKey) { e.preventDefault(); saveAsActive(); }
+    else if (key === "s") { e.preventDefault(); saveActive(); }
+    else if (key === "o") { e.preventDefault(); openFile(); }
+    else if (key === "t" || key === "n") { e.preventDefault(); newTab(); }
+    else if (key === "w") { e.preventDefault(); if (activeId !== null) { closeTab(activeId); } }
   });
 
   (async function init() {
     try {
       await awaitNonce();
       await hello();
+      ready = true;
       el.editor.disabled = false;
-      render();
-      setStatus("ready — New · Open · Save · Save As", "ok");
+      var res = await invoke("notes.loadSession", {});
+      restoreSession(res && res.json);
+      setStatus("ready · " + tabs.length + " tab(s) restored", "ok");
       el.editor.focus();
     } catch (e) {
       setStatus("bridge unavailable: " + e.message, "error");

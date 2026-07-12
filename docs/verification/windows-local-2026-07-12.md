@@ -50,6 +50,28 @@ through the token-gated automation `/input` endpoint (real DOM events); the moda
 were completed with Windows UI Automation. This is the first runtime confirmation of the
 Windows native file-chooser path.
 
+### jdesk-notes: tabs, sidebar, session, tray, packaging
+
+The example was extended into a tabbed editor and each surface was driven on real Windows 11:
+
+- **Tabs** — browser-style tabs with a `+`; verified adding tabs and per-tab content.
+- **Session persistence** — two tabs with unsaved content were written to
+  `~/.jdesk/dev.jdesk.examples.notes/session.json`; after a kill + relaunch both tabs and the
+  previously-active tab were restored (verified again through the packaged app: 3 tabs
+  restored).
+- **Files sidebar** — listing `%TEMP%` returned 37 files + 7 folders; clicking a text file
+  opened it in a new tab with the file's content.
+- **System tray + close-to-tray** — `WM_CLOSE` on the window left the process running with
+  the window hidden (proving the Win32 `Shell_NotifyIconW` tray created successfully — the
+  close-to-tray veto is gated on it; the tray path was previously compile-verified only).
+- **Autostart** — the `HKCU\…\Run` add/query/delete round trip the tray "Start with Windows"
+  item uses was validated on the machine.
+- **Packaging** — `jpackage --type app-image` produced a self-contained image; with a
+  `WebView2Loader.dll` beside the launcher it started with **no dev Java on `PATH` and an
+  empty `JAVA_HOME`**, served the UI from the classpath `web/` module, connected the bridge,
+  and restored the session — proving the packaged app does not depend on the dev Java
+  environment. (The MSI installer additionally needs the WiX toolset on `PATH`.)
+
 ## Cross-platform / Windows defects fixed in this run
 
 All of these made `./gradlew check` fail on a fresh Windows checkout while passing on the

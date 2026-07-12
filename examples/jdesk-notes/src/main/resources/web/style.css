@@ -1,33 +1,35 @@
 :root {
   --bg: #f6f7f9;
   --panel: #ffffff;
+  --panel-2: #eef1f5;
   --border: #d9dde3;
   --text: #1c2330;
   --muted: #5b6472;
   --accent: #2f6fed;
   --accent-text: #ffffff;
   --dirty: #d98324;
+  --tab-active: #ffffff;
+  --tab-idle: #e7ebf1;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1a1d23;
-    --panel: #23272f;
+    --bg: #15181e;
+    --panel: #1f232b;
+    --panel-2: #191c22;
     --border: #333a45;
     --text: #e7eaf0;
     --muted: #9aa4b2;
     --accent: #4d84ff;
     --accent-text: #0d1017;
     --dirty: #f0a94a;
+    --tab-active: #23272f;
+    --tab-idle: #191c22;
   }
 }
 
 * { box-sizing: border-box; }
-
-html, body {
-  height: 100%;
-  margin: 0;
-}
+html, body { height: 100%; margin: 0; }
 
 body {
   display: flex;
@@ -38,106 +40,126 @@ body {
   background: var(--bg);
 }
 
-.toolbar {
+/* ---- top bar: sidebar toggle + tabs + actions ---- */
+.topbar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 8px 12px;
-  background: var(--panel);
+  gap: 6px;
+  padding: 5px 8px;
+  background: var(--panel-2);
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
 
-.actions {
-  display: flex;
-  gap: 6px;
-}
-
-.toolbar button {
+.icon-btn {
   font: inherit;
-  padding: 6px 12px;
-  border: 1px solid var(--border);
+  line-height: 1;
+  padding: 6px 9px;
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: var(--panel);
+  background: transparent;
   color: var(--text);
   cursor: pointer;
 }
+.icon-btn:hover { background: var(--panel); border-color: var(--border); }
 
-.toolbar button:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.toolbar button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-#btn-save {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
-}
-
-#btn-save:disabled {
-  background: var(--panel);
-  color: var(--text);
-  border-color: var(--border);
-}
-
-.doc-title {
-  margin-left: auto;
-  font-weight: 600;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 60%;
-}
-
-.doc-title.dirty::after {
-  content: " •";
-  color: var(--dirty);
-}
-
-.editor-wrap {
-  flex: 1 1 auto;
+.tabstrip {
   display: flex;
-  min-height: 0;
-  padding: 10px 12px;
+  gap: 4px;
+  overflow-x: auto;
+  max-width: 55%;
+  scrollbar-width: thin;
 }
 
-#editor {
-  flex: 1 1 auto;
-  width: 100%;
-  resize: none;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px 14px;
-  font: 14px/1.55 "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  color: var(--text);
-  background: var(--panel);
-  outline: none;
-  tab-size: 4;
-}
-
-#editor:focus {
-  border-color: var(--accent);
-}
-
-.statusbar {
+.tab {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 12px;
-  background: var(--panel);
-  border-top: 1px solid var(--border);
+  gap: 6px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: var(--tab-idle);
   color: var(--muted);
-  font-size: 12px;
-  flex: 0 0 auto;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 200px;
 }
+.tab.active { background: var(--tab-active); color: var(--text); }
+.tab-name { overflow: hidden; text-overflow: ellipsis; }
+.tab.dirty .tab-name::after { content: " \2022"; color: var(--dirty); }
+.tab-close {
+  border: none; background: transparent; color: inherit;
+  cursor: pointer; border-radius: 4px; padding: 0 4px; font-size: 15px;
+}
+.tab-close:hover { background: var(--border); }
 
+.newtab { font-size: 18px; font-weight: 600; }
+.spacer { flex: 1 1 auto; }
+
+.actions { display: flex; gap: 6px; }
+.actions button {
+  font: inherit; padding: 6px 12px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer;
+}
+.actions button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.actions button:disabled { opacity: 0.5; cursor: default; }
+#btn-save { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+#btn-save:disabled { background: var(--panel); color: var(--text); border-color: var(--border); }
+
+/* ---- body: sidebar + editor ---- */
+.body { flex: 1 1 auto; display: flex; min-height: 0; }
+
+.sidebar {
+  width: 260px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-2);
+  border-right: 1px solid var(--border);
+  min-height: 0;
+}
+.sidebar.hidden { display: none; }
+.sidebar-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+}
+.sidebar-title { font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; color: var(--muted); }
+.sidebar-path-input {
+  margin: 6px 8px; padding: 5px 8px; font: inherit; font-size: 12px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--panel); color: var(--text); outline: none;
+}
+.sidebar-path-input:focus { border-color: var(--accent); }
+.sidebar-path {
+  padding: 6px 10px; font-size: 11px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-bottom: 1px solid var(--border);
+}
+.file-list { list-style: none; margin: 0; padding: 4px; overflow-y: auto; flex: 1 1 auto; }
+.file-list li {
+  padding: 5px 8px; border-radius: 6px; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.file-list li:hover { background: var(--panel); }
+.file-list li.dir { font-weight: 600; }
+.file-list li.up { color: var(--muted); }
+.file-list li .ic { display: inline-block; width: 1.3em; }
+
+.editor-wrap { flex: 1 1 auto; display: flex; min-height: 0; min-width: 0; padding: 10px 12px; }
+#editor {
+  flex: 1 1 auto; width: 100%; resize: none;
+  border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
+  font: 14px/1.55 "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  color: var(--text); background: var(--panel); outline: none; tab-size: 4;
+}
+#editor:focus { border-color: var(--accent); }
+
+/* ---- status bar ---- */
+.statusbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 6px 12px; background: var(--panel-2); border-top: 1px solid var(--border);
+  color: var(--muted); font-size: 12px; flex: 0 0 auto;
+}
 .status.error { color: #d64545; }
 .status.ok { color: #2f9e56; }
 .counts { font-variant-numeric: tabular-nums; }
