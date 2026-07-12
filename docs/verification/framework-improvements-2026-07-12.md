@@ -38,6 +38,18 @@ that ships the loader beside its `.exe` starts with no `-Djdesk.windows.webview2
 
 - Verified: the packaged `jdesk-notes` runs standalone with the loader beside the exe.
 
+### 3b. Custom tray icons on Windows (GDI+)
+
+`WindowsShellIntegration` converts `TraySpec` PNG bytes to an `HICON` via GDI+
+(`GdiplusStartup` + `GdipCreateBitmapFromStream` + `GdipCreateHICONFromBitmap`), falling back
+to the default app icon on any failure — the previously-documented "no custom icon" limit is
+closed (macOS/Linux already supported it). The Notes tray now shows a generated blue "N".
+
+### 3c. Reusable vanilla bridge helper (`jdesk-bridge.js`)
+
+A self-contained, no-bundler helper exposing `JDeskBridge.connect/invoke/onEvent`. The Notes
+app now uses it instead of hand-rolled nonce/hello/invoke plumbing; any app can copy the file.
+
 ### 4. Automation docs: `/evaluate` vs `/input`
 
 Documented that `/evaluate` runs in an isolated world (reads work; `.click()` does not fire
@@ -51,6 +63,10 @@ page listeners) and `/input` is the way to interact — the trap hit while E2E-t
 - **Recent files**: most-recently-opened files persist in the session and show in the sidebar.
 - **Encoding**: opening a non-UTF-8/binary file now yields a clean "Not a UTF-8 text file"
   message instead of a raw decoder error.
+- **Last directory**: open/save dialogs reopen at the folder of the last file used.
+- **Global shortcut + notification**: `Ctrl+Shift+N` summons the window
+  (`registerGlobalShortcut`); closing to the tray posts a `showNotification` balloon —
+  exercising the Win32 hotkey/`Shell_NotifyIcon` paths at runtime.
 
 ### 6. Windows ConPTY runtime probe (`WindowsPtyProbe`)
 

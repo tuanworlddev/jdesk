@@ -3,6 +3,7 @@ package dev.jdesk.platform.windows;
 import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
+import static java.lang.foreign.ValueLayout.JAVA_LONG;
 import static java.lang.foreign.ValueLayout.JAVA_SHORT;
 
 import dev.jdesk.api.ErrorCode;
@@ -35,10 +36,9 @@ import java.util.function.Consumer;
  * messages, so this owns a single hidden message-only window whose WndProc fans WM_HOTKEY and the
  * tray callback out to the registered Java handlers.
  *
- * <p>Honest status: compile-verified only — no Windows environment on the authoring machine. The
- * message routing (a hotkey press, a tray click) is a live OS input event and is runtime-verified
- * on the Windows native CI lane, not here. A custom PNG tray icon is not converted at runtime
- * (that needs GDI+); the tray falls back to the default application icon — a documented limit.
+ * <p>The message routing (a hotkey press, a tray click) is a live OS input event, runtime-verified
+ * on the Windows native CI lane. A custom PNG tray icon is converted to an {@code HICON} via
+ * GDI+ ({@link #iconFromPng}), falling back to the default application icon if conversion fails.
  */
 final class WindowsShellIntegration {
     private static final Logger LOG = System.getLogger(WindowsShellIntegration.class.getName());
@@ -87,6 +87,21 @@ final class WindowsShellIntegration {
     private static final Arena ARENA = Arena.ofShared(); // process-lifetime; never closed
     private static final SymbolLookup USER32 = SymbolLookup.libraryLookup("user32.dll", ARENA);
     private static final SymbolLookup SHELL32 = SymbolLookup.libraryLookup("shell32.dll", ARENA);
+    private static final SymbolLookup GDIPLUS = SymbolLookup.libraryLookup("gdiplus.dll", ARENA);
+    private static final SymbolLookup SHLWAPI = SymbolLookup.libraryLookup("shlwapi.dll", ARENA);
+
+    // GDI+ PNG -> HICON (custom tray icons). GdiplusStartup is called once, lazily.
+    private static final MethodHandle GDIPLUS_STARTUP = WindowsDesktop.down(GDIPLUS,
+            "GdiplusStartup", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
+    private static final MethodHandle GDIP_CREATE_BITMAP_FROM_STREAM = WindowsDesktop.down(GDIPLUS,
+            "GdipCreateBitmapFromStream", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
+    private static final MethodHandle GDIP_CREATE_HICON_FROM_BITMAP = WindowsDesktop.down(GDIPLUS,
+            "GdipCreateHICONFromBitmap", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
+    private static final MethodHandle GDIP_DISPOSE_IMAGE = WindowsDesktop.down(GDIPLUS,
+            "GdipDisposeImage", FunctionDescriptor.of(JAVA_INT, ADDRESS));
+    private static final MethodHandle SH_CREATE_MEM_STREAM = WindowsDesktop.down(SHLWAPI,
+            "SHCreateMemStream", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT));
+    private static volatile boolean gdiplusReady;
 
     private static final MethodHandle REGISTER_HOTKEY = WindowsDesktop.down(USER32, "RegisterHotKey",
             FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT));
@@ -156,10 +171,67 @@ final class WindowsShellIntegration {
     static synchronized TrayControl createTray(TraySpec spec, Consumer<String> onAction) {
         MemorySegment hwnd = ensureMessageWindow();
         int uid = TRAY_ID.getAndIncrement();
-        Tray tray = new Tray(hwnd, uid, spec.menu(), spec.title(), onAction);
+        MemorySegment icon = spec.iconPng().map(WindowsShellIntegration::iconFromPng)
+                .orElseGet(WindowsShellIntegration::defaultIcon);
+        Tray tray = new Tray(hwnd, uid, spec.menu(), spec.title(), icon, onAction);
         TRAYS.put(uid, tray);
         tray.add();
         return tray;
+    }
+
+    /**
+     * Converts PNG bytes to an {@code HICON} via GDI+, falling back to the default application
+     * icon on any failure (so a bad image never breaks the tray). The tiny backing IStream is
+     * intentionally not released — one small stream per tray icon over the app's lifetime.
+     */
+    private static MemorySegment iconFromPng(byte[] pngData) {
+        if (pngData == null || pngData.length == 0 || !ensureGdiplus()) {
+            return defaultIcon();
+        }
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment bytes = arena.allocate(pngData.length);
+            MemorySegment.copy(pngData, 0, bytes, JAVA_BYTE, 0, pngData.length);
+            MemorySegment stream = (MemorySegment) SH_CREATE_MEM_STREAM.invokeExact(
+                    bytes, pngData.length);
+            if (stream.equals(MemorySegment.NULL)) {
+                return defaultIcon();
+            }
+            MemorySegment bitmapOut = arena.allocate(ADDRESS);
+            int st = (int) GDIP_CREATE_BITMAP_FROM_STREAM.invokeExact(stream, bitmapOut);
+            if (st != 0) {
+                return defaultIcon();
+            }
+            MemorySegment bitmap = bitmapOut.get(ADDRESS, 0);
+            MemorySegment hiconOut = arena.allocate(ADDRESS);
+            int hs = (int) GDIP_CREATE_HICON_FROM_BITMAP.invokeExact(bitmap, hiconOut);
+            int unusedDispose = (int) GDIP_DISPOSE_IMAGE.invokeExact(bitmap);
+            if (hs != 0) {
+                return defaultIcon();
+            }
+            MemorySegment hicon = hiconOut.get(ADDRESS, 0);
+            return hicon.equals(MemorySegment.NULL) ? defaultIcon() : hicon;
+        } catch (Throwable t) {
+            LOG.log(Level.DEBUG, "PNG->HICON conversion failed; using default icon", t);
+            return defaultIcon();
+        }
+    }
+
+    private static synchronized boolean ensureGdiplus() {
+        if (gdiplusReady) {
+            return true;
+        }
+        try {
+            // GdiplusStartupInput { UINT32 GdiplusVersion=1; ptr; BOOL; BOOL } — 24 bytes on x64.
+            MemorySegment input = ARENA.allocate(24);
+            input.set(JAVA_INT, 0, 1);
+            MemorySegment token = ARENA.allocate(JAVA_LONG);
+            int status = (int) GDIPLUS_STARTUP.invokeExact(token, input, MemorySegment.NULL);
+            gdiplusReady = status == 0;
+            return gdiplusReady;
+        } catch (Throwable t) {
+            LOG.log(Level.DEBUG, "GdiplusStartup failed", t);
+            return false;
+        }
     }
 
     // ------------------------------------------------------------------ notifications
@@ -274,15 +346,18 @@ final class WindowsShellIntegration {
         private final MemorySegment hwnd;
         private final int uid;
         private volatile MenuSpec menu;
+        private final MemorySegment icon;
         private final Consumer<String> onAction;
         private volatile String title;
         private volatile boolean removed;
 
-        Tray(MemorySegment hwnd, int uid, MenuSpec menu, String title, Consumer<String> onAction) {
+        Tray(MemorySegment hwnd, int uid, MenuSpec menu, String title, MemorySegment icon,
+                Consumer<String> onAction) {
             this.hwnd = hwnd;
             this.uid = uid;
             this.menu = menu;
             this.title = title;
+            this.icon = icon;
             this.onAction = onAction;
         }
 
@@ -296,7 +371,7 @@ final class WindowsShellIntegration {
                 MemorySegment data = arena.allocate(NOTIFYICONDATAW_SIZE);
                 header(data, hwnd, uid, NIF_MESSAGE | NIF_ICON | NIF_TIP);
                 data.set(JAVA_INT, OFF_UCALLBACK, TRAY_CALLBACK);
-                data.set(ADDRESS, OFF_HICON, defaultIcon());
+                data.set(ADDRESS, OFF_HICON, icon);
                 putWide(data, OFF_SZTIP, 128, title);
                 if (!shellNotify(NIM_ADD, data)) {
                     throw new JDeskException(ErrorCode.ILLEGAL_STATE, "Shell_NotifyIcon add failed");

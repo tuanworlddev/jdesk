@@ -38,9 +38,22 @@ public class NotesService {
     private static final int MAX_DIR_ENTRIES = 2000;
 
     private final AtomicReference<ApplicationHandle> application = new AtomicReference<>();
+    /** The folder of the last file opened/saved, so dialogs reopen where the user left off. */
+    private final AtomicReference<String> lastDir = new AtomicReference<>();
 
     public void bind(ApplicationHandle handle) {
         application.set(handle);
+    }
+
+    private Optional<String> lastDirectory() {
+        return Optional.ofNullable(lastDir.get());
+    }
+
+    private void rememberDir(Path file) {
+        Path parent = file.toAbsolutePath().getParent();
+        if (parent != null) {
+            lastDir.set(parent.toString());
+        }
     }
 
     // ---- DTOs (public + opened to Jackson) ----
@@ -83,7 +96,7 @@ public class NotesService {
     @RequiresCapability("notes:use")
     public CompletionStage<OpenResult> open(OpenRequest request, InvocationContext context) {
         FileDialog.OpenDialog dialog = new FileDialog.OpenDialog(
-                "Open note", Optional.empty(),
+                "Open note", lastDirectory(),
                 List.of(new FileDialog.Filter("Text & Markdown", List.of("txt", "md", "log", "json")),
                         new FileDialog.Filter("All files", List.of())),
                 false, false);
@@ -113,6 +126,7 @@ public class NotesService {
         }
         Path file = Path.of(request.path());
         write(file, request.content());
+        rememberDir(file);
         return CompletableFuture.completedFuture(
                 new SaveResult(true, false, file.toString(), fileName(file)));
     }
@@ -124,7 +138,7 @@ public class NotesService {
                 || request.suggestedName().isBlank() ? "untitled.txt" : request.suggestedName();
         String content = request == null ? "" : request.content();
         FileDialog.SaveDialog dialog = new FileDialog.SaveDialog(
-                "Save note as", Optional.empty(), Optional.of(suggested),
+                "Save note as", lastDirectory(), Optional.of(suggested),
                 List.of(new FileDialog.Filter("Text", List.of("txt")),
                         new FileDialog.Filter("Markdown", List.of("md"))));
         return require().showSaveDialog(dialog).thenApply(result -> {
@@ -134,6 +148,7 @@ public class NotesService {
             }
             Path file = Path.of(chosen.get());
             write(file, content);
+            rememberDir(file);
             return new SaveResult(true, false, file.toString(), fileName(file));
         });
     }
@@ -144,7 +159,7 @@ public class NotesService {
     @RequiresCapability("notes:use")
     public CompletionStage<DirListing> openFolder(OpenRequest request, InvocationContext context) {
         FileDialog.OpenDialog dialog = new FileDialog.OpenDialog(
-                "Open folder", Optional.empty(), List.of(), false, true);
+                "Open folder", lastDirectory(), List.of(), false, true);
         return require().showOpenDialog(dialog).thenApply(result -> {
             Optional<String> chosen = result.path();
             if (chosen.isEmpty()) {
@@ -207,6 +222,7 @@ public class NotesService {
                         "File is too large to open (" + size + " bytes; limit " + MAX_BYTES + ")");
             }
             String content = decodeUtf8(Files.readAllBytes(file), file);
+            rememberDir(file);
             return new OpenResult(false, file.toString(), fileName(file), content);
         } catch (IOException e) {
             throw new JDeskException(ErrorCode.INTERNAL_ERROR,

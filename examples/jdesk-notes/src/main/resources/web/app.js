@@ -1,13 +1,8 @@
 "use strict";
-// JDesk Notes — tabbed editor with a Files sidebar and session persistence, over the
-// vanilla JDesk bridge (window.__jdesk.post + "jdesk-message" document events).
+// JDesk Notes — tabbed editor with a Files sidebar and session persistence. IPC goes through
+// the reusable JDeskBridge helper (jdesk-bridge.js), loaded before this script.
 (function () {
-  var pending = new Map();
-  var nextId = 1;
-  var nonceWaiters = [];
-  var helloWaiter = null;
   var DIALOG_TIMEOUT_MS = 5 * 60 * 1000;
-  var CALL_TIMEOUT_MS = 30 * 1000;
 
   var el = {
     tabstrip: document.getElementById("tabstrip"),
@@ -295,52 +290,11 @@
     });
   }
 
-  // ---- bridge plumbing ----
-  function post(m) { window.__jdesk.post(JSON.stringify(m)); }
-  function invoke(command, payload, timeoutMs) {
-    return new Promise(function (resolve, reject) {
-      var id = "req-" + (nextId++);
-      var timer = setTimeout(function () { pending.delete(id); reject(new Error("client timeout for " + command)); },
-        timeoutMs || CALL_TIMEOUT_MS);
-      pending.set(id, { resolve: resolve, reject: reject, timer: timer });
-      try {
-        post({ v: 1, kind: "invoke", id: id, command: command,
-               payload: payload === undefined ? null : payload, nonce: window.__jdesk.nonce });
-      } catch (e) { clearTimeout(timer); pending.delete(id); reject(e); }
-    });
-  }
-  function awaitNonce() {
-    return new Promise(function (resolve, reject) {
-      if (window.__jdesk && window.__jdesk.nonce) { resolve(window.__jdesk.nonce); return; }
-      var timer = setTimeout(function () { reject(new Error("nonce timeout")); }, 10000);
-      nonceWaiters.push(function (n) { clearTimeout(timer); resolve(n); });
-    });
-  }
-  function hello() {
-    return new Promise(function (resolve, reject) {
-      var timer = setTimeout(function () { reject(new Error("hello timeout")); }, 10000);
-      helloWaiter = function (ack) { clearTimeout(timer); resolve(ack); };
-      post({ v: 1, kind: "hello", client: "jdesk-notes-page", clientVersion: "0.2.0", nonce: window.__jdesk.nonce });
-    });
-  }
-  document.addEventListener("jdesk-message", function (event) {
-    var message;
-    try { message = JSON.parse(event.detail); } catch (e) { return; }
-    if (message.kind === "nonce") {
-      window.__jdesk.nonce = message.nonce;
-      nonceWaiters.splice(0).forEach(function (w) { w(message.nonce); });
-    } else if (message.kind === "helloAck" && helloWaiter) {
-      var w = helloWaiter; helloWaiter = null; w(message);
-    } else if (message.kind === "event" && message.event === "notes.openPath") {
-      // Fired by single-instance activation or a file drop on the window.
-      if (message.payload && message.payload.path) { openPath(message.payload.path); }
-    } else if (message.kind === "result") {
-      var entry = pending.get(message.id);
-      if (!entry) { return; }
-      pending.delete(message.id); clearTimeout(entry.timer);
-      if (message.ok) { entry.resolve(message.value); }
-      else { var err = new Error(message.error.message); err.code = message.error.code; entry.reject(err); }
-    }
+  // ---- bridge (via the reusable JDeskBridge helper in jdesk-bridge.js) ----
+  var invoke = JDeskBridge.invoke;
+  JDeskBridge.onEvent("notes.openPath", function (payload) {
+    // Fired by single-instance activation or a file drop on the window.
+    if (payload && payload.path) { openPath(payload.path); }
   });
 
   // ---- wiring ----
@@ -376,8 +330,7 @@
 
   (async function init() {
     try {
-      await awaitNonce();
-      await hello();
+      await JDeskBridge.connect("jdesk-notes-page", "0.3.0");
       ready = true;
       el.editor.disabled = false;
       var res = await invoke("notes.loadSession", {});

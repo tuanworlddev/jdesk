@@ -16,9 +16,14 @@ lifecycle, and packaging.
   path; untitled tabs fall back to Save As.
 - **Session persistence** — open tabs (including unsaved content) are stored under
   `~/.jdesk/dev.jdesk.examples.notes/session.json` and restored on the next launch.
-- **System tray** — a tray item (Show Notes / Start with Windows / Quit). Closing the window
-  hides it to the tray instead of quitting, so the app keeps running and reopens on demand.
-  "Start with Windows" registers the app under the current-user startup key (HKCU…\Run).
+- **System tray** — a custom-icon tray item (Show Notes / Start with Windows / Quit). Closing
+  the window hides it to the tray (with a balloon notification) instead of quitting; the app
+  keeps running and reopens from the tray or the **Ctrl+Shift+N** global shortcut. "Start with
+  Windows" is a checkmark item that toggles the current-user startup key (HKCU…\Run).
+- **Single-instance / drag-and-drop / recent files** — a second launch focuses the window and
+  opens a file argument in a tab; dropping files opens them; recent files persist in the
+  sidebar; dialogs reopen at the last-used folder.
+- IPC uses the reusable `jdesk-bridge.js` helper (copy-pasteable into any app).
 
 Commands are `@DesktopCommand` methods on `NotesService` (compile-time registration via
 `jdesk-codegen`); capabilities are deny-by-default (`notes:use` for the main window only).

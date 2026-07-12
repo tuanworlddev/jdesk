@@ -55,6 +55,12 @@ public final class Main {
                         application.window(MAIN).ifPresent(w -> w.onFileDrop(paths ->
                                 paths.forEach(p -> w.events()
                                         .emit("notes.openPath", Map.of("path", p.toString())))));
+                        // Global shortcut to summon the window even when it is hidden/unfocused.
+                        application.registerGlobalShortcut("CmdOrCtrl+Shift+N",
+                                () -> application.window(MAIN).ifPresent(w -> {
+                                    w.show();
+                                    w.focus();
+                                })).exceptionally(e -> null);
                     }
 
                     @Override
@@ -65,6 +71,9 @@ public final class Main {
                             ApplicationHandle app = appRef.get();
                             if (app != null) {
                                 app.window(windowId).ifPresent(w -> w.hide());
+                                app.showNotification("JDesk Notes",
+                                        "Still running in the tray — click the icon or press "
+                                                + "Ctrl+Shift+N to reopen.").exceptionally(e -> null);
                             }
                             return false;
                         }
@@ -94,9 +103,36 @@ public final class Main {
                 MenuItem.action("quit", "Quit JDesk Notes"));
     }
 
+    /** A small generated PNG so the tray shows a custom icon (exercises the GDI&#43; path). */
+    private static byte[] trayIconPng() {
+        try {
+            java.awt.image.BufferedImage img =
+                    new java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            java.awt.Graphics2D g = img.createGraphics();
+            g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                    java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(new java.awt.Color(0x2f6fed));
+            g.fillRoundRect(1, 1, 14, 14, 5, 5);
+            g.setColor(java.awt.Color.WHITE);
+            g.setFont(new java.awt.Font("SansSerif", java.awt.Font.BOLD, 12));
+            g.drawString("N", 4, 12);
+            g.dispose();
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(img, "png", out);
+            return out.toByteArray();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private static void installTray(ApplicationHandle app, AtomicReference<TrayHandle> trayRef,
             AtomicBoolean trayActive) {
-        app.createTrayItem(TraySpec.of("JDesk Notes", trayMenu()), id -> {
+        TraySpec spec = TraySpec.of("JDesk Notes", trayMenu());
+        byte[] icon = trayIconPng();
+        if (icon != null) {
+            spec = spec.withIcon(icon);
+        }
+        app.createTrayItem(spec, id -> {
             switch (id) {
                 case "show" -> app.window(MAIN).ifPresent(w -> {
                     w.show();
