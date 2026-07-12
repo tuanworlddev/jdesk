@@ -273,7 +273,7 @@ final class WindowsShellIntegration {
     private static final class Tray implements TrayControl {
         private final MemorySegment hwnd;
         private final int uid;
-        private final MenuSpec menu;
+        private volatile MenuSpec menu;
         private final Consumer<String> onAction;
         private volatile String title;
         private volatile boolean removed;
@@ -284,6 +284,11 @@ final class WindowsShellIntegration {
             this.menu = menu;
             this.title = title;
             this.onAction = onAction;
+        }
+
+        @Override
+        public void setMenu(MenuSpec value) {
+            this.menu = value; // rebuilt fresh on the next right-click via showMenu()
         }
 
         void add() {

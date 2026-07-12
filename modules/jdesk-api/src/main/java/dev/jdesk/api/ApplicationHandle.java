@@ -22,6 +22,20 @@ public interface ApplicationHandle {
     /** OS-backed secret storage scoped to this application id. */
     SecretStore secrets();
 
+    /**
+     * Platform-standard persistent data directory for this application, created on first
+     * access. Windows {@code %APPDATA%\<id>}, macOS {@code ~/Library/Application Support/<id>},
+     * Linux {@code $XDG_DATA_HOME/<id>} (default {@code ~/.local/share/<id>}). Scoped to the
+     * application id; overridable in bulk with {@code -Djdesk.paths.dir=<base>}.
+     */
+    Path dataDir();
+
+    /** Platform-standard configuration directory for this application, created on first access. */
+    Path configDir();
+
+    /** Platform-standard cache directory for this application, created on first access. */
+    Path cacheDir();
+
     /** Opens an HTTP(S) URI without exposing a general shell execution primitive. */
     CompletionStage<Void> openExternal(URI uri);
     CompletionStage<String> readClipboardText();

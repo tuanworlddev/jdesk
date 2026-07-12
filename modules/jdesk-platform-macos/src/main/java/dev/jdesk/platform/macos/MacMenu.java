@@ -94,6 +94,12 @@ final class MacMenu {
                     ObjC.sendVoidLong(mi, "setTag:", tag);
                     action.accelerator().ifPresent(acc ->
                             ObjC.sendVoidLong(mi, "setKeyEquivalentModifierMask:", modifierMask(acc)));
+                    if (action.checked()) {
+                        ObjC.sendVoidLong(mi, "setState:", 1); // NSControlStateValueOn
+                    }
+                    if (!action.enabled()) {
+                        ObjC.sendVoidBool(mi, "setEnabled:", false);
+                    }
                     yield mi;
                 }
             };

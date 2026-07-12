@@ -148,6 +148,7 @@ final class LinuxDesktop {
             Gtk.GTK_STATUS_ICON_SET_VISIBLE.invokeExact(statusIcon, 1);
             return new TrayControl() {
                 private volatile boolean removed;
+                private volatile MemorySegment currentMenu = menu;
 
                 @Override public void setTitle(String title) {
                     if (!removed) {
@@ -156,6 +157,22 @@ final class LinuxDesktop {
                         } catch (Throwable t) {
                             throw Gtk.rethrow(t);
                         }
+                    }
+                }
+
+                @Override public void setMenu(dev.jdesk.api.MenuSpec value) {
+                    if (removed) {
+                        return;
+                    }
+                    try {
+                        MemorySegment replacement = LinuxMenu.build(value.items(), onAction);
+                        Gtk.G_OBJECT_REF_SINK.invokeExact(replacement);
+                        MemorySegment previous = currentMenu;
+                        currentMenu = replacement;
+                        TRAY_MENUS.put(statusIcon.address(), replacement);
+                        Gtk.gObjectUnref(previous);
+                    } catch (Throwable t) {
+                        throw Gtk.rethrow(t);
                     }
                 }
 
@@ -171,7 +188,7 @@ final class LinuxDesktop {
                         // best-effort
                     }
                     Gtk.gObjectUnref(statusIcon);
-                    Gtk.gObjectUnref(menu);
+                    Gtk.gObjectUnref(currentMenu);
                 }
             };
         } catch (JDeskException e) {

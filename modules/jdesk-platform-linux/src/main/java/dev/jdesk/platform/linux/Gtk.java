@@ -105,6 +105,12 @@ final class Gtk {
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
     static final MethodHandle GTK_MENU_ITEM_SET_SUBMENU = dl("gtk_menu_item_set_submenu",
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
+    static final MethodHandle GTK_CHECK_MENU_ITEM_NEW_WITH_LABEL = dl(
+            "gtk_check_menu_item_new_with_label", FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle GTK_CHECK_MENU_ITEM_SET_ACTIVE = dl(
+            "gtk_check_menu_item_set_active", FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT));
+    static final MethodHandle GTK_WIDGET_SET_SENSITIVE = dl("gtk_widget_set_sensitive",
+            FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT));
     static final MethodHandle GTK_MENU_POPUP_AT_POINTER = dl("gtk_menu_popup_at_pointer",
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
     static final MethodHandle GTK_WIDGET_SHOW_ALL2 = dl("gtk_widget_show_all",

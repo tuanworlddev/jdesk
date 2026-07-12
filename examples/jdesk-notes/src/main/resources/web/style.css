@@ -135,6 +135,12 @@ body {
   padding: 6px 10px; font-size: 11px; color: var(--muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-bottom: 1px solid var(--border);
 }
+.sidebar-subtitle {
+  padding: 6px 10px 2px; font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted);
+}
+.recent-section { border-bottom: 1px solid var(--border); }
+.recent-section .file-list { flex: 0 0 auto; max-height: 160px; }
 .file-list { list-style: none; margin: 0; padding: 4px; overflow-y: auto; flex: 1 1 auto; }
 .file-list li {
   padding: 5px 8px; border-radius: 6px; cursor: pointer;

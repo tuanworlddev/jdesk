@@ -170,7 +170,6 @@ public class NotesService {
     public CompletionStage<Ack> saveSession(JsonRequest request, InvocationContext context) {
         String json = request == null || request.json() == null ? "" : request.json();
         try {
-            Files.createDirectories(stateDir());
             Files.writeString(sessionFile(), json, StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new JDeskException(ErrorCode.INTERNAL_ERROR,
@@ -207,11 +206,24 @@ public class NotesService {
                 throw new JDeskException(ErrorCode.INVALID_REQUEST,
                         "File is too large to open (" + size + " bytes; limit " + MAX_BYTES + ")");
             }
-            String content = Files.readString(file, StandardCharsets.UTF_8);
+            String content = decodeUtf8(Files.readAllBytes(file), file);
             return new OpenResult(false, file.toString(), fileName(file), content);
         } catch (IOException e) {
             throw new JDeskException(ErrorCode.INTERNAL_ERROR,
                     "Could not read " + file + ": " + e.getMessage(), e);
+        }
+    }
+
+    /** Strict UTF-8 decode with a clear message for binary/other-encoding files. */
+    private static String decodeUtf8(byte[] bytes, Path file) {
+        java.nio.charset.CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT);
+        try {
+            return decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString();
+        } catch (java.nio.charset.CharacterCodingException e) {
+            throw new JDeskException(ErrorCode.INVALID_REQUEST,
+                    "Not a UTF-8 text file: " + fileName(file));
         }
     }
 
@@ -251,16 +263,9 @@ public class NotesService {
         return handle;
     }
 
-    private static Path stateDir() {
-        String override = System.getProperty("jdesk.state.dir");
-        if (override != null && !override.isBlank()) {
-            return Path.of(override);
-        }
-        return Path.of(System.getProperty("user.home"), ".jdesk", "dev.jdesk.examples.notes");
-    }
-
-    private static Path sessionFile() {
-        return stateDir().resolve("session.json");
+    private Path sessionFile() {
+        // Uses the framework's platform-standard per-app data directory (Paths API).
+        return require().dataDir().resolve("session.json");
     }
 
     private static String fileName(Path file) {

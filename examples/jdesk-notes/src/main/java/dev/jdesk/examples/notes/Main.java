@@ -11,6 +11,9 @@ import dev.jdesk.api.WindowConfig;
 import dev.jdesk.api.WindowId;
 import dev.jdesk.runtime.config.Capabilities;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -41,12 +44,17 @@ public final class Main {
                 .commands(NotesServiceCommands.create(notes))
                 .capabilities(Capabilities.fromResource(
                         Main.class.getModule(), "jdesk-capabilities.json"))
+                .singleInstance(argv -> onActivate(appRef, argv))
                 .lifecycle(new LifecycleListener() {
                     @Override
                     public void onReady(ApplicationHandle application) {
                         appRef.set(application);
                         notes.bind(application);
                         installTray(application, trayRef, trayActive);
+                        // Drag-and-drop: dropping files onto the window opens each in a tab.
+                        application.window(MAIN).ifPresent(w -> w.onFileDrop(paths ->
+                                paths.forEach(p -> w.events()
+                                        .emit("notes.openPath", Map.of("path", p.toString())))));
                     }
 
                     @Override
@@ -77,20 +85,31 @@ public final class Main {
         System.exit(builder.run(args));
     }
 
-    private static void installTray(ApplicationHandle app, AtomicReference<TrayHandle> trayRef,
-            AtomicBoolean trayActive) {
-        MenuSpec menu = MenuSpec.of(
+    /** Tray menu with the autostart item reflecting the current registry state as a checkmark. */
+    private static MenuSpec trayMenu() {
+        return MenuSpec.of(
                 MenuItem.action("show", "Show Notes"),
-                MenuItem.action("autostart", "Start with Windows"),
+                MenuItem.check("autostart", "Start with Windows", WindowsAutostart.isEnabled()),
                 MenuItem.separator(),
                 MenuItem.action("quit", "Quit JDesk Notes"));
-        app.createTrayItem(TraySpec.of("JDesk Notes", menu), id -> {
+    }
+
+    private static void installTray(ApplicationHandle app, AtomicReference<TrayHandle> trayRef,
+            AtomicBoolean trayActive) {
+        app.createTrayItem(TraySpec.of("JDesk Notes", trayMenu()), id -> {
             switch (id) {
                 case "show" -> app.window(MAIN).ifPresent(w -> {
                     w.show();
                     w.focus();
                 });
-                case "autostart" -> WindowsAutostart.toggle();
+                case "autostart" -> {
+                    WindowsAutostart.toggle();
+                    // Rebuild the menu so the checkmark reflects the new state next time.
+                    TrayHandle handle = trayRef.get();
+                    if (handle != null) {
+                        handle.setMenu(trayMenu());
+                    }
+                }
                 case "quit" -> app.requestStop();
                 default -> {
                 }
@@ -102,6 +121,27 @@ public final class Main {
             } else {
                 System.getLogger(Main.class.getName()).log(System.Logger.Level.WARNING,
                         "System tray unavailable; the window will close normally", error);
+            }
+        });
+    }
+
+    /**
+     * A second launch of the single-instance app: focus the running window and open any file
+     * path passed on the new command line as a tab (via a page event the frontend listens for).
+     */
+    private static void onActivate(AtomicReference<ApplicationHandle> appRef, List<String> argv) {
+        ApplicationHandle app = appRef.get();
+        if (app == null) {
+            return;
+        }
+        app.window(MAIN).ifPresent(w -> {
+            w.show();
+            w.focus();
+            for (String arg : argv) {
+                if (!arg.startsWith("-") && java.nio.file.Files.isRegularFile(Path.of(arg))) {
+                    w.events().emit("notes.openPath",
+                            Map.of("path", Path.of(arg).toAbsolutePath().toString()));
+                }
             }
         });
     }

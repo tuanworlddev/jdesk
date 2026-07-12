@@ -22,6 +22,8 @@ import java.util.Optional;
  */
 final class WindowsMenu {
     private static final int MF_STRING = 0x0000;
+    private static final int MF_GRAYED = 0x0001;
+    private static final int MF_CHECKED = 0x0008;
     private static final int MF_POPUP = 0x0010;
     private static final int MF_SEPARATOR = 0x0800;
     private static final int TPM_RETURNCMD = 0x0100;
@@ -88,8 +90,11 @@ final class WindowsMenu {
                 case MenuItem.Action action -> {
                     int id = nextId[0]++;
                     commands.put(id, action.id());
+                    int flags = MF_STRING
+                            | (action.checked() ? MF_CHECKED : 0)
+                            | (action.enabled() ? 0 : MF_GRAYED);
                     try (Arena arena = Arena.ofConfined()) {
-                        int unused = (int) APPEND_MENU.invokeExact(menu, MF_STRING, (long) id,
+                        int unused = (int) APPEND_MENU.invokeExact(menu, flags, (long) id,
                                 WindowsDesktop.wide(arena, action.label()));
                     }
                 }

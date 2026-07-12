@@ -72,6 +72,14 @@ so real OS-level hover-CSS and IME composition are **not** reproduced; for those
 `/evaluate` to call your app's own hooks. Because everything runs inside the real page, it
 flows through the real bridge, capability checks, and command handlers.
 
+> **Use `/input` to interact, `/evaluate` to observe.** `/evaluate` runs its script in an
+> **isolated world** (a separate JS context that shares the DOM but not the page's variables
+> or event listeners). Reads work — `document.getElementById('x').value`, `location.href`,
+> calling `window`-exposed hooks — but **`document.querySelector('#btn').click()` from
+> `/evaluate` will NOT fire the listeners your page registered**, and it is a common trap.
+> To click, type, or focus and have the page react, always use `/input` (it dispatches into
+> the page's own world). Reserve `/evaluate` for reading state and asserting results.
+
 Earliest failures too: if the page crashes in a module import or a parse error before any
 script runs, `/console` still shows it — the capture script installs its error listeners
 at document-start in the capture phase, so even a failed `<script type="module" src>` load

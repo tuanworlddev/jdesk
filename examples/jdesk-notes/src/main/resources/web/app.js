@@ -24,7 +24,10 @@
     btnSaveAs: document.getElementById("btn-save-as"),
     btnOpenFolder: document.getElementById("btn-open-folder"),
     sidebarPathInput: document.getElementById("sidebar-path-input"),
+    recentSection: document.getElementById("recent-section"),
+    recentList: document.getElementById("recent-list"),
   };
+  var recent = []; // [{path, name}] most-recent-first, capped
 
   // ---- tab model ----
   var tabs = [];
@@ -117,7 +120,7 @@
 
   // ---- session persistence ----
   function snapshotSession() {
-    return { activeId: activeId, tabs: tabs.map(function (t) {
+    return { activeId: activeId, recent: recent, tabs: tabs.map(function (t) {
       return { path: t.path, name: t.name, content: t.content, savedContent: t.savedContent };
     }) };
   }
@@ -138,12 +141,13 @@
                      content: t.content || "", savedContent: t.savedContent || "" };
           });
           activeId = tabs.some(function (t) { return t.id === s.activeId; }) ? s.activeId : tabs[0].id;
+          if (Array.isArray(s.recent)) { recent = s.recent; }
           ok = true;
         }
       }
     } catch (e) { ok = false; }
     if (!ok) { tabs = [makeTab(null, "Untitled", "")]; activeId = tabs[0].id; }
-    renderTabs(); syncEditor(); render();
+    renderTabs(); syncEditor(); render(); renderRecent();
   }
 
   // ---- actions ----
@@ -187,7 +191,29 @@
       tabs.push({ id: seq++, path: res.path, name: res.name, content: res.content, savedContent: res.content });
       activeId = tabs[tabs.length - 1].id;
     }
+    if (res.path) { pushRecent(res.path, res.name); }
     renderTabs(); syncEditor(); render(); scheduleSession();
+  }
+
+  function pushRecent(path, name) {
+    recent = recent.filter(function (r) { return r.path !== path; });
+    recent.unshift({ path: path, name: name });
+    if (recent.length > 10) { recent = recent.slice(0, 10); }
+    renderRecent();
+  }
+
+  function renderRecent() {
+    el.recentSection.hidden = recent.length === 0;
+    el.recentList.textContent = "";
+    recent.forEach(function (r) {
+      var li = document.createElement("li");
+      li.className = "file";
+      li.innerHTML = '<span class="ic">🕘</span>';
+      li.appendChild(document.createTextNode(r.name));
+      li.title = r.path;
+      li.addEventListener("click", function () { openPath(r.path); });
+      el.recentList.appendChild(li);
+    });
   }
 
   function saveActive() {
@@ -305,6 +331,9 @@
       nonceWaiters.splice(0).forEach(function (w) { w(message.nonce); });
     } else if (message.kind === "helloAck" && helloWaiter) {
       var w = helloWaiter; helloWaiter = null; w(message);
+    } else if (message.kind === "event" && message.event === "notes.openPath") {
+      // Fired by single-instance activation or a file drop on the window.
+      if (message.payload && message.payload.path) { openPath(message.payload.path); }
     } else if (message.kind === "result") {
       var entry = pending.get(message.id);
       if (!entry) { return; }

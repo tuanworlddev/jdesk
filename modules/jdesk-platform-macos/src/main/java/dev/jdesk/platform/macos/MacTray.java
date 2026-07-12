@@ -7,6 +7,7 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 import dev.jdesk.api.ErrorCode;
 import dev.jdesk.api.JDeskException;
+import dev.jdesk.api.MenuSpec;
 import dev.jdesk.api.TraySpec;
 import dev.jdesk.webview.spi.TrayControl;
 import java.lang.foreign.Arena;
@@ -24,10 +25,12 @@ final class MacTray implements TrayControl {
     private static final double NS_VARIABLE_STATUS_ITEM_LENGTH = -1.0;
 
     private final MemorySegment statusItem;
+    private final Consumer<String> onAction;
     private volatile boolean removed;
 
-    private MacTray(MemorySegment statusItem) {
+    private MacTray(MemorySegment statusItem, Consumer<String> onAction) {
         this.statusItem = statusItem;
+        this.onAction = onAction;
     }
 
     static MacTray create(TraySpec spec, Consumer<String> onAction) {
@@ -52,7 +55,7 @@ final class MacTray implements TrayControl {
                 spec.iconPng().ifPresent(png -> setTemplateImage(button, png));
             }
             ObjC.sendVoid(item, "setMenu:", MacMenu.buildStandaloneMenu(spec.menu(), onAction));
-            return new MacTray(item);
+            return new MacTray(item, onAction);
         } finally {
             ObjC.autoreleasePoolPop(pool);
         }
@@ -70,6 +73,19 @@ final class MacTray implements TrayControl {
         MemorySegment button = ObjC.send(statusItem, "button");
         if (!button.equals(MemorySegment.NULL)) {
             ObjC.sendVoid(button, "setTitle:", ObjC.nsString(title));
+        }
+    }
+
+    @Override
+    public void setMenu(MenuSpec menu) {
+        if (removed) {
+            return;
+        }
+        MemorySegment pool = ObjC.autoreleasePoolPush();
+        try {
+            ObjC.sendVoid(statusItem, "setMenu:", MacMenu.buildStandaloneMenu(menu, onAction));
+        } finally {
+            ObjC.autoreleasePoolPop(pool);
         }
     }
 

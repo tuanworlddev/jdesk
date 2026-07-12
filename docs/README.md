@@ -80,6 +80,7 @@ Exact, complete descriptions to look up while working.
 - [Native testing and evidence](verification/native-testing-and-evidence.md)
 - [Enterprise readiness report](verification/enterprise-readiness-2026-07-12.md)
 - [Windows local verification (2026-07-12)](verification/windows-local-2026-07-12.md)
+- [Framework improvements (2026-07-12)](verification/framework-improvements-2026-07-12.md)
 - [Packaging and signing](packaging/packaging-and-signing.md)
 - [Scaffolding and publishing](development/scaffolding-and-publishing.md)
 - [Threat model and capability guide](security/threat-model.md)

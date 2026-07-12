@@ -6,6 +6,9 @@ type public abstract interface dev.jdesk.api.ApplicationHandle
   method public abstract dev.jdesk.api.PtyHandle dev.jdesk.api.ApplicationHandle.openPty(dev.jdesk.api.PtySpec,java.util.function.Consumer<byte[]>)
   method public abstract dev.jdesk.api.SecretStore dev.jdesk.api.ApplicationHandle.secrets()
   method public abstract dev.jdesk.api.UiDispatcher dev.jdesk.api.ApplicationHandle.ui()
+  method public abstract java.nio.file.Path dev.jdesk.api.ApplicationHandle.cacheDir()
+  method public abstract java.nio.file.Path dev.jdesk.api.ApplicationHandle.configDir()
+  method public abstract java.nio.file.Path dev.jdesk.api.ApplicationHandle.dataDir()
   method public abstract java.util.Optional<dev.jdesk.api.WindowHandle> dev.jdesk.api.ApplicationHandle.window(dev.jdesk.api.WindowId)
   method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.FileDialogResult> dev.jdesk.api.ApplicationHandle.showOpenDialog(dev.jdesk.api.FileDialog$OpenDialog)
   method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.FileDialogResult> dev.jdesk.api.ApplicationHandle.showSaveDialog(dev.jdesk.api.FileDialog$SaveDialog)
@@ -299,11 +302,16 @@ type public final enum dev.jdesk.api.LifecycleState
 type public abstract sealed interface dev.jdesk.api.MenuItem
   method public static dev.jdesk.api.MenuItem$Action dev.jdesk.api.MenuItem.action(java.lang.String,java.lang.String)
   method public static dev.jdesk.api.MenuItem$Action dev.jdesk.api.MenuItem.action(java.lang.String,java.lang.String,java.lang.String)
+  method public static dev.jdesk.api.MenuItem$Action dev.jdesk.api.MenuItem.check(java.lang.String,java.lang.String,boolean)
   method public static dev.jdesk.api.MenuItem$Separator dev.jdesk.api.MenuItem.separator()
   method public static dev.jdesk.api.MenuItem$Submenu dev.jdesk.api.MenuItem.submenu(java.lang.String,dev.jdesk.api.MenuItem...)
 
 type public static final record dev.jdesk.api.MenuItem$Action implements dev.jdesk.api.MenuItem
-  constructor public dev.jdesk.api.MenuItem$Action(java.lang.String,java.lang.String,java.util.Optional<java.lang.String>)
+  constructor public dev.jdesk.api.MenuItem$Action(java.lang.String,java.lang.String,java.util.Optional<java.lang.String>,boolean,boolean)
+  method public boolean dev.jdesk.api.MenuItem$Action.checked()
+  method public boolean dev.jdesk.api.MenuItem$Action.enabled()
+  method public dev.jdesk.api.MenuItem$Action dev.jdesk.api.MenuItem$Action.checked(boolean)
+  method public dev.jdesk.api.MenuItem$Action dev.jdesk.api.MenuItem$Action.enabled(boolean)
   method public final boolean dev.jdesk.api.MenuItem$Action.equals(java.lang.Object)
   method public final int dev.jdesk.api.MenuItem$Action.hashCode()
   method public final java.lang.String dev.jdesk.api.MenuItem$Action.toString()
@@ -438,6 +446,7 @@ type public final enum dev.jdesk.api.SystemTheme
 
 type public abstract interface dev.jdesk.api.TrayHandle implements java.lang.AutoCloseable
   method public abstract void dev.jdesk.api.TrayHandle.close()
+  method public abstract void dev.jdesk.api.TrayHandle.setMenu(dev.jdesk.api.MenuSpec)
   method public abstract void dev.jdesk.api.TrayHandle.setTitle(java.lang.String)
 
 type public final record dev.jdesk.api.TraySpec

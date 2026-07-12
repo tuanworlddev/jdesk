@@ -94,7 +94,11 @@ final class LinuxMenu {
                         yield parent;
                     }
                     case MenuItem.Action action -> {
-                        MemorySegment mi = labelItem(action.label());
+                        MemorySegment mi = action.checked()
+                                ? checkItem(action.label(), true) : labelItem(action.label());
+                        if (!action.enabled()) {
+                            Gtk.GTK_WIDGET_SET_SENSITIVE.invokeExact(mi, 0);
+                        }
                         BINDINGS.put(mi.address(), new Binding(action.id(), onAction));
                         Gtk.signalConnect(mi, "activate", ACTIVATE_STUB);
                         yield mi;
@@ -113,6 +117,15 @@ final class LinuxMenu {
         try (java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofConfined()) {
             return (MemorySegment) Gtk.GTK_MENU_ITEM_NEW_WITH_LABEL.invokeExact(
                     arena.allocateFrom(label));
+        }
+    }
+
+    private static MemorySegment checkItem(String label, boolean checked) throws Throwable {
+        try (java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofConfined()) {
+            MemorySegment mi = (MemorySegment) Gtk.GTK_CHECK_MENU_ITEM_NEW_WITH_LABEL
+                    .invokeExact(arena.allocateFrom(label));
+            Gtk.GTK_CHECK_MENU_ITEM_SET_ACTIVE.invokeExact(mi, checked ? 1 : 0);
+            return mi;
         }
     }
 

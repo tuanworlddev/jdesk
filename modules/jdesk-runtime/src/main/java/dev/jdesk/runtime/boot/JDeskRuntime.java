@@ -500,6 +500,44 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
         return secretStore;
     }
 
+    private volatile AppPaths appPaths;
+
+    private AppPaths appPaths() {
+        AppPaths paths = appPaths;
+        if (paths == null) {
+            synchronized (this) {
+                paths = appPaths;
+                if (paths == null) {
+                    paths = AppPaths.forApplication(spec.id());
+                    appPaths = paths;
+                }
+            }
+        }
+        return paths;
+    }
+
+    private static Path ensureDir(Path dir) {
+        try {
+            java.nio.file.Files.createDirectories(dir);
+        } catch (java.io.IOException e) {
+            throw new JDeskException(ErrorCode.INTERNAL_ERROR,
+                    "Could not create application directory " + dir, e);
+        }
+        return dir;
+    }
+
+    @Override public Path dataDir() {
+        return ensureDir(appPaths().dataDir());
+    }
+
+    @Override public Path configDir() {
+        return ensureDir(appPaths().configDir());
+    }
+
+    @Override public Path cacheDir() {
+        return ensureDir(appPaths().cacheDir());
+    }
+
     @Override public CompletionStage<String> readClipboardText() {
         return platformApp.ui().submit(platformApp::readClipboardText);
     }
@@ -571,6 +609,9 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
         return new dev.jdesk.api.TrayHandle() {
             @Override public void setTitle(String title) {
                 platformApp.ui().submit(() -> { control.setTitle(title); return null; });
+            }
+            @Override public void setMenu(dev.jdesk.api.MenuSpec menu) {
+                platformApp.ui().submit(() -> { control.setMenu(menu); return null; });
             }
             @Override public void close() {
                 if (trayItems.remove(control)) {

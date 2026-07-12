@@ -121,14 +121,50 @@ final class WebView2Environment implements AutoCloseable {
     }
 
     private static SymbolLookup loadLoaderLibrary(Arena arena) {
+        // 1) explicit override wins. 2) otherwise search the standard spots a packaged app
+        // ships the loader (next to the launcher exe, the app dir, the working dir) before
+        // 3) falling back to the bare name (PATH / System32). This lets a jpackage image that
+        // bundles WebView2Loader.dll beside its .exe run with no configuration.
         String configured = System.getProperty("jdesk.windows.webview2loader");
-        String library = configured != null ? configured : "WebView2Loader.dll";
+        if (configured != null && !configured.isBlank()) {
+            return lookupOrThrow(configured, arena);
+        }
+        for (Path candidate : loaderSearchPath()) {
+            if (Files.isRegularFile(candidate)) {
+                try {
+                    return SymbolLookup.libraryLookup(candidate.toString(), arena);
+                } catch (IllegalArgumentException ignored) {
+                    // keep searching
+                }
+            }
+        }
+        return lookupOrThrow("WebView2Loader.dll", arena);
+    }
+
+    /** Standard locations a packaged/dev app keeps {@code WebView2Loader.dll}. */
+    private static java.util.List<Path> loaderSearchPath() {
+        java.util.List<Path> dirs = new java.util.ArrayList<>();
+        ProcessHandle.current().info().command()
+                .map(Path::of).map(Path::getParent).ifPresent(dirs::add);
+        String appDir = System.getProperty("jpackage.app-path");
+        if (appDir != null && !appDir.isBlank()) {
+            Path parent = Path.of(appDir).getParent();
+            if (parent != null) {
+                dirs.add(parent);
+            }
+        }
+        dirs.add(Path.of("").toAbsolutePath()); // working directory
+        return dirs.stream().distinct().map(dir -> dir.resolve("WebView2Loader.dll")).toList();
+    }
+
+    private static SymbolLookup lookupOrThrow(String library, Arena arena) {
         try {
             return SymbolLookup.libraryLookup(library, arena);
         } catch (IllegalArgumentException e) {
             throw new JDeskException(ErrorCode.ILLEGAL_STATE,
-                    "Cannot load WebView2Loader.dll. Set -Djdesk.windows.webview2loader="
-                            + "<path> or put it on PATH.", e);
+                    "Cannot load WebView2Loader.dll (" + library + "). Set "
+                            + "-Djdesk.windows.webview2loader=<path>, put it next to the app "
+                            + "executable, or add it to PATH.", e);
         }
     }
 

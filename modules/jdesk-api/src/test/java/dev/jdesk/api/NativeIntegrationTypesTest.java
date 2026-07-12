@@ -119,8 +119,17 @@ class NativeIntegrationTypesTest {
         assertThat(plain.label()).isEqualTo("Save");
         assertThat(plain.accelerator()).isEmpty();
 
+        assertThat(plain.checked()).isFalse();
+        assertThat(plain.enabled()).isTrue();
+
         MenuItem.Action withAccel = MenuItem.action("save", "Save", "CmdOrCtrl+S");
         assertThat(withAccel.accelerator()).contains("CmdOrCtrl+S");
+
+        MenuItem.Action checked = MenuItem.check("wrap", "Word Wrap", true);
+        assertThat(checked.checked()).isTrue();
+        assertThat(checked.enabled(false).enabled()).isFalse();
+        assertThat(checked.enabled(false).checked()).isTrue();
+        assertThat(plain.checked(true).checked()).isTrue();
 
         MenuItem.Submenu submenu = MenuItem.submenu("File", plain, MenuItem.separator());
         assertThat(submenu.label()).isEqualTo("File");
@@ -130,7 +139,7 @@ class NativeIntegrationTypesTest {
 
         assertThat(MenuItem.separator()).isInstanceOf(MenuItem.Separator.class);
         assertThatExceptionOfType(NullPointerException.class)
-                .isThrownBy(() -> new MenuItem.Action("id", "label", null));
+                .isThrownBy(() -> new MenuItem.Action("id", "label", null, false, true));
     }
 
     @Test
