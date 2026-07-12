@@ -146,6 +146,20 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
         @Override public CompletionStage<Void> print() {
             return controlWindow(id(), PlatformWindow::print);
         }
+        @Override public CompletionStage<java.util.Optional<String>> showContextMenu(
+                dev.jdesk.api.MenuSpec menu) {
+            java.util.Objects.requireNonNull(menu, "menu");
+            return platformApp.ui().submit(() -> window.showContextMenu(menu));
+        }
+        @Override public CompletionStage<dev.jdesk.api.Subscription> onFileDrop(
+                Consumer<List<java.nio.file.Path>> listener) {
+            java.util.Objects.requireNonNull(listener, "listener");
+            return platformApp.ui().submit(() -> {
+                Runnable unsubscribe = window.onFileDrop(listener);
+                return (dev.jdesk.api.Subscription) () ->
+                        platformApp.ui().submit(() -> { unsubscribe.run(); return null; });
+            });
+        }
 
         @Override
         public CompletionStage<Void> close() {

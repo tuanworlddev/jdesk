@@ -234,6 +234,17 @@ final class MacWindow extends NativeHandle implements PlatformWindow {
     }
 
     @Override
+    public java.util.Optional<String> showContextMenu(dev.jdesk.api.MenuSpec menu) {
+        return webView.showContextMenu(menu);
+    }
+
+    @Override
+    public Runnable onFileDrop(
+            java.util.function.Consumer<java.util.List<java.nio.file.Path>> listener) {
+        return webView.onFileDrop(listener);
+    }
+
+    @Override
     public Subscription onCloseRequested(BooleanSupplier handler) {
         closeRequestedHandlers.add(handler);
         return () -> closeRequestedHandlers.remove(handler);

@@ -181,8 +181,18 @@ final class MacWebView implements PlatformWebView {
                 MemorySegment frame = confined.allocate(ObjC.NSRECT);
                 frame.set(JAVA_DOUBLE, 16, config.width());
                 frame.set(JAVA_DOUBLE, 24, config.height());
+                // JDeskDropWebView (WKWebView subclass) adds native file-drop; identical
+                // behaviour otherwise. Fall back to plain WKWebView if the subclass is
+                // unavailable, so the web view is never at risk.
+                MemorySegment webViewClass;
+                try {
+                    webViewClass = MacFileDrop.webViewClass();
+                } catch (RuntimeException e) {
+                    LOG.log(Level.WARNING, "JDeskDropWebView unavailable; file-drop disabled", e);
+                    webViewClass = ObjC.cls("WKWebView");
+                }
                 view = (MemorySegment) ObjC.msgSend(INIT_WEBVIEW_DESC).invokeExact(
-                        ObjC.send(ObjC.cls("WKWebView"), "alloc"),
+                        ObjC.send(webViewClass, "alloc"),
                         ObjC.sel("initWithFrame:configuration:"), frame, configuration);
             } catch (Throwable t) {
                 throw ObjC.rethrow(t);
@@ -269,6 +279,31 @@ final class MacWebView implements PlatformWebView {
 
     MemorySegment nsView() {
         return webView;
+    }
+
+    /** Pops up a native context menu (modal, main thread) and returns the chosen id. */
+    java.util.Optional<String> showContextMenu(dev.jdesk.api.MenuSpec spec) {
+        java.util.concurrent.atomic.AtomicReference<String> selected =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        MemorySegment pool = ObjC.autoreleasePoolPush();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment menu = MacMenu.buildStandaloneMenu(spec, selected::set);
+            MemorySegment location = arena.allocate(ObjC.NSPOINT); // zero-initialized: view origin
+            byte unused = (byte) ObjC.msgSend(FunctionDescriptor.of(
+                    JAVA_BYTE, ADDRESS, ADDRESS, ADDRESS, ObjC.NSPOINT, ADDRESS)).invokeExact(
+                    menu, ObjC.sel("popUpMenuPositioningItem:atLocation:inView:"),
+                    MemorySegment.NULL, location, webView);
+        } catch (Throwable t) {
+            throw ObjC.rethrow(t);
+        } finally {
+            ObjC.autoreleasePoolPop(pool);
+        }
+        return java.util.Optional.ofNullable(selected.get());
+    }
+
+    /** Registers an OS file-drop listener on this view; returns an unsubscribe action. */
+    Runnable onFileDrop(java.util.function.Consumer<java.util.List<java.nio.file.Path>> listener) {
+        return MacFileDrop.register(webView, listener);
     }
 
     // ---- IMP bodies (main thread; copy data, never block, never throw across FFM) ----

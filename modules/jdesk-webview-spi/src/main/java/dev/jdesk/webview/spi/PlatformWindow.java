@@ -46,6 +46,23 @@ public interface PlatformWindow extends AutoCloseable {
                 "Printing is not supported by this platform adapter");
     }
 
+    /**
+     * Pops up a native context menu modally (UI thread) and returns the chosen action id, or
+     * empty. Default: empty (no native context menu).
+     */
+    default java.util.Optional<String> showContextMenu(dev.jdesk.api.MenuSpec menu) {
+        return java.util.Optional.empty();
+    }
+
+    /**
+     * Registers an OS file-drop listener (UI thread); returns an unsubscribe action. Default:
+     * a no-op unsubscribe (no native file-drop).
+     */
+    default Runnable onFileDrop(
+            java.util.function.Consumer<java.util.List<java.nio.file.Path>> listener) {
+        return () -> { };
+    }
+
     @Override
     void close();
 }

@@ -56,6 +56,18 @@ final class ObjC {
             JAVA_DOUBLE.withName("width"), JAVA_DOUBLE.withName("height"));
 
     private static final MemorySegment MSG_SEND = OBJC.findOrThrow("objc_msgSend");
+    private static final MemorySegment MSG_SEND_SUPER = OBJC.findOrThrow("objc_msgSendSuper");
+    private static final ConcurrentHashMap<FunctionDescriptor, MethodHandle> SUPER_SENDS =
+            new ConcurrentHashMap<>();
+
+    /** {@code struct objc_super { id receiver; Class super_class; }}. */
+    static final MemoryLayout OBJC_SUPER = MemoryLayout.structLayout(
+            ADDRESS.withName("receiver"), ADDRESS.withName("super_class"));
+
+    /** Per-signature {@code objc_msgSendSuper} downcall handle (cached). */
+    static MethodHandle msgSendSuper(FunctionDescriptor descriptor) {
+        return SUPER_SENDS.computeIfAbsent(descriptor, d -> LINKER.downcallHandle(MSG_SEND_SUPER, d));
+    }
 
     private static final MethodHandle OBJC_GET_CLASS = LINKER.downcallHandle(
             OBJC.findOrThrow("objc_getClass"), FunctionDescriptor.of(ADDRESS, ADDRESS));
