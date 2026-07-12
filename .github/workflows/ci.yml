@@ -23,7 +23,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       # CUPS client provides `lp` so CupsPrintingTest exercises the real spooler path
@@ -47,7 +47,7 @@ jobs:
         run: npm ci --prefix js/jdesk-client && npm test --prefix js/jdesk-client
       - name: Upload test reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: core-unit-jdk25-reports
           path: |
@@ -63,14 +63,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       - name: Gradle plugin functional tests (TestKit)
         run: ./gradlew :modules:jdesk-gradle-plugin:test --stacktrace
       - name: Upload reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gradle-plugin-functional-reports
           path: modules/jdesk-gradle-plugin/build/reports/**
@@ -84,7 +84,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       - name: "Fetch WebView2 loader (SDK 1.0.2903.40; Microsoft.Web.WebView2 license documented in docs)"
@@ -116,7 +116,7 @@ jobs:
         run: ./gradlew --no-configuration-cache :test-apps:native-smoke:verifyEvidence "-PjdeskPlatform=windows"
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-x64-native-evidence
           path: test-apps/native-smoke/build/evidence/**
@@ -130,7 +130,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       # Exact packages: libwebkit2gtk-4.1-0 (WebKitGTK 4.1 engine; pulls GTK 3, GLib,
@@ -158,7 +158,7 @@ jobs:
         run: ./gradlew --no-configuration-cache :test-apps:native-smoke:verifyEvidence "-PjdeskPlatform=linux"
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-x64-native-evidence
           path: test-apps/native-smoke/build/evidence/**
@@ -172,7 +172,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       - name: "Fetch WebView2 loader (SDK 1.0.2903.40; Microsoft.Web.WebView2 license documented in docs)"
@@ -204,7 +204,7 @@ jobs:
         run: ./gradlew --no-configuration-cache :test-apps:security-probe:verifyEvidence "-PjdeskPlatform=windows"
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: security-windows-x64-evidence
           path: test-apps/security-probe/build/evidence/**
@@ -218,7 +218,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       # Exact packages: libwebkit2gtk-4.1-0 (WebKitGTK 4.1 engine; pulls GTK 3, GLib,
@@ -238,7 +238,7 @@ jobs:
         run: ./gradlew --no-configuration-cache :test-apps:security-probe:verifyEvidence "-PjdeskPlatform=linux"
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: security-linux-x64-evidence
           path: test-apps/security-probe/build/evidence/**
@@ -252,7 +252,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       - name: Install WebKitGTK and Xvfb
@@ -289,7 +289,7 @@ jobs:
         run: ./gradlew :test-apps:native-smoke:verifyEvidence "-PjdeskPlatform=linux" "-PjdeskEvidenceVerifyDir=$GITHUB_WORKSPACE/package-evidence"
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: package-linux-x64-evidence
           path: package-evidence/**
@@ -303,7 +303,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       - name: "Fetch WebView2 loader (SDK 1.0.2903.40)"
@@ -352,7 +352,7 @@ jobs:
         run: ./gradlew :test-apps:native-smoke:verifyEvidence "-PjdeskPlatform=windows" "-PjdeskEvidenceVerifyDir=$env:GITHUB_WORKSPACE/package-evidence"
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: package-windows-x64-evidence
           path: package-evidence/**
@@ -366,7 +366,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       - name: Run native smoke (real WKWebView)
@@ -375,7 +375,7 @@ jobs:
         run: ./gradlew --no-configuration-cache :test-apps:native-smoke:verifyEvidence "-PjdeskPlatform=macos"
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: macos-arm64-native-evidence
           path: test-apps/native-smoke/build/evidence/**
@@ -389,7 +389,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       - name: Run security probes (real WKWebView)
@@ -398,7 +398,7 @@ jobs:
         run: ./gradlew --no-configuration-cache :test-apps:security-probe:verifyEvidence "-PjdeskPlatform=macos"
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: security-macos-arm64-evidence
           path: test-apps/security-probe/build/evidence/**
@@ -412,7 +412,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '25'
-      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
       - name: Build install distribution
@@ -443,7 +443,7 @@ jobs:
         run: ./gradlew :test-apps:native-smoke:verifyEvidence "-PjdeskPlatform=macos" "-PjdeskEvidenceVerifyDir=$GITHUB_WORKSPACE/package-evidence"
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: package-macos-arm64-evidence
           path: package-evidence/**
