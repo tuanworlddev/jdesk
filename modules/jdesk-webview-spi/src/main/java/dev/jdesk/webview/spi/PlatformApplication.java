@@ -107,6 +107,13 @@ public interface PlatformApplication extends AutoCloseable {
                 "Application icon is not supported by this platform adapter");
     }
 
+    /** Creates a tray / status-bar item (UI thread). Default: unsupported. */
+    default TrayControl createTrayItem(dev.jdesk.api.TraySpec spec,
+            java.util.function.Consumer<String> onAction) {
+        throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                "System tray is not supported by this platform adapter");
+    }
+
     /** Blocks running the native event loop until {@link #requestStop()}. */
     void runEventLoop();
 

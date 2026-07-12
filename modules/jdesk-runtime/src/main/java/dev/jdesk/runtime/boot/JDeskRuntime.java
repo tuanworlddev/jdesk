@@ -84,6 +84,7 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
     private PlatformApplication platformApp;
     private FileWatchManager fileWatchManager;
     private PtyManager ptyManager;
+    private final Set<dev.jdesk.webview.spi.TrayControl> trayItems = ConcurrentHashMap.newKeySet();
     private volatile AutomationServer automationServer;
 
     /** Per-window wiring: dispatcher plus the tracked current top-level origin. */
@@ -468,6 +469,29 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
         byte[] copy = pngData.clone();
         return platformApp.ui().submit(() -> { platformApp.setApplicationIcon(copy); return null; });
     }
+    @Override public CompletionStage<dev.jdesk.api.TrayHandle> createTrayItem(
+            dev.jdesk.api.TraySpec spec, Consumer<String> onAction) {
+        java.util.Objects.requireNonNull(spec, "spec");
+        java.util.Objects.requireNonNull(onAction, "onAction");
+        return platformApp.ui().submit(() -> {
+            dev.jdesk.webview.spi.TrayControl control = platformApp.createTrayItem(spec, onAction);
+            trayItems.add(control);
+            return trayHandle(control);
+        });
+    }
+
+    private dev.jdesk.api.TrayHandle trayHandle(dev.jdesk.webview.spi.TrayControl control) {
+        return new dev.jdesk.api.TrayHandle() {
+            @Override public void setTitle(String title) {
+                platformApp.ui().submit(() -> { control.setTitle(title); return null; });
+            }
+            @Override public void close() {
+                if (trayItems.remove(control)) {
+                    platformApp.ui().submit(() -> { control.remove(); return null; });
+                }
+            }
+        };
+    }
     @Override public CompletionStage<dev.jdesk.api.MessageDialogResult> showMessageDialog(
             dev.jdesk.api.MessageDialog dialog) {
         java.util.Objects.requireNonNull(dialog, "dialog");
@@ -692,6 +716,14 @@ public final class JDeskRuntime implements ApplicationHandle, AutoCloseable {
                 LOG.log(Level.ERROR, "PTY shutdown failed", e);
             }
         }
+        for (dev.jdesk.webview.spi.TrayControl tray : trayItems) {
+            try {
+                tray.remove(); // shutdown runs on the UI thread
+            } catch (RuntimeException e) {
+                LOG.log(Level.ERROR, "Tray removal failed", e);
+            }
+        }
+        trayItems.clear();
         try {
             platformApp.close();
         } catch (RuntimeException e) {

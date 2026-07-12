@@ -21,7 +21,7 @@ Environment for live macOS results: macOS 26.5.1, Apple Silicon (arm64), JDK 25.
 | GAP-001 | File watching API | **Done (macOS FSEvents + portable)** | Unit tests + live FSEvents latency ~10–13 ms |
 | BUG-002 | `requestStop()` "doesn't wake idle loop" | **Retracted — not a real bug** | See below |
 | GAP-003 | PTY / process API | **Done (macOS)** | Unit tests + live shell (tty, resize, exit code, no-orphan) |
-| GAP-004 | Native desktop integration batch | **Partial (5 of 10, macOS)** | Live: theme, clipboard SHA, dock badge, menu + app-icon (structural) |
+| GAP-004 | Native desktop integration batch | **Partial (6 of 10, macOS)** | Live: theme, clipboard, dock badge, menu, app-icon, tray (structural) |
 | GAP-005 | Deep-link scheme + file association | Not started | — |
 
 ---
@@ -175,10 +175,14 @@ round-trip verified** on this machine, so no unverifiable claims are made:
     Verified **structurally**: the impl throws unless the PNG decodes and `applicationIconImage`
     is non-nil afterward (a 99-byte generated PNG round-tripped). The *visual* icon is not
     auto-verified.
+  - `createTrayItem(TraySpec, onAction)` -> `TrayHandle` — `NSStatusItem` with a title/icon
+    and a click menu (its own `MacMenu` action listener). Verified **structurally**: create
+    throws unless a real non-nil status item is installed; setTitle + remove exercised. The
+    tray *click* is not auto-tested.
   - SPI: `systemTheme`/`readClipboard`/`writeClipboard`/`setDockBadge` default to
     `ILLEGAL_STATE`; `setApplicationMenu` defaults to a no-op (Windows/Linux/test-fake
     unaffected). Harness: `DesktopProbe`.
-- **Not yet implemented (5 of 10):** context menu, tray item, global shortcut, notification,
+- **Not yet implemented (4 of 10):** context menu, global shortcut, notification,
   file-drop paths. These are the ones whose real
   behaviour is **GUI-interaction gated** — menu/tray/hotkey *activation*, notification
   *display* (needs a signed bundle), the file-drop *gesture*, and a context menu that blocks

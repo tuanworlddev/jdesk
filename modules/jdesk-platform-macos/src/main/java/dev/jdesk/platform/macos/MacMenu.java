@@ -35,9 +35,12 @@ final class MacMenu {
     private static final int FLAG_OPTION = 0x80000;
     private static final int FLAG_COMMAND = 0x100000;
 
-    private static final Map<Integer, String> TAG_TO_ID = new ConcurrentHashMap<>();
+    /** Each clickable item's tag maps to (action id, listener). Tags are globally unique. */
+    private record Binding(String id, Consumer<String> handler) {
+    }
+
+    private static final Map<Integer, Binding> BINDINGS = new ConcurrentHashMap<>();
     private static final AtomicInteger TAG_SEQ = new AtomicInteger(1);
-    private static volatile Consumer<String> currentHandler;
     private static volatile MemorySegment sharedTarget;
 
     private MacMenu() {
@@ -45,11 +48,9 @@ final class MacMenu {
 
     static synchronized void install(MemorySegment nsApp, MenuSpec spec, Consumer<String> onAction) {
         ensureTarget();
-        TAG_TO_ID.clear();
-        currentHandler = onAction;
         MemorySegment pool = ObjC.autoreleasePoolPush();
         try {
-            MemorySegment menu = buildMenu(spec.items());
+            MemorySegment menu = buildMenu(spec.items(), onAction);
             ObjC.sendVoid(nsApp, "setMainMenu:", menu);
         } finally {
             ObjC.autoreleasePoolPop(pool);
@@ -66,7 +67,13 @@ final class MacMenu {
         }
     }
 
-    private static MemorySegment buildMenu(List<MenuItem> items) {
+    /** Builds a standalone {@code NSMenu} (e.g. a tray menu) with its own action listener. */
+    static synchronized MemorySegment buildStandaloneMenu(MenuSpec spec, Consumer<String> onAction) {
+        ensureTarget();
+        return buildMenu(spec.items(), onAction);
+    }
+
+    private static MemorySegment buildMenu(List<MenuItem> items, Consumer<String> onAction) {
         MemorySegment menu = ObjC.send(ObjC.send(ObjC.cls("NSMenu"), "alloc"), "init");
         ObjC.autorelease(menu);
         for (MenuItem item : items) {
@@ -75,7 +82,7 @@ final class MacMenu {
                         ObjC.send(ObjC.cls("NSMenuItem"), "separatorItem");
                 case MenuItem.Submenu submenu -> {
                     MemorySegment parent = newItem(submenu.label(), "", MemorySegment.NULL);
-                    ObjC.sendVoid(parent, "setSubmenu:", buildMenu(submenu.items()));
+                    ObjC.sendVoid(parent, "setSubmenu:", buildMenu(submenu.items(), onAction));
                     yield parent;
                 }
                 case MenuItem.Action action -> {
@@ -83,7 +90,7 @@ final class MacMenu {
                     MemorySegment mi = newItem(action.label(), key, ObjC.sel("jdeskMenuAction:"));
                     ObjC.sendVoid(mi, "setTarget:", sharedTarget);
                     int tag = TAG_SEQ.getAndIncrement();
-                    TAG_TO_ID.put(tag, action.id());
+                    BINDINGS.put(tag, new Binding(action.id(), onAction));
                     ObjC.sendVoidLong(mi, "setTag:", tag);
                     action.accelerator().ifPresent(acc ->
                             ObjC.sendVoidLong(mi, "setKeyEquivalentModifierMask:", modifierMask(acc)));
@@ -134,10 +141,9 @@ final class MacMenu {
     @SuppressWarnings("unused") // invoked from AppKit via the JDeskMenuTarget IMP
     static void impMenuAction(MemorySegment self, MemorySegment cmd, MemorySegment sender) {
         try {
-            String id = TAG_TO_ID.get((int) ObjC.sendLong(sender, "tag"));
-            Consumer<String> handler = currentHandler;
-            if (id != null && handler != null) {
-                handler.accept(id);
+            Binding binding = BINDINGS.get((int) ObjC.sendLong(sender, "tag"));
+            if (binding != null && binding.handler() != null) {
+                binding.handler().accept(binding.id());
             }
         } catch (Throwable t) {
             LOG.log(Level.ERROR, "Menu action dispatch failed", t);

@@ -52,6 +52,13 @@ public interface ApplicationHandle {
 
     /** Sets the application (Dock/taskbar) icon from PNG bytes. */
     CompletionStage<Void> setApplicationIcon(byte[] pngData);
+
+    /**
+     * Adds a system tray / status-bar item with a click menu. A chosen menu
+     * {@link MenuItem.Action} reports its id to {@code onAction} on the UI thread. Close the
+     * returned {@link TrayHandle} to remove it.
+     */
+    CompletionStage<TrayHandle> createTrayItem(TraySpec spec, Consumer<String> onAction);
     CompletionStage<MessageDialogResult> showMessageDialog(MessageDialog dialog);
 
     /** Shows a native, app-modal open dialog. Result paths are empty when cancelled. */

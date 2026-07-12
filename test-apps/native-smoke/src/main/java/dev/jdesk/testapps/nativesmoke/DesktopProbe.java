@@ -6,6 +6,8 @@ import dev.jdesk.api.CommandRegistry;
 import dev.jdesk.api.MenuItem;
 import dev.jdesk.api.MenuSpec;
 import dev.jdesk.api.SystemTheme;
+import dev.jdesk.api.TrayHandle;
+import dev.jdesk.api.TraySpec;
 import dev.jdesk.api.WindowConfig;
 import dev.jdesk.api.WindowId;
 import dev.jdesk.runtime.assets.CspValidator;
@@ -67,7 +69,7 @@ public final class DesktopProbe {
         try {
             awaitReady(runtime);
             result = theme(runtime) + " " + clipboard(runtime) + " " + dockBadge(runtime)
-                    + " " + menu(runtime) + " " + icon(runtime);
+                    + " " + menu(runtime) + " " + icon(runtime) + " " + tray(runtime);
         } catch (Throwable t) {
             result = "ERROR " + t + " | cause=" + t.getCause();
             t.printStackTrace();
@@ -128,6 +130,20 @@ public final class DesktopProbe {
         // so a clean return proves the icon was really set. (Visual is not auto-verified.)
         runtime.setApplicationIcon(png).toCompletableFuture().get(5, TimeUnit.SECONDS);
         return "icon=OK(" + png.length + "B PNG set, applicationIconImage self-checked)";
+    }
+
+    private static String tray(JDeskRuntime runtime) throws Exception {
+        MenuSpec menu = MenuSpec.of(
+                MenuItem.action("open", "Open"),
+                MenuItem.separator(),
+                MenuItem.action("quit", "Quit"));
+        // createTrayItem throws unless a real NSStatusItem was installed, so a handle proves it.
+        TrayHandle handle = runtime.createTrayItem(TraySpec.of("JD", menu), id -> { })
+                .toCompletableFuture().get(5, TimeUnit.SECONDS);
+        handle.setTitle("JD2");
+        Thread.sleep(100);
+        handle.close(); // remove
+        return "tray=OK(created+setTitle+removed, statusItem self-checked; click NOT auto-tested)";
     }
 
     /** Minimal, guaranteed-valid RGB PNG via java.util.zip (no java.desktop dependency). */

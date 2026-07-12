@@ -365,6 +365,18 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
         }
     }
 
+    @Override
+    public dev.jdesk.webview.spi.TrayControl createTrayItem(dev.jdesk.api.TraySpec spec,
+            java.util.function.Consumer<String> onAction) {
+        requireOpen();
+        dispatcher.assertUiThread();
+        MacTray tray = MacTray.create(spec, onAction);
+        if (!tray.installed()) {
+            throw new JDeskException(ErrorCode.ILLEGAL_STATE, "Status item was not installed");
+        }
+        return tray;
+    }
+
     @Override public MessageDialogResult showMessageDialog(MessageDialog dialog) {
         requireOpen(); dispatcher.assertUiThread();
         MemorySegment alert = ObjC.send(ObjC.send(ObjC.cls("NSAlert"), "alloc"), "init");
