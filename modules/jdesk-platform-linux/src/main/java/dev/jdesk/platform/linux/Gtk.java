@@ -293,6 +293,16 @@ final class Gtk {
     static final MethodHandle WEBKIT_URI_SCHEME_REQUEST_GET_HTTP_HEADERS = dl(
             "webkit_uri_scheme_request_get_http_headers",
             FunctionDescriptor.of(ADDRESS, ADDRESS));
+    // Returns the request body GInputStream* (transfer none); WebKitGTK 2.36+. Null handle
+    // when the symbol is absent (older WebKitGTK) -> the adapter forwards an empty body.
+    static final MethodHandle WEBKIT_URI_SCHEME_REQUEST_GET_HTTP_BODY =
+            LOOKUP.find("webkit_uri_scheme_request_get_http_body")
+                    .map(sym -> LINKER.downcallHandle(sym,
+                            FunctionDescriptor.of(ADDRESS, ADDRESS)))
+                    .orElse(null);
+    // gssize g_input_stream_read(GInputStream*, void* buffer, gsize count, GCancellable*, GError**)
+    static final MethodHandle G_INPUT_STREAM_READ = dl("g_input_stream_read",
+            FunctionDescriptor.of(JAVA_LONG, ADDRESS, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS));
     static final MethodHandle WEBKIT_URI_SCHEME_REQUEST_FINISH_WITH_RESPONSE = dl(
             "webkit_uri_scheme_request_finish_with_response",
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));

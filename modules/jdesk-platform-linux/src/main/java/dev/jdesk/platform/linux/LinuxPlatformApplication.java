@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static java.lang.foreign.ValueLayout.ADDRESS;
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 
 /**
  * One GTK application. The UI thread is the thread that constructs this application
@@ -57,6 +58,7 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
     private final NativeCallbackRegistry registry;
     private volatile boolean stopRequested;
     private volatile boolean loopRunning;
+    private volatile LinuxPtyBackend ptyBackend;
 
     LinuxPlatformApplication(PlatformApplicationConfig config) {
         super("LinuxPlatformApplication");
@@ -178,10 +180,11 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
             method = "GET";
         }
         Map<String, String> requestHeaders = readRangeHeader(request);
+        byte[] requestBody = readRequestBody(request, method);
         AssetResponse asset;
         try {
             asset = config.assetHandler().handle(
-                    new AssetRequest(URI.create(url), method, requestHeaders));
+                    new AssetRequest(URI.create(url), method, requestBody, requestHeaders));
         } catch (RuntimeException e) {
             LOG.log(Level.ERROR, "Asset handler failed for {0}", url, e);
             failRequestQuietly(request, "asset resolution failed");
@@ -267,6 +270,63 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
         return buffer.toByteArray();
     }
 
+    private static final byte[] EMPTY_BODY = new byte[0];
+
+    /**
+     * Reads an uploaded request body via {@code webkit_uri_scheme_request_get_http_body}
+     * (WebKitGTK 2.36+), bounded to the upload cap + 1 so oversize becomes a 413. Returns
+     * empty when the symbol is unavailable (older WebKitGTK) — see PLATFORM-001.
+     */
+    private static byte[] readRequestBody(MemorySegment request, String method) {
+        if (Gtk.WEBKIT_URI_SCHEME_REQUEST_GET_HTTP_BODY == null) {
+            return EMPTY_BODY;
+        }
+        if (!"POST".equalsIgnoreCase(method) && !"PUT".equalsIgnoreCase(method)
+                && !"PATCH".equalsIgnoreCase(method)) {
+            return EMPTY_BODY;
+        }
+        MemorySegment stream;
+        try {
+            stream = (MemorySegment) Gtk.WEBKIT_URI_SCHEME_REQUEST_GET_HTTP_BODY
+                    .invokeExact(request);
+        } catch (Throwable t) {
+            throw Gtk.rethrow(t);
+        }
+        if (stream == null || stream.equals(MemorySegment.NULL)) {
+            return EMPTY_BODY;
+        }
+        long limit = dev.jdesk.webview.spi.AssetRequest.MAX_BODY_BYTES + 1;
+        try {
+            return readGInputStream(stream, limit);
+        } finally {
+            try {
+                Gtk.G_OBJECT_UNREF.invokeExact(stream); // get_http_body is transfer-full
+            } catch (Throwable ignored) {
+                // defensive
+            }
+        }
+    }
+
+    private static byte[] readGInputStream(MemorySegment stream, long limit) {
+        try (Arena arena = Arena.ofConfined()) {
+            int chunkSize = 64 * 1024;
+            MemorySegment buffer = arena.allocate(chunkSize);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            while (out.size() < limit) {
+                long want = Math.min(chunkSize, limit - out.size());
+                long n = (long) Gtk.G_INPUT_STREAM_READ.invokeExact(
+                        stream, buffer, want, MemorySegment.NULL, MemorySegment.NULL);
+                if (n <= 0) {
+                    break; // 0 = EOF, -1 = error
+                }
+                out.write(buffer.asSlice(0, n).toArray(JAVA_BYTE), 0, (int) n);
+            }
+            return out.toByteArray();
+        } catch (Throwable t) {
+            throw Gtk.rethrow(t);
+        }
+    }
+
     private static void failRequestQuietly(MemorySegment request, String message) {
         try (Arena confined = Arena.ofConfined()) {
             int domain = (int) Gtk.G_QUARK_FROM_STRING.invokeExact(
@@ -300,6 +360,21 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
         requireOpen();
         dispatcher.assertUiThread();
         return new LinuxWindow(this, windowConfig);
+    }
+
+    @Override
+    public java.util.Optional<dev.jdesk.webview.spi.PtyBackend> ptyBackend() {
+        LinuxPtyBackend backend = ptyBackend;
+        if (backend == null) {
+            synchronized (this) {
+                backend = ptyBackend;
+                if (backend == null) {
+                    backend = new LinuxPtyBackend();
+                    ptyBackend = backend;
+                }
+            }
+        }
+        return java.util.Optional.of(backend);
     }
 
     @Override public void openExternal(URI uri) {

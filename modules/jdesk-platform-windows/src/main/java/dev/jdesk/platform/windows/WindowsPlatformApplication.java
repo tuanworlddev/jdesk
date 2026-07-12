@@ -30,6 +30,7 @@ final class WindowsPlatformApplication extends NativeHandle implements PlatformA
     private final Arena msgArena = Arena.ofShared();
     private final List<NativeCallbackRegistry> streamRegistries = new CopyOnWriteArrayList<>();
     private volatile boolean stopRequested;
+    private volatile WindowsPtyBackend ptyBackend;
 
     WindowsPlatformApplication(PlatformApplicationConfig config) {
         super("WindowsPlatformApplication");
@@ -60,6 +61,21 @@ final class WindowsPlatformApplication extends NativeHandle implements PlatformA
         requireOpen();
         dispatcher.assertUiThread();
         return new WindowsWindow(this, windowConfig);
+    }
+
+    @Override
+    public java.util.Optional<dev.jdesk.webview.spi.PtyBackend> ptyBackend() {
+        WindowsPtyBackend backend = ptyBackend;
+        if (backend == null) {
+            synchronized (this) {
+                backend = ptyBackend;
+                if (backend == null) {
+                    backend = new WindowsPtyBackend();
+                    ptyBackend = backend;
+                }
+            }
+        }
+        return java.util.Optional.of(backend);
     }
 
     @Override public void openExternal(URI uri) {

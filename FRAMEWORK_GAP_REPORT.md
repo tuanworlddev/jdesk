@@ -17,10 +17,10 @@ Environment for live macOS results: macOS 26.5.1, Apple Silicon (arm64), JDK 25.
 | ID | Area | State | Verification |
 | --- | --- | --- | --- |
 | BUG-001 | Runtime — command error logging | **Done** | Unit test observes the logged stack trace |
-| GAP-002 | Binary upload JS→Java (POST body) | **Done (macOS)** | Unit tests + live WKWebView SHA-256 match; Win/Linux body forwarding open (PLATFORM-001) |
+| GAP-002 | Binary upload JS→Java (POST body) | **Done — macOS live; Win/Linux compile-verified** | Unit tests + live macOS SHA-256; Win (WebView2) + Linux (WebKitGTK) body reading added, CI-verified |
 | GAP-001 | File watching API | **Done (macOS FSEvents + portable)** | Unit tests + live FSEvents latency ~10–13 ms |
 | BUG-002 | `requestStop()` "doesn't wake idle loop" | **Retracted — not a real bug** | See below |
-| GAP-003 | PTY / process API | **Done (macOS)** | Unit tests + live shell (tty, resize, exit code, no-orphan) |
+| GAP-003 | PTY / process API | **Done — macOS live; Linux+Windows compile-verified** | Unit tests + live macOS shell; Linux (openpty) + Windows (ConPTY) added, CI-verified |
 | GAP-004 | Native desktop integration batch | **Done (10/10, macOS)** | Live/structural; GUI gestures (menu/tray/hotkey click, notif banner, drop) honestly not-auto-tested |
 | GAP-005 | Deep-link scheme + file association | **Done (macOS)** | InfoPlist/jpackage unit-tested + verified on a real jpackage Info.plist; openURL delegate live; OS routing needs a signed bundle |
 
@@ -72,10 +72,12 @@ Environment for live macOS results: macOS 26.5.1, Apple Silicon (arm64), JDK 25.
 - **Breaking change:** `AssetRoute.Request` / `AssetRequest` change their canonical record
   constructor (new components). Accessor and convenience-constructor use is unaffected; only
   positional record deconstruction breaks. Minor-breaking, accepted at 0.x.
-- **PLATFORM-001 (open):** Windows (WebView2) and Linux (WebKitGTK) adapters do not forward
-  the request body yet — routes see an empty `body()` there. Not implemented because there is
-  no Windows/Linux environment to live-verify against, and unverified native code will not be
-  claimed as working.
+- **PLATFORM-001 (implemented, compile-verified):** Windows now reads the body from the
+  WebView2 request's `Content` IStream (`get_Content` slot 7, read via `ISequentialStream::Read`);
+  Linux reads it via `webkit_uri_scheme_request_get_http_body` (a `GInputStream`, WebKitGTK
+  2.36+; empty when the symbol is absent). Both bound to `cap + 1`, forwarded as
+  `AssetRequest.body`. **Compile-verified only** — no Windows/Linux environment on the authoring
+  machine; runtime verification belongs to the Windows/Linux native CI lanes.
 
 ## GAP-001 — File watching API (low-latency, event-driven)
 
@@ -148,8 +150,13 @@ I initially suspected a bug: the first GAP-001 probe hung in `[NSApp run]` after
   `./gradlew :test-apps:native-smoke:run -PjdeskPlatform=macos -PjdeskMain=dev.jdesk.testapps.nativesmoke.PtyProbe`.
 - **Breaking change:** `ApplicationHandle` gains abstract `openPty` (only `JDeskRuntime`
   implements it). `PlatformApplication.ptyBackend()` is a default (adapters/fakes unaffected).
-- **PLATFORM-002 (open):** Windows (ConPTY) and Linux (openpty/`libutil`) not implemented —
-  no environment to live-verify; unverified native code will not be claimed as working.
+- **PLATFORM-002 (implemented, compile-verified):** `LinuxPtyBackend` (`openpty` from libutil
+  + `posix_spawnp`, POSIX like macOS, with Linux constants: `TIOCSWINSZ=0x5414`,
+  `POSIX_SPAWN_SETSID=0x80`, glibc struct sizes) and `WindowsPtyBackend` (ConPTY:
+  `CreatePseudoConsole` + `STARTUPINFOEX`/`CreateProcessW`; Windows has no POSIX signals so
+  terminate/kill use `TerminateProcess`). Both wired into their `ptyBackend()`. **Compile-verified
+  only** — no Windows/Linux environment; the ConPTY struct offsets especially must be validated on
+  the Windows CI lane. Runtime verification belongs to the native CI lanes.
 
 ## GAP-004 — Native desktop integration (PARTIAL: 3 of 10)
 
@@ -242,3 +249,22 @@ BUG-001, GAP-001, GAP-002, GAP-003 are done and live-verified. GAP-004 is 10/10 
 + live where possible; GUI gestures honestly not-auto-tested). GAP-005 is done (unit-tested +
 verified on a real jpackage plist; OS-level routing needs a signed bundle). BUG-002 was
 retracted after verification. Nothing here is claimed without evidence.
+
+## Windows / Linux status
+
+There is **no Windows or Linux environment on the authoring machine**, so everything below is
+**compile-verified only**; the repo's real Windows/Linux native CI lanes are what runtime-verify.
+
+- **GAP-001 (file watching):** already cross-platform — Windows/Linux use the recursive
+  `WatchService` backend (kernel-backed / event-driven there, no FSEvents needed). Done.
+- **GAP-002 (upload body):** implemented for Windows (WebView2 `Content` IStream) and Linux
+  (WebKitGTK `get_http_body`). PLATFORM-001 closed, compile-verified.
+- **GAP-003 (PTY):** implemented for Linux (`openpty`+`posix_spawn`) and Windows (ConPTY).
+  PLATFORM-002 closed, compile-verified.
+- **GAP-005 (packaging):** `JpackageArguments` icon/`--file-associations` and the Gradle DSL are
+  cross-platform (jpackage handles Windows/Linux file associations natively). `InfoPlistCustomizer`
+  + `scheme://` OS routing are macOS-specific; the Windows-registry / Linux-`.desktop` equivalents
+  are not implemented.
+- **GAP-004 (desktop integration):** implemented on macOS only. The Windows (Win32/Shell) and
+  Linux (GTK) equivalents are a large, platform-specific surface and several APIs are
+  macOS-shaped (Dock badge, app menu bar); not implemented, stated plainly rather than stubbed.

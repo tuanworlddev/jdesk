@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static java.lang.foreign.ValueLayout.ADDRESS;
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
@@ -338,10 +339,11 @@ final class WindowsWebView implements PlatformWebView {
             ComRuntime.invoke(request, WebView2.WR_REQ_GET_METHOD, THIS_PTR, methodOut);
             String method = WideStrings.readAndFreeCoTaskMem(methodOut.get(ADDRESS, 0));
             Map<String, String> requestHeaders = readRangeHeader(request, confined);
+            byte[] requestBody = readRequestBody(request, method, confined);
             ComRuntime.release(request);
 
             AssetResponse asset = app.config().assetHandler()
-                    .handle(new AssetRequest(URI.create(uri), method, requestHeaders));
+                    .handle(new AssetRequest(URI.create(uri), method, requestBody, requestHeaders));
             LOG.log(Level.INFO, "asset {0} {1} -> {2}", method, uri, asset.status());
 
             MemorySegment stream = streamFor(asset);
@@ -417,6 +419,55 @@ final class WindowsWebView implements PlatformWebView {
         } catch (RuntimeException e) {
             LOG.log(Level.DEBUG, "Reading request headers failed; serving full body", e);
             return Map.of();
+        }
+    }
+
+    private static final byte[] EMPTY_BODY = new byte[0];
+    /** ICoreWebView2WebResourceRequest::get_Content (IStream**), vtable slot 7. */
+    private static final int WR_REQ_GET_CONTENT = 7;
+    /** ISequentialStream::Read(void* pv, ULONG cb, ULONG* pcbRead) -> HRESULT, vtable slot 3. */
+    private static final int ISTREAM_READ = 3;
+    private static final FunctionDescriptor ISTREAM_READ_DESC =
+            FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, JAVA_INT, ADDRESS);
+
+    /**
+     * Reads an uploaded request body from the WebView2 request's Content IStream, bounded to
+     * the upload cap + 1 so oversize becomes a 413. Empty for GET/HEAD or when there is no
+     * body. Compile-verified; runtime-verified on the Windows CI lane.
+     */
+    private static byte[] readRequestBody(MemorySegment request, String method, Arena confined) {
+        if (!"POST".equalsIgnoreCase(method) && !"PUT".equalsIgnoreCase(method)
+                && !"PATCH".equalsIgnoreCase(method)) {
+            return EMPTY_BODY;
+        }
+        MemorySegment contentOut = confined.allocate(ADDRESS);
+        int hr = (int) ComRuntime.invoke(request, WR_REQ_GET_CONTENT, THIS_PTR, contentOut);
+        MemorySegment stream = contentOut.get(ADDRESS, 0);
+        if (hr != Hresult.S_OK || stream.equals(MemorySegment.NULL)) {
+            return EMPTY_BODY;
+        }
+        try {
+            long limit = dev.jdesk.webview.spi.AssetRequest.MAX_BODY_BYTES + 1;
+            int chunkSize = 64 * 1024;
+            MemorySegment buffer = confined.allocate(chunkSize);
+            MemorySegment readOut = confined.allocate(JAVA_INT);
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            while (out.size() < limit) {
+                int want = (int) Math.min(chunkSize, limit - out.size());
+                int readHr = (int) ComRuntime.invoke(stream, ISTREAM_READ, ISTREAM_READ_DESC,
+                        buffer, want, readOut);
+                if (readHr < 0) {
+                    break; // stream error
+                }
+                int read = readOut.get(JAVA_INT, 0);
+                if (read <= 0) {
+                    break; // end of stream
+                }
+                out.write(buffer.asSlice(0, read).toArray(JAVA_BYTE), 0, read);
+            }
+            return out.toByteArray();
+        } finally {
+            ComRuntime.release(stream);
         }
     }
 
