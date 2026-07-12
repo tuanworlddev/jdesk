@@ -22,7 +22,7 @@ Environment for live macOS results: macOS 26.5.1, Apple Silicon (arm64), JDK 25.
 | BUG-002 | `requestStop()` "doesn't wake idle loop" | **Retracted — not a real bug** | See below |
 | GAP-003 | PTY / process API | **Done (macOS)** | Unit tests + live shell (tty, resize, exit code, no-orphan) |
 | GAP-004 | Native desktop integration batch | **Done (10/10, macOS)** | Live/structural; GUI gestures (menu/tray/hotkey click, notif banner, drop) honestly not-auto-tested |
-| GAP-005 | Deep-link scheme + file association | Not started | — |
+| GAP-005 | Deep-link scheme + file association | **Done (macOS)** | InfoPlist/jpackage unit-tested + verified on a real jpackage Info.plist; openURL delegate live; OS routing needs a signed bundle |
 
 ---
 
@@ -208,8 +208,37 @@ round-trip verified** on this machine, so no unverifiable claims are made:
 
 ---
 
-## Not started
+## GAP-005 — Deep-link scheme + file-association packaging
 
-GAP-005 (deep-link + file association packaging) is **not implemented**, and GAP-004 is
-partial (see above). Tracked in the task list; this file is updated only as work really
-lands.
+- **Gap (real):** no way to register a `scheme://` deep link or file association; jpackage
+  cannot inject `CFBundleURLTypes`, and there was no open-URL delivery path.
+- **Fix (implemented):**
+  - `jdesk-packager` `InfoPlistCustomizer`: injects `CFBundleURLTypes` + usage-description
+    keys into a jpackage `Info.plist`; idempotent, XML-escaped. `JpackageArguments` gains
+    `--icon` and repeatable `--file-associations`.
+  - `jdesk-webview-spi` `PlatformApplication.setOpenUrlHandler`; macOS `MacOpenUrl` installs a
+    `JDeskAppDelegate` (`application:openURLs:`); the runtime forwards each URL to the
+    single-instance activation handler (same path as argv).
+  - `jdesk-gradle-plugin`: `jdesk { deepLink { schemes; usageDescription(k,v) }; appIcon;
+    fileAssociation(ext, mime, desc) }` wires all of the above into `jdeskPackage`.
+- **Unit tests:** `InfoPlistCustomizerTest` (5), `JpackageArgumentsTest` (+2 for icon /
+  file-associations).
+- **Verification:** `InfoPlistCustomizer` run against a **real** jpackage-generated
+  `Info.plist` (`build/jpackage/JDeskSmoke.app`) injects `CFBundleURLTypes` (`jdesk-forge`)
+  and a usage description, and the result is still valid XML and idempotent. Live
+  (`DesktopProbe` as single-instance) the `JDeskAppDelegate` installs and the app keeps
+  working.
+- **BLOCKED (honest):** routing an actual `scheme://` link and an "Open with" association at
+  the OS level (Launch Services) needs a **signed, installed `.app`** — not reproducible from
+  an unbundled dev run. The Gradle DSL is compile-verified and its injection/arg logic is
+  unit-tested; a full `jdeskPackage` producing an installed, signed bundle is the remaining
+  end-to-end validation.
+
+---
+
+## Summary
+
+BUG-001, GAP-001, GAP-002, GAP-003 are done and live-verified. GAP-004 is 10/10 (structural
++ live where possible; GUI gestures honestly not-auto-tested). GAP-005 is done (unit-tested +
+verified on a real jpackage plist; OS-level routing needs a signed bundle). BUG-002 was
+retracted after verification. Nothing here is claimed without evidence.

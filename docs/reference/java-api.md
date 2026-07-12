@@ -133,7 +133,11 @@ mutating operations return a `CompletionStage<Void>` that completes on the UI th
 | `CompletionStage<Void> setFullscreen(boolean fullscreen)` | Enters/leaves fullscreen. |
 | `CompletionStage<Void> setAlwaysOnTop(boolean alwaysOnTop)` | Toggles always-on-top. |
 | `CompletionStage<Void> print()` | Opens the OS print dialog for this window's current page. |
+| `CompletionStage<Optional<String>> showContextMenu(MenuSpec menu)` | Pops up a native context menu (modal) and completes with the chosen action id, or empty. macOS. |
+| `CompletionStage<Subscription> onFileDrop(Consumer<List<Path>> listener)` | Delivers absolute paths of files dropped on the window (which HTML5 cannot expose); HTML5 DnD still works. macOS. |
 | `CompletionStage<Void> close()` | Closes the window. |
+
+Deep links and file associations are registered at packaging time — `jdesk { deepLink { schemes … }; appIcon; fileAssociation(ext, mime, description) }` (see the packaging guide); a `scheme://` link delivered while running reaches the single-instance activation handler.
 
 ### `JDeskBootstrap`
 
