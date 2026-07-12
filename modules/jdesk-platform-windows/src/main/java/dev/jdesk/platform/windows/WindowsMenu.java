@@ -90,9 +90,7 @@ final class WindowsMenu {
                 case MenuItem.Action action -> {
                     int id = nextId[0]++;
                     commands.put(id, action.id());
-                    int flags = MF_STRING
-                            | (action.checked() ? MF_CHECKED : 0)
-                            | (action.enabled() ? 0 : MF_GRAYED);
+                    int flags = actionFlags(action);
                     try (Arena arena = Arena.ofConfined()) {
                         int unused = (int) APPEND_MENU.invokeExact(menu, flags, (long) id,
                                 WindowsDesktop.wide(arena, action.label()));
@@ -100,5 +98,12 @@ final class WindowsMenu {
                 }
             }
         }
+    }
+
+    /** {@code AppendMenuW} flags for an action item: base string + optional checkmark/grey. */
+    static int actionFlags(MenuItem.Action action) {
+        return MF_STRING
+                | (action.checked() ? MF_CHECKED : 0)
+                | (action.enabled() ? 0 : MF_GRAYED);
     }
 }

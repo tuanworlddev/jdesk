@@ -45,4 +45,29 @@ class WindowsUrlSchemeTest {
         assertThatThrownBy(() -> WindowsUrlScheme.regScript(List.of("bad scheme"), "app.exe"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void acceptsValidSchemesWithSpecialCharacters() {
+        // RFC 3986 scheme chars after the first letter: letters, digits, + . -
+        String reg = WindowsUrlScheme.regScript(List.of("web+jdesk", "my-app.v2"), "app.exe");
+        assertThat(reg).contains(
+                "[HKEY_CURRENT_USER\\Software\\Classes\\web+jdesk\\shell\\open\\command]");
+        assertThat(reg).contains(
+                "[HKEY_CURRENT_USER\\Software\\Classes\\my-app.v2\\shell\\open\\command]");
+    }
+
+    @Test
+    void rejectsUppercaseAndDigitStartSchemes() {
+        assertThatThrownBy(() -> WindowsUrlScheme.regScript(List.of("App"), "app.exe"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> WindowsUrlScheme.regScript(List.of("1app"), "app.exe"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void everySchemeGetsItsOwnOpenCommandBlock() {
+        String reg = WindowsUrlScheme.regScript(List.of("a", "b"), "app.exe");
+        long blocks = reg.lines().filter(l -> l.endsWith("\\shell\\open\\command]")).count();
+        assertThat(blocks).isEqualTo(2);
+    }
 }
