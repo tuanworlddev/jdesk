@@ -2,9 +2,17 @@ plugins {
     id("jdesk.java-conventions")
     application
     `maven-publish`
+    // Full POM metadata + PGP signing on the `maven` publication below, so the CLI meets
+    // Maven Central's validation rules (name/description/url/license/scm/developers/signatures).
+    id("jdesk.publishing-conventions")
 }
 
 description = "JDesk project generator CLI."
+
+// Central requires a Javadoc jar alongside the main and sources jars.
+java {
+    withJavadocJar()
+}
 
 application {
     mainModule = "dev.jdesk.cli"

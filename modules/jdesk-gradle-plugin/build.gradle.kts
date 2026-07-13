@@ -2,13 +2,23 @@ plugins {
     id("jdesk.java-conventions")
     `java-gradle-plugin`
     id("jdesk.publishing-conventions")
+    // Publishes this plugin (and its marker artifact) to the Gradle Plugin Portal via
+    // `./gradlew :modules:jdesk-gradle-plugin:publishPlugins`. Credentials come from
+    // ~/.gradle/gradle.properties (gradle.publish.key / gradle.publish.secret) or the
+    // GRADLE_PUBLISH_KEY / GRADLE_PUBLISH_SECRET environment variables.
+    id("com.gradle.plugin-publish") version "2.1.1"
 }
 description = "JDesk Gradle application plugin (dev.jdesk.application)."
 gradlePlugin {
+    website = "https://github.com/tuanworlddev/jdesk"
+    vcsUrl = "https://github.com/tuanworlddev/jdesk.git"
     plugins {
         create("jdeskApplication") {
             id = "dev.jdesk.application"
             implementationClass = "dev.jdesk.gradle.JDeskApplicationPlugin"
+            displayName = "JDesk application plugin"
+            description = "Builds, runs, and packages JDesk desktop apps (web frontend + Java runtime)."
+            tags = listOf("jdesk", "desktop", "application", "webview", "packaging")
         }
     }
 }

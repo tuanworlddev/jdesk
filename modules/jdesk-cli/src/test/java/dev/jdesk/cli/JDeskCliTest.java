@@ -30,7 +30,7 @@ class JDeskCliTest {
                 .doesNotContain("@SOURCE_");
         assertThat(Files.readString(target.resolve("build.gradle.kts")))
                 .contains("id(\"dev.jdesk.application\")")
-                .contains("val jdeskVersion = \"0.1.1\"")
+                .contains("val jdeskVersion = \"0.1.2\"")
                 .contains("dev.jdesk:jdesk-runtime:$jdeskVersion")
                 .doesNotContain("@PACKAGE@");
     }
