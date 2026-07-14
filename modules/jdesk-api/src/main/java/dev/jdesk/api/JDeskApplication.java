@@ -145,9 +145,12 @@ public final class JDeskApplication {
 
         /**
          * Enforces one running process for this application id. Later launches deliver their
-         * command-line arguments (including deep-link URIs) to {@code activationHandler}.
-         * Activations are serialized on a dedicated non-UI virtual thread; use
-         * {@link ApplicationHandle#ui()} before touching native UI state.
+         * command-line arguments (including deep-link URIs) to {@code activationHandler}; so does
+         * the <em>initial</em> launch's own argv, once the app is ready, so a cold-start deep link
+         * (the OS launching the app fresh with a scheme URL on Windows/Linux) reaches the same
+         * handler as a warm activation — one code path on every platform. Activations are
+         * serialized on a dedicated non-UI virtual thread; use {@link ApplicationHandle#ui()}
+         * before touching native UI state.
          */
         public Builder singleInstance(Consumer<List<String>> activationHandler) {
             this.singleInstance = true;

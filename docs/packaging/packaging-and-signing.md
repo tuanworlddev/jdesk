@@ -18,13 +18,15 @@ Gradle tasks live in the [plugin](../development/gradle-plugin-reference.md).
    `distDirectory` is packed into the app jar under `/web`.
 2. **Runtime image** — `jdeskRuntimeImage` runs `jdeps --print-module-deps
    --ignore-missing-deps --multi-release <v>` over the runtime classpath, then `jlink`
-   into `build/jdesk/runtime-image`. It carries no global native-access privilege.
+   into `build/jdesk/runtime-image`. It carries no global native-access privilege. jlink runs
+   with `--strip-debug` and `--compress=zip-6` by default, which roughly a third off the image
+   (measured ~46 MB → ~29 MB) — the bundled runtime is the dominant size lever for a JDesk app.
 3. **App image** — `jdeskPackage` stages named modules and runs
-   `jpackage --module-path ... --module <mainModule>/<mainClass>`. The launcher grants
-   native access only to `dev.jdesk.platform.<os>` and denies all other illegal native
-   access. Output is written to
+   `jpackage --name <applicationName> --module-path ... --module <mainModule>/<mainClass>`.
+   The launcher grants native access only to `dev.jdesk.platform.<os>` and denies all other
+   illegal native access. Output is written to
    `build/jdesk/package`. macOS adds `--mac-package-identifier <applicationId>` and
-   `-XstartOnFirstThread`.
+   `-XstartOnFirstThread`. See [Application name and the macOS menu bar](#application-name-and-the-macos-menu-bar).
 4. **Package smoke** — `jdeskNativeSmokeTest` launches the packaged app-image's real
    launcher with `--jdesk-smoke` and requires exit 0 (see
    [../verification/native-testing-and-evidence.md](../verification/native-testing-and-evidence.md)).
@@ -33,6 +35,29 @@ Gradle tasks live in the [plugin](../development/gradle-plugin-reference.md).
    `build/jdesk/installer`. Type defaults to the OS default; override with
    `-PjdeskInstallerType=<dmg|pkg|msi|exe|deb|rpm>`. UNSIGNED unless a signing identity is
    configured. Verified end-to-end locally (real 34 MB DMG) and in the CI package jobs.
+
+## Application name and the macOS menu bar
+
+The name a user sees comes from `jdesk.applicationName`:
+
+```kotlin
+jdesk {
+    applicationId.set("dev.example.dragon7")
+    applicationName.set("Dragon 7")   // optional; defaults to the last applicationId segment
+}
+```
+
+`jdeskPackage` passes it to `jpackage --name`, which becomes the app's **`CFBundleName`** — the
+**bold application name** shown in the macOS menu bar (the item just right of the  menu). The task
+also embeds it as a `-Djdesk.applicationName` launch option so the runtime's **`Quit <Name>`** menu
+item matches the bold title exactly. Set it once and both agree; leave it unset and both derive from
+the last `applicationId` segment (e.g. `dragon7`).
+
+> **Only a packaged app can change the bold menu-bar name.** For a bundle-less dev launch
+> (`./gradlew run`), macOS/AppKit forces that title to the executable name — it reads `java`, and no
+> runtime call (`NSProcessInfo`, `setMainMenu:`, `-Xdock:name`) overrides it. The name is correct as
+> soon as the app is packaged, because `CFBundleName` is then present. This affects only the cosmetic
+> menu-bar title, never behaviour or identity (TCC/permissions read the code signature and bundle id).
 
 ## Build on the target OS only
 
@@ -86,11 +111,16 @@ Release-artifact hygiene lives in `jdesk-packager`'s `ReleaseArtifacts`
   knowledge of jlink/JDK internals.
   Deterministic (stable name-based serial number, no timestamps); unit-tested for validity
   and byte-stability.
+- **`writeSpdxSbom(...)`** — the same inventory as an **SPDX 2.3** JSON document (application
+  package, files, and library packages related by `DEPENDS_ON` / `CONTAINS`). Consumers and
+  scanners differ on which format they ingest, and the EU Cyber Resilience Act makes a
+  machine-readable SBOM binding from Sept 2026, so both are emitted. `SOURCE_DATE_EPOCH` (if
+  set) keeps the SPDX `created` timestamp reproducible.
 
-`jdeskPackage` invokes both after building the application image: it writes
-`checksums.sha256` (over the produced image) and `sbom.cyclonedx.json` next to the image
-and logs `wrote checksums.sha256 (N files) and sbom.cyclonedx.json (UNSIGNED)`. Verified
-against a real 282-file jpackage app image. The redistributed `WebView2Loader.dll` license
+`jdeskPackage` invokes these after building the application image: it writes
+`checksums.sha256` (over the produced image), `sbom.cyclonedx.json` and `sbom.spdx.json` next
+to the image and logs `wrote checksums.sha256 (N files), sbom.cyclonedx.json and sbom.spdx.json
+(UNSIGNED)`. Verified against a real 282-file jpackage app image. The redistributed `WebView2Loader.dll` license
 is documented with Windows artifacts (see
 [../platform/prerequisites.md](../platform/prerequisites.md)).
 

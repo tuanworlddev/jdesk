@@ -4,6 +4,7 @@ import dev.jdesk.gradle.internal.OsSupport;
 import dev.jdesk.packager.JdkTools;
 import dev.jdesk.packager.JpackageArguments;
 import dev.jdesk.packager.JpackageInstallerArguments;
+import dev.jdesk.packager.SigningCommands;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -52,6 +53,12 @@ public abstract class JDeskInstallerTask extends DefaultTask {
     @Input
     @org.gradle.api.tasks.Optional
     public abstract Property<String> getMacSigningIdentity();
+
+    /** macOS notarization keychain profile; when set (with a signing identity) the built
+     *  installer is submitted to Apple notarization and the ticket is stapled. */
+    @Input
+    @org.gradle.api.tasks.Optional
+    public abstract Property<String> getMacNotarizationProfile();
 
     @Internal
     public abstract Property<String> getJavaHome();
@@ -111,6 +118,38 @@ public abstract class JDeskInstallerTask extends DefaultTask {
         }
         getLogger().lifecycle("jdeskInstaller: {} installer written to {}{}",
                 type.jpackageType(), destination, signed ? "" : " (UNSIGNED)");
+
+        // Notarize + staple: Gatekeeper requires an outside-App-Store macOS installer to be
+        // notarized. jpackage already code-signed the image (Hardened Runtime); here we submit
+        // the built installer to Apple and staple the ticket so it launches offline.
+        if (macOs && signed && getMacNotarizationProfile().isPresent()) {
+            String profile = getMacNotarizationProfile().get();
+            Path installer = locateInstaller(destination, type);
+            getLogger().lifecycle("jdeskInstaller: notarizing {} (profile {})", installer, profile);
+            runToolchain(SigningCommands.macNotarize(installer, profile), "notarytool submit");
+            runToolchain(SigningCommands.macStaple(installer), "stapler staple");
+            getLogger().lifecycle("jdeskInstaller: notarized and stapled {}", installer);
+        }
+    }
+
+    /** Finds the single installer jpackage produced for {@code type} in {@code destination}. */
+    private static Path locateInstaller(File destination, JpackageInstallerArguments.Type type) {
+        String suffix = "." + type.jpackageType();
+        File[] matches = destination.listFiles((dir, name) -> name.endsWith(suffix));
+        if (matches == null || matches.length == 0) {
+            throw new GradleException("jdeskInstaller: no " + suffix
+                    + " installer found in " + destination + " to notarize");
+        }
+        return matches[0].toPath();
+    }
+
+    private void runToolchain(List<String> commandLine, String label) {
+        try {
+            getExecOperations().exec(spec -> spec.setCommandLine(commandLine));
+        } catch (Exception e) {
+            throw new GradleException("jdeskInstaller: " + label + " failed. Verify the"
+                    + " notarization keychain profile and Apple credentials.", e);
+        }
     }
 
     private JpackageInstallerArguments.Type resolveType(String osName) {

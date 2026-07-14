@@ -22,6 +22,15 @@ public abstract class JDeskExtension {
     /** Reverse-DNS application id, e.g. {@code dev.example.app}. */
     public abstract Property<String> getApplicationId();
 
+    /**
+     * Human-readable application name shown to the user, e.g. {@code "Dragon 7"}. Drives the
+     * packaged app's {@code CFBundleName} (the bold name in the macOS menu bar) and, via a
+     * {@code -Djdesk.applicationName} launch option jpackage embeds, the runtime {@code Quit <Name>}
+     * menu item — so both surfaces always agree. When unset, both derive from the last
+     * {@link #getApplicationId() applicationId} segment.
+     */
+    public abstract Property<String> getApplicationName();
+
     /** Fully qualified main class of the application. */
     public abstract Property<String> getMainClass();
 

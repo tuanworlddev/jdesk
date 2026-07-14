@@ -278,6 +278,19 @@ class JDeskRuntimeTest {
             return new WindowBounds(0, 0, config.width(), config.height());
         }
 
+        volatile java.util.function.Consumer<Boolean> focusListener;
+        @Override
+        public Runnable onFocusChanged(java.util.function.Consumer<Boolean> listener) {
+            this.focusListener = listener;
+            return () -> this.focusListener = null;
+        }
+        void simulateFocus(boolean focused) {
+            java.util.function.Consumer<Boolean> l = focusListener;
+            if (l != null) {
+                l.accept(focused);
+            }
+        }
+
         @Override
         public void close() {
             closed = true;
@@ -349,6 +362,15 @@ class JDeskRuntimeTest {
 
         @Override public void printFile(dev.jdesk.api.PrintJob job) {
             printedFiles.add(job.filePath());
+        }
+
+        volatile dev.jdesk.api.ShareContent sharedContent;
+        @Override public boolean share(dev.jdesk.api.ShareContent content) {
+            this.sharedContent = content;
+            return true;
+        }
+        @Override public boolean biometricsAvailable() {
+            return true;
         }
 
         @Override public dev.jdesk.api.SystemTheme systemTheme() { return theme; }
@@ -483,6 +505,27 @@ class JDeskRuntimeTest {
             thread.start();
         }
 
+        RunningRuntime(List<WindowConfig> windowConfigs, boolean singleInstance,
+                Consumer<List<String>> activationHandler, List<String> launchArguments) {
+            ApplicationSpec spec = new ApplicationSpec(
+                    "dev.jdesk.test",
+                    CommandRegistry.of(),
+                    CapabilitySet.empty(),
+                    windowConfigs,
+                    List.of(listener),
+                    Optional.empty(),
+                    CommandRegistry.of(),
+                    singleInstance,
+                    activationHandler);
+            RuntimeOptions production = RuntimeOptions.production(new MapAssetSource());
+            RuntimeOptions options = new RuntimeOptions(false, production.assetSource(),
+                    production.spaFallback(), production.securityHeaders(), production.limits(),
+                    production.overflowPolicy(), production.navigationGrace());
+            runtime = new JDeskRuntime(spec, provider, options, activationHandler, launchArguments);
+            thread = new Thread(() -> exitCode.set(runtime.run()), "jdesk-runtime-test");
+            thread.start();
+        }
+
         static WindowConfig window(String id) {
             return WindowConfig.builder().id(id).title("t").entry(ENTRY).build();
         }
@@ -530,6 +573,80 @@ class JDeskRuntimeTest {
     }
 
     // ---------------------------------------------------------------- tests
+
+    @Test
+    void windowFocusChangesReachTheListener() throws Exception {
+        try (RunningRuntime running = new RunningRuntime(List.of(RunningRuntime.window("main")))) {
+            running.awaitReady();
+            java.util.List<Boolean> events = new CopyOnWriteArrayList<>();
+            running.runtime.window(new WindowId("main")).orElseThrow()
+                    .onFocusChanged(events::add).toCompletableFuture().get(5, TimeUnit.SECONDS);
+            FakeWindow window = running.provider.app.windows.getFirst();
+            window.simulateFocus(true);
+            window.simulateFocus(false);
+            assertThat(events).containsExactly(true, false);
+            running.stopAndJoin();
+        }
+    }
+
+    @Test
+    void shareAndBiometricsDelegateToThePlatform() throws Exception {
+        try (RunningRuntime running = new RunningRuntime(List.of(RunningRuntime.window("main")))) {
+            running.awaitReady();
+            assertThat(running.runtime.share(dev.jdesk.api.ShareContent.text("share me"))
+                    .toCompletableFuture().get(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(running.provider.app.sharedContent.text()).isEqualTo("share me");
+            assertThat(running.runtime.biometricsAvailable()
+                    .toCompletableFuture().get(5, TimeUnit.SECONDS)).isTrue();
+            running.stopAndJoin();
+        }
+    }
+
+    @Test
+    void interactiveNotificationFallsBackToBasicDeliveryAndCompletes() throws Exception {
+        try (RunningRuntime running = new RunningRuntime(List.of(RunningRuntime.window("main")))) {
+            running.awaitReady();
+            dev.jdesk.api.InteractiveNotification notification =
+                    dev.jdesk.api.InteractiveNotification.of("Build done", "3 tests passed")
+                            .withActions(new dev.jdesk.api.InteractiveNotification.Action(
+                                    "open", "Open"))
+                            .withReply("Comment");
+            // The fake adapter has no action support, so the SPI default delivers title+body and
+            // completes as dismissed — the app still gets a well-formed response.
+            dev.jdesk.api.NotificationResponse response = running.runtime
+                    .showNotification(notification).toCompletableFuture().get(5, TimeUnit.SECONDS);
+            assertThat(response.actionId()).isEmpty();
+            assertThat(running.provider.app.notifications).contains("Build done:3 tests passed");
+            running.stopAndJoin();
+        }
+    }
+
+    @Test
+    void coldStartArgumentsReachActivationHandlerForSingleInstance() throws Exception {
+        java.util.List<String> received = new CopyOnWriteArrayList<>();
+        try (RunningRuntime running = new RunningRuntime(
+                List.of(RunningRuntime.window("main")), true,
+                args -> received.addAll(args), List.of("dev.example://open?id=7"))) {
+            running.awaitReady();
+            // The cold-start argv is dispatched right after ready — a fresh launch carrying a
+            // deep-link URL reaches the same handler as a warm single-instance activation.
+            assertThat(received).containsExactly("dev.example://open?id=7");
+            running.stopAndJoin();
+        }
+    }
+
+    @Test
+    void coldStartArgumentsIgnoredWhenNotSingleInstance() throws Exception {
+        java.util.List<String> received = new CopyOnWriteArrayList<>();
+        try (RunningRuntime running = new RunningRuntime(
+                List.of(RunningRuntime.window("main")), false,
+                args -> received.addAll(args), List.of("dev.example://x"))) {
+            running.awaitReady();
+            // Without single-instance there is no activation contract; argv stays in main().
+            assertThat(received).isEmpty();
+            running.stopAndJoin();
+        }
+    }
 
     @Test
     void configuredPositionAppliesBoundsAfterShow() throws Exception {

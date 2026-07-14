@@ -24,6 +24,7 @@ public record UpdateManifest(
         String packageSignature,
         long publishedAtEpochSeconds,
         String minimumCurrentVersion,
+        Integer rolloutPercentage,
         String manifestSignature) {
     public static final int CURRENT_SCHEMA = 1;
 
@@ -51,6 +52,14 @@ public record UpdateManifest(
         } else {
             minimumCurrentVersion = null;
         }
+        // Phased-rollout gate: 0..100, absent means a full (100%) rollout. Signed like every
+        // other field, though a package can never install without its own SHA-256 + signature,
+        // so this only paces which installs stage an already-trusted release.
+        if (rolloutPercentage == null) {
+            rolloutPercentage = 100;
+        } else if (rolloutPercentage < 0 || rolloutPercentage > 100) {
+            throw new IllegalArgumentException("rolloutPercentage must be between 0 and 100");
+        }
         requireBase64(manifestSignature, "manifest signature");
     }
 
@@ -68,6 +77,7 @@ public record UpdateManifest(
                 writeString(output, packageSignature);
                 output.writeLong(publishedAtEpochSeconds);
                 writeString(output, minimumCurrentVersion == null ? "" : minimumCurrentVersion);
+                output.writeInt(rolloutPercentage);
             }
             return bytes.toByteArray();
         } catch (IOException e) {

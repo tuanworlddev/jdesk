@@ -86,6 +86,32 @@ class UpdateManagerTest {
                 .hasMessage("Update transport must use HTTPS");
     }
 
+    @Test void phasedRolloutHoldsBackUntilReachedThenStages() throws Exception {
+        UpdateTransaction transaction = transactionWithHealthyBaseline();
+        UpdatePolicy policy = new UpdatePolicy(true, UpdateChannel.STABLE, false, 1024, 8192,
+                Duration.ofSeconds(2), Duration.ofSeconds(5), true);
+
+        // rolloutPercentage 0 => no install is in reach yet, even a brand-new release.
+        manifestBytes = signedManifest("1.1.0", "stable", packageBytes, keys, 0);
+        UpdateManager gated = new UpdateManager(transaction, policy, keys.getPublic(),
+                keys.getPublic(), temp.resolve("dl-held"), "install-abc");
+        assertThat(gated.checkAndStage(uri("/manifest"), "1.0.0").status())
+                .isEqualTo(UpdateResult.Status.HELD_BACK);
+
+        // Same 0% manifest, but no install id configured => rollout gating is disabled entirely.
+        UpdateManager ungated = new UpdateManager(transaction, policy, keys.getPublic(),
+                keys.getPublic(), temp.resolve("dl-full"));
+        assertThat(ungated.checkAndStage(uri("/manifest"), "1.0.0").status())
+                .isEqualTo(UpdateResult.Status.STAGED);
+
+        // Rollout reaches 100% => the gated install stages too.
+        manifestBytes = signedManifest("1.1.0", "stable", packageBytes, keys, 100);
+        UpdateManager reached = new UpdateManager(transactionWithHealthyBaseline(), policy,
+                keys.getPublic(), keys.getPublic(), temp.resolve("dl-reached"), "install-abc");
+        assertThat(reached.checkAndStage(uri("/manifest"), "1.0.0").status())
+                .isEqualTo(UpdateResult.Status.STAGED);
+    }
+
     @Test void rejectsTamperedManifestBeforeDownloadingPackage() throws Exception {
         manifestBytes[manifestBytes.length / 2] ^= 1;
         UpdateManager manager = manager(transactionWithHealthyBaseline(),
@@ -114,15 +140,20 @@ class UpdateManagerTest {
 
     private byte[] signedManifest(String version, String channel, byte[] bytes, KeyPair pair)
             throws Exception {
+        return signedManifest(version, channel, bytes, pair, 100);
+    }
+
+    private byte[] signedManifest(String version, String channel, byte[] bytes, KeyPair pair,
+            Integer rolloutPercentage) throws Exception {
         String hash = HexFormat.of().formatHex(
                 MessageDigest.getInstance("SHA-256").digest(bytes));
         String packageSignature = sign(bytes, pair);
         UpdateManifest unsigned = new UpdateManifest(1, version, channel,
                 uri("/package").toString(), bytes.length, hash, packageSignature,
-                Instant.now().getEpochSecond(), "1.0.0", EMPTY_SIGNATURE);
+                Instant.now().getEpochSecond(), "1.0.0", rolloutPercentage, EMPTY_SIGNATURE);
         UpdateManifest signed = new UpdateManifest(1, version, channel,
                 unsigned.packageUri(), bytes.length, hash, packageSignature,
-                unsigned.publishedAtEpochSeconds(), "1.0.0",
+                unsigned.publishedAtEpochSeconds(), "1.0.0", rolloutPercentage,
                 sign(unsigned.signingPayload(), pair));
         return MAPPER.writeValueAsBytes(signed);
     }

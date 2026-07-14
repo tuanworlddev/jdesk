@@ -11,6 +11,8 @@ public record UpdateResult(Status status, Optional<String> version,
         NO_UPDATE,
         CHANNEL_MISMATCH,
         CURRENT_VERSION_UNSUPPORTED,
+        /** A newer release exists but a staged/phased rollout has not yet reached this install. */
+        HELD_BACK,
         STAGED
     }
 

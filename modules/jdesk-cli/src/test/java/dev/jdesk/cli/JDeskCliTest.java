@@ -51,7 +51,7 @@ class JDeskCliTest {
 
     @Test
     void createsEveryNamedFrontendTemplate() throws Exception {
-        for (String template : List.of("vanilla", "react", "vue", "svelte")) {
+        for (String template : List.of("vanilla", "react", "vue", "svelte", "solid")) {
             Path target = tempDir.resolve(template);
             Result result = run("create", target.toString(), "--template", template,
                     "--package", "org.acme." + template, "--jdesk-source", sourceRoot());
@@ -60,6 +60,11 @@ class JDeskCliTest {
             assertThat(Files.readString(target.resolve("build.gradle.kts")))
                     .contains("listOf(\"npm\", \"run\", \"build\")");
         }
+        // Solid ships a JSX entry + its own Vite plugin config rather than the plain-JS set.
+        assertThat(tempDir.resolve("solid/ui/src/main.jsx")).isRegularFile();
+        assertThat(tempDir.resolve("solid/ui/vite.config.js")).isRegularFile();
+        assertThat(Files.readString(tempDir.resolve("solid/ui/package.json")))
+                .contains("solid-js").contains("vite-plugin-solid");
     }
 
     @Test void createsMavenTemplate() throws Exception {

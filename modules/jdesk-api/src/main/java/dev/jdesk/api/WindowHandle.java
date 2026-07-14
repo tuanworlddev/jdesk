@@ -40,5 +40,12 @@ public interface WindowHandle {
      */
     CompletionStage<Subscription> onFileDrop(Consumer<List<Path>> listener);
 
+    /**
+     * Registers a listener for this window's focus changes: it receives {@code true} when the
+     * window becomes active/key and {@code false} when it loses focus. Close the returned
+     * {@link Subscription} to stop. Empty subscription where unsupported.
+     */
+    CompletionStage<Subscription> onFocusChanged(Consumer<Boolean> listener);
+
     CompletionStage<Void> close();
 }

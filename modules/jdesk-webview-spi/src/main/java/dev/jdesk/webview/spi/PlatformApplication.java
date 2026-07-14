@@ -127,6 +127,31 @@ public interface PlatformApplication extends AutoCloseable {
     }
 
     /**
+     * Posts an interactive notification with action buttons / inline reply (UI thread), completing
+     * the returned stage with the user's response. Default: delivers the title and body through
+     * {@link #showNotification(String, String)} and completes as {@link
+     * dev.jdesk.api.NotificationResponse#dismissed() dismissed} — so an adapter that only supports
+     * plain notifications still shows the message, just without the buttons.
+     */
+    default java.util.concurrent.CompletionStage<dev.jdesk.api.NotificationResponse>
+            showNotification(dev.jdesk.api.InteractiveNotification notification) {
+        showNotification(notification.title(), notification.body());
+        return java.util.concurrent.CompletableFuture.completedFuture(
+                dev.jdesk.api.NotificationResponse.dismissed());
+    }
+
+    /** Presents the OS share sheet for the given content (UI thread). Default: unsupported. */
+    default boolean share(dev.jdesk.api.ShareContent content) {
+        throw new dev.jdesk.api.JDeskException(dev.jdesk.api.ErrorCode.ILLEGAL_STATE,
+                "Sharing is not supported by this platform adapter");
+    }
+
+    /** Whether biometric authentication is currently available (UI thread). Default: false. */
+    default boolean biometricsAvailable() {
+        return false;
+    }
+
+    /**
      * Installs a handler for {@code scheme://} deep links delivered by the OS while running
      * (UI thread). Default: no-op (OS-level routing still requires the app bundle to declare
      * the scheme; see the packager's {@code InfoPlistCustomizer}).

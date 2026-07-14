@@ -33,7 +33,12 @@ per-platform status.
 configured for the current OS. Unsigned packages are fine for development and internal
 verification, but they are labeled `UNSIGNED` and **do not satisfy a signed-release gate**.
 Signing itself is delegated to the OS toolchains (`signtool`, `codesign` + `notarytool`,
-`dpkg-sig`/`rpmsign`); the plugin only invokes them from the values you set.
+`dpkg-sig`/`rpmsign`); the plugin only invokes them from the values you set. On macOS, when both
+`macSigningIdentity` and `macNotarizationProfile` are set, `jdeskInstaller` code-signs the image
+(Hardened Runtime + secure timestamp), then **automatically submits the built installer to Apple
+notarization and staples the ticket** (`xcrun notarytool submit --wait` + `stapler staple`) so it
+launches without a Gatekeeper prompt. The command lines are built by `SigningCommands` in
+`jdesk-packager` (unit-tested independently of any certificate).
 
 ## Configure the signing hooks
 

@@ -41,6 +41,8 @@ Task-oriented how-tos for when you are building.
 - [Use native dialogs and printing](guides/dialogs-and-printing.md)
 - [Automate and E2E-test your app](guides/automation-and-e2e.md)
 - [Update an application safely](guides/updating-applications.md)
+- [Extend an app with plugins](guides/plugins.md)
+- [Use non-modular Java libraries](guides/non-modular-libraries.md)
 - [Apply enterprise managed policy](guides/enterprise-managed-policy.md)
 - [Create a redacted support bundle](guides/diagnostics-and-support.md)
 - [Grant capabilities and permissions](guides/capabilities-and-permissions.md)

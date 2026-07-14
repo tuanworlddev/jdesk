@@ -31,6 +31,8 @@ public final class UpdateManager {
     private final PublicKey packageKey;
     private final Path downloadDirectory;
     private final HttpClient client;
+    /** Stable per-install id for phased-rollout bucketing; null disables rollout gating. */
+    private final String installId;
 
     public UpdateManager(UpdateTransaction transaction, UpdatePolicy policy,
             PublicKey publicKey, Path downloadDirectory) throws UpdateVerificationException {
@@ -41,10 +43,22 @@ public final class UpdateManager {
     public UpdateManager(UpdateTransaction transaction, UpdatePolicy policy,
             PublicKey manifestKey, PublicKey packageKey, Path downloadDirectory)
             throws UpdateVerificationException {
+        this(transaction, policy, manifestKey, packageKey, downloadDirectory, null);
+    }
+
+    /**
+     * Adds a stable install id so phased/staged rollouts apply: a manifest's
+     * {@code rolloutPercentage} only stages on this install once its deterministic bucket is
+     * within reach (see {@link RolloutGate}). A null id disables rollout gating (full rollout).
+     */
+    public UpdateManager(UpdateTransaction transaction, UpdatePolicy policy,
+            PublicKey manifestKey, PublicKey packageKey, Path downloadDirectory, String installId)
+            throws UpdateVerificationException {
         this.transaction = java.util.Objects.requireNonNull(transaction, "transaction");
         this.policy = java.util.Objects.requireNonNull(policy, "policy");
         this.manifestKey = java.util.Objects.requireNonNull(manifestKey, "manifestKey");
         this.packageKey = java.util.Objects.requireNonNull(packageKey, "packageKey");
+        this.installId = installId;
         this.downloadDirectory = secureDirectory(downloadDirectory);
         this.client = HttpClient.newBuilder()
                 .connectTimeout(policy.connectTimeout())
@@ -78,6 +92,12 @@ public final class UpdateManager {
         int comparison = manifest.releaseVersion().compareTo(current);
         if (comparison == 0 || comparison < 0 && !policy.allowDowngrade()) {
             return UpdateResult.of(UpdateResult.Status.NO_UPDATE);
+        }
+        // Phased rollout: a newer release only stages once this install's bucket is within the
+        // manifest's rolloutPercentage. Skipped when no install id is configured (full rollout).
+        if (installId != null
+                && !RolloutGate.eligible(installId, manifest.version(), manifest.rolloutPercentage())) {
+            return UpdateResult.of(UpdateResult.Status.HELD_BACK);
         }
         if (manifest.size() > policy.maxPackageBytes()) {
             throw new UpdateVerificationException("Update package exceeds policy size");

@@ -16,6 +16,7 @@ plugins {
 
 jdesk {
     applicationId.set("dev.example.app")     // reverse-DNS, validated by jdeskDoctor
+    applicationName.set("Dragon 7")          // display name; defaults to the last applicationId segment
     mainModule.set("dev.example.app")        // defaults to applicationId
     mainClass.set("dev.example.App")
 
@@ -45,6 +46,7 @@ Every property is lazy (`Property`/`DirectoryProperty`/`ListProperty`). Leaving
 | Property | Type | Meaning |
 | --- | --- | --- |
 | `applicationId` | `Property<String>` | Reverse-DNS app id; validated by `jdeskDoctor`. |
+| `applicationName` | `Property<String>` | Human-readable app name. Drives the packaged app's `CFBundleName` (the **bold name in the macOS menu bar**) and the runtime `Quit <Name>` item, keeping both in sync. Unset ⇒ both derive from the last `applicationId` segment. See [packaging](../packaging/packaging-and-signing.md#application-name-and-the-macos-menu-bar). |
 | `mainModule` | `Property<String>` | Named JPMS application module used by production packaging; defaults to `applicationId`. |
 | `mainClass` | `Property<String>` | Application entry point. |
 | `frontend.directory` | `DirectoryProperty` | Frontend source root; unset ⇒ no frontend. |
@@ -60,6 +62,14 @@ Every property is lazy (`Property`/`DirectoryProperty`/`ListProperty`). Leaving
 
 Command lists are passed as argument vectors, so paths with spaces and non-ASCII
 characters are safe. Logged environments are redacted (`(?i)(token|secret|password|key)`).
+
+### Non-modular dependencies
+
+A JDesk app is a JPMS module, so a dependency that ships without a `module-info` (an *automatic
+module*, e.g. LSP4J) neither resolves via `requires` nor links into the `jpackage` image. Give it a
+synthesized descriptor with [`extra-java-module-info`](https://github.com/gradlex-org/extra-java-module-info)
+so it works in both `run` and the packaged app — see
+[Using non-modular libraries](../guides/non-modular-libraries.md).
 
 ## Tasks (group `jdesk`)
 

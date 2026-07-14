@@ -87,7 +87,28 @@ public interface ApplicationHandle {
      * {@link ErrorCode#ILLEGAL_STATE} where notifications are unavailable.
      */
     CompletionStage<Void> showNotification(String title, String body);
+
+    /**
+     * Posts an interactive notification with action buttons and/or an inline reply. The returned
+     * stage completes with the user's {@link NotificationResponse} when they act on or dismiss it
+     * (not when it is delivered). Same bundle/permission caveats as {@link #showNotification}.
+     */
+    CompletionStage<NotificationResponse> showNotification(InteractiveNotification notification);
+
     CompletionStage<MessageDialogResult> showMessageDialog(MessageDialog dialog);
+
+    /**
+     * Presents the OS share sheet for {@code content}, letting the user pick a target app/service.
+     * The stage completes {@code true} once presented (or after a selection where the platform
+     * reports one), {@code false}/failed where sharing is unavailable.
+     */
+    CompletionStage<Boolean> share(ShareContent content);
+
+    /**
+     * Whether the OS can perform biometric authentication right now (Touch ID enrolled and usable,
+     * Windows Hello available). Use it to gate sensitive actions or secret access before prompting.
+     */
+    CompletionStage<Boolean> biometricsAvailable();
 
     /** Shows a native, app-modal open dialog. Result paths are empty when cancelled. */
     CompletionStage<FileDialogResult> showOpenDialog(FileDialog.OpenDialog dialog);

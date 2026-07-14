@@ -30,7 +30,7 @@ Select a template:
   6) Structured      — multi-module: domain / application / infrastructure / desktop
 ```
 
-The valid `--template` values are `basic`, `vanilla`, `react`, `vue`, `svelte`, and
+The valid `--template` values are `basic`, `vanilla`, `react`, `vue`, `svelte`, `solid`, and
 `structured` (default `basic`). An unknown name fails before any files are written.
 
 ## What each template gives you
@@ -47,7 +47,7 @@ The valid `--template` values are `basic`, `vanilla`, `react`, `vue`, `svelte`, 
 Two axes decide the choice:
 
 - **Frontend stack.** `basic` and `structured` ship a dependency-free `ui/` — plain
-  `index.html`, `src/main.js`, `src/style.css`. `vanilla`, `react`, `vue`, and `svelte`
+  `index.html`, `src/main.js`, `src/style.css`. `vanilla`, `react`, `vue`, `svelte`, and `solid`
   add the corresponding framework dependencies and let Vite bundle them.
 - **Project shape.** `structured` is the only multi-module template. It splits Java across
   `domain`, `application`, `infrastructure`, and `desktop` modules and runs the plugin from
@@ -123,7 +123,7 @@ The `buildCommand` is where the templates diverge:
   `src/style.css` into it (rewriting the `/src/main.js` script path to `./main.js`). There
   is no bundler in the production build — the plain files are copied verbatim.
 
-- **`vanilla`, `react`, `vue`, `svelte`** run Vite:
+- **`vanilla`, `react`, `vue`, `svelte`, `solid`** run Vite:
 
   ```kotlin
   buildCommand.set(listOf("npm", "run", "build"))   // vite build

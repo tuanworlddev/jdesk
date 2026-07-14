@@ -27,7 +27,7 @@ Run with no project name when stdin is not a TTY to print usage and exit with co
 
 | Option | Meaning | Default |
 | --- | --- | --- |
-| `-t, --template <name>` | Template to scaffold: `basic`, `structured`, `vanilla`, `react`, `vue`, or `svelte`. | `basic` |
+| `-t, --template <name>` | Template to scaffold: `basic`, `structured`, `vanilla`, `react`, `vue`, `svelte`, or `solid`. | `basic` |
 | `-p, --package <id>` | Reverse-DNS Java package / application id. | `com.example.<name>` |
 | `--jdesk-version <v>` | Framework version to depend on. | generator default |
 | `--jdesk-source <dir>` | Use a local JDesk checkout (composite build) — for framework development. Resolved to an absolute path. | — |
@@ -52,7 +52,7 @@ order):
 | `structured` | Structured | multi-module: domain / application / infrastructure / desktop |
 
 The scaffolder validates `--template` against `basic`, `structured`, `vanilla`, `react`,
-`vue`, `svelte`; an unknown value fails with exit code `1`. (The underlying `jdesk` CLI
+`vue`, `svelte`, `solid`; an unknown value fails with exit code `1`. (The underlying `jdesk` CLI
 additionally accepts `maven`; `create-jdesk-app` does not expose it.)
 
 ### Interactive prompt
@@ -127,7 +127,7 @@ unknown `-`-prefixed option, is an error.
 
 ### Templates
 
-`basic`, `structured`, `vanilla`, `react`, `vue`, `svelte`, `maven`. An unsupported value
+`basic`, `structured`, `vanilla`, `react`, `vue`, `svelte`, `solid`, `maven`. An unsupported value
 fails with a usage error. When the target directory exists and is non-empty, `create`
 fails unless `--force` is passed.
 

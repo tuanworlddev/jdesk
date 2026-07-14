@@ -16,6 +16,8 @@ public final class JlinkArguments {
     private final Path output;
     private final boolean noHeaderFiles;
     private final boolean noManPages;
+    private final boolean stripDebug;
+    private final String compress;
     private final List<String> addOptions;
 
     private JlinkArguments(Builder builder) {
@@ -23,6 +25,8 @@ public final class JlinkArguments {
         this.output = builder.output;
         this.noHeaderFiles = builder.noHeaderFiles;
         this.noManPages = builder.noManPages;
+        this.stripDebug = builder.stripDebug;
+        this.compress = builder.compress;
         this.addOptions = List.copyOf(builder.addOptions);
     }
 
@@ -47,6 +51,15 @@ public final class JlinkArguments {
         if (noManPages) {
             args.add("--no-man-pages");
         }
+        if (stripDebug) {
+            // Drops native + class debug symbols from the image — a large, safe size win
+            // for a distributed runtime (stack traces keep line numbers from the app jars).
+            args.add("--strip-debug");
+        }
+        if (compress != null && !compress.isBlank()) {
+            // JDK 21+ ZIP compression of the image resources (zip-0..zip-9).
+            args.add("--compress=" + compress);
+        }
         if (!addOptions.isEmpty()) {
             // jlink's add-options plugin embeds default JVM options into the image
             // (e.g. --enable-native-access=...): they apply to every launch of the
@@ -61,6 +74,8 @@ public final class JlinkArguments {
         private Path output;
         private boolean noHeaderFiles = true;
         private boolean noManPages = true;
+        private boolean stripDebug = true;
+        private String compress = "zip-6";
         private final List<String> addOptions = new ArrayList<>();
 
         private Builder() {
@@ -83,6 +98,19 @@ public final class JlinkArguments {
 
         public Builder noManPages(boolean value) {
             this.noManPages = value;
+            return this;
+        }
+
+        /** Strips debug symbols from the runtime image (default true). */
+        public Builder stripDebug(boolean value) {
+            this.stripDebug = value;
+            return this;
+        }
+
+        /** ZIP compression level for image resources, {@code zip-0}..{@code zip-9} (default zip-6);
+         *  null or blank disables the {@code --compress} flag. */
+        public Builder compress(String level) {
+            this.compress = level;
             return this;
         }
 

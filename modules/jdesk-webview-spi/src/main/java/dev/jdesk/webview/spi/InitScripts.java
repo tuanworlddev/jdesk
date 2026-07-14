@@ -57,8 +57,17 @@ public final class InitScripts {
               }, true);
               window.addEventListener("unhandledrejection", function (event) {
                 var reason = event ? event.reason : null;
-                capture("error", "Unhandled rejection: "
-                    + (reason && reason.stack ? reason.stack : String(reason)));
+                // Defer the decision to a microtask so an app's own listener — registered in any
+                // phase or order — can event.preventDefault() a benign rejection (e.g. Monaco's
+                // "Canceled" worker cancellations) first. If it did, stay silent, matching the
+                // browser's own default-suppression; otherwise forward it.
+                var report = function () {
+                  if (event && event.defaultPrevented) { return; }
+                  capture("error", "Unhandled rejection: "
+                      + (reason && reason.stack ? reason.stack : String(reason)));
+                };
+                if (typeof queueMicrotask === "function") { queueMicrotask(report); }
+                else { Promise.resolve().then(report); }
               });
               function format(args) {
                 var parts = [];

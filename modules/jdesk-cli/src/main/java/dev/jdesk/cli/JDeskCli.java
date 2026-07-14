@@ -21,7 +21,7 @@ public final class JDeskCli {
     private static final Pattern PACKAGE_NAME = Pattern.compile(
             "[a-z_][a-z0-9_]*(\\.[a-z_][a-z0-9_]*)+");
     private static final Set<String> TEMPLATES =
-            Set.of("basic", "structured", "vanilla", "react", "vue", "svelte", "maven");
+            Set.of("basic", "structured", "vanilla", "react", "vue", "svelte", "solid", "maven");
     private static final List<String> WRAPPER_FILES = List.of(
             "gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar",
             "gradle/wrapper/gradle-wrapper.properties");
@@ -112,7 +112,7 @@ public final class JDeskCli {
         }
         if (!TEMPLATES.contains(template)) {
             throw new CliException("Unsupported template '" + template
-                    + "'; expected basic, structured, vanilla, react, vue, svelte, or maven");
+                    + "'; expected basic, structured, vanilla, react, vue, svelte, solid, or maven");
         }
         String projectName = name == null ? target.toAbsolutePath().getFileName().toString() : name;
         if (projectName.isBlank() || projectName.contains("/") || projectName.contains("\\")) {
@@ -243,7 +243,7 @@ public final class JDeskCli {
         out.println("  create <directory>            Create a JDesk application");
         out.println("  build                         Build and test the current application");
         out.println("  bundle                        Build the native installer for this OS");
-        out.println("  --template basic|structured|vanilla|react|vue|svelte|maven");
+        out.println("  --template basic|structured|vanilla|react|vue|svelte|solid|maven");
         out.println("  --package <java.package>      Reverse-DNS package/application id");
         out.println("  --name <display-name>         Application and Gradle project name");
         out.println("  --jdesk-version <version>     Framework version");

@@ -26,7 +26,8 @@ the wire format in [ipc-protocol.md](ipc-protocol.md), and the security posture 
 | `jdesk-codegen` | Annotation processor (`DesktopCommandProcessor`): compile-time command registration → `<Service>Commands` Java registries + `types.ts`/`commands.ts`. Deterministic, byte-identical output. ([ADR-005](ADR-005-compile-time-registration.md)) |
 | `jdesk-cli` | Standalone `jdesk create` project generator. Ships the Gradle wrapper and runnable `basic`/`structured` templates; supports local composite builds for framework development. |
 | `jdesk-gradle-plugin` | The `dev.jdesk.application` Gradle plugin: doctor, bindings, frontend build, dev loop, runtime image, package, native smoke, evidence verify. Non-JPMS by necessity ([ADR-002](ADR-002-gradle-first.md)). See [../development/gradle-plugin-reference.md](../development/gradle-plugin-reference.md). |
-| `jdesk-packager` | `jlink`/`jpackage`/`jdeps` argument builders + `ReleaseArtifacts` (SHA-256 checksums, CycloneDX SBOM). Consumed by the plugin's packaging tasks. |
+| `jdesk-packager` | `jlink`/`jpackage`/`jdeps` argument builders + `ReleaseArtifacts` (SHA-256 checksums, CycloneDX + SPDX SBOMs) + `SigningCommands`. Consumed by the plugin's packaging tasks. |
+| `jdesk-plugin` | Signed, integrity-checked, capability-gated (deny-by-default) third-party plugin model: `PluginManifest`, `PluginAuthorization`, `PluginIntegrity`. See [../guides/plugins.md](../guides/plugins.md). |
 | `jdesk-testkit` | Evidence system (`EvidenceRun`, `EvidenceVerifier`, `VerifyMain`, `PngValidator`, `RssSampler`) for machine-generated native/package verification ([spec 18](../../JDESK_CORE_FRAMEWORK_SPEC.md)). |
 | `js/jdesk-client` | Zero-dependency TypeScript runtime for IPC protocol v1 (nonce lifecycle, `invoke`, timeout/cancel, navigation reset, events). `jdesk-codegen` emits typed wrappers that import `invoke` from it. |
 

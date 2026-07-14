@@ -135,9 +135,13 @@ final class WindowsPlatformApplication extends NativeHandle implements PlatformA
         return WindowsFileDialog.save(dialog);
     }
     @Override public void printFile(dev.jdesk.api.PrintJob job) {
-        // ShellExecute "print"/"printto" uses the file's registered handler; it does not
-        // honor copies/paperSize (that needs a full print API — a documented gap).
-        Win32.shellPrint(job.filePath(), job.printerName().orElse(null));
+        // ShellExecute "print"/"printto" uses the file's registered handler and exposes no
+        // copies/paperSize control. Honor the requested copy count by submitting the job that
+        // many times; paperSize still needs a full Win32 print pipeline (a documented gap).
+        int copies = Math.max(1, job.copies());
+        for (int copy = 0; copy < copies; copy++) {
+            Win32.shellPrint(job.filePath(), job.printerName().orElse(null));
+        }
     }
 
     @Override

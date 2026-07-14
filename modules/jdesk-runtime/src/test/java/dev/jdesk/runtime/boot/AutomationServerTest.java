@@ -111,6 +111,14 @@ class AutomationServerTest {
             assertThat(console.statusCode()).isEqualTo(200);
             assertThat(mapper.readTree(console.body()).get("lines").isArray()).isTrue();
 
+            // Page source (WebDriver "get page source" primitive) answers 200 with window+html.
+            HttpResponse<String> source = client.send(
+                    authorized(base + "/source?window=main", token).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(source.statusCode()).isEqualTo(200);
+            assertThat(mapper.readTree(source.body()).get("window").asText()).isEqualTo("main");
+            assertThat(mapper.readTree(source.body()).has("html")).isTrue();
+
             // Unknown window on evaluate maps to a 500 with an error body, not a hang.
             HttpResponse<String> missing = client.send(authorized(base + "/evaluate", token)
                     .POST(HttpRequest.BodyPublishers.ofString(

@@ -89,7 +89,68 @@ public record RuntimeOptions(
                                 .orElseGet(MapAssetSource::new)));
         RuntimeOptions base = production(source);
         return new RuntimeOptions(dev, base.assetSource(), base.spaFallback(),
-                base.securityHeaders(), base.limits(), base.overflowPolicy(),
-                base.navigationGrace());
+                base.securityHeaders(), ipcLimitsFromProperties(),
+                overflowPolicyFromProperties(), base.navigationGrace());
+    }
+
+    /**
+     * IPC limits from {@code jdesk.ipc.*} system properties, defaulting to {@link
+     * IpcLimits#DEFAULTS}. Values may only be <em>lowered</em> from the framework ceilings (the
+     * record enforces this and fails closed on an over-limit value) — a high-throughput app tunes
+     * the queue/timeout down or, for bulk data, uses {@code invokeStream}/asset-route POST rather
+     * than raising the 1&nbsp;MiB envelope.
+     */
+    static IpcLimits ipcLimitsFromProperties() {
+        IpcLimits d = IpcLimits.DEFAULTS;
+        int maxMessageBytes = intProperty("jdesk.ipc.maxMessageBytes", d.maxMessageBytes());
+        int maxInFlight = intProperty("jdesk.ipc.maxInFlightPerWindow", d.maxInFlightPerWindow());
+        long timeoutMs = longProperty("jdesk.ipc.commandTimeoutMs",
+                d.defaultCommandTimeout().toMillis());
+        int maxQueued = intProperty("jdesk.ipc.maxQueuedEventsPerWindow",
+                d.maxQueuedEventsPerWindow());
+        try {
+            return new IpcLimits(maxMessageBytes, maxInFlight, Duration.ofMillis(timeoutMs),
+                    maxQueued, d.maxNameLength());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid jdesk.ipc.* limits: " + e.getMessage(), e);
+        }
+    }
+
+    /** Event-queue overflow policy from {@code jdesk.ipc.overflowPolicy} (default REJECT). */
+    static EventOverflowPolicy overflowPolicyFromProperties() {
+        String value = System.getProperty("jdesk.ipc.overflowPolicy");
+        if (value == null || value.isBlank()) {
+            return EventOverflowPolicy.REJECT;
+        }
+        try {
+            return EventOverflowPolicy.valueOf(value.strip().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "jdesk.ipc.overflowPolicy must be REJECT, DROP_OLDEST, or COALESCE");
+        }
+    }
+
+    private static int intProperty(String name, int defaultValue) {
+        String value = System.getProperty(name);
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value.strip());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(name + " must be an integer");
+        }
+    }
+
+    private static long longProperty(String name, long defaultValue) {
+        String value = System.getProperty(name);
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            return Long.parseLong(value.strip());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(name + " must be an integer");
+        }
     }
 }

@@ -84,11 +84,19 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
     }
 
     /**
-     * Derives a readable display name from the last segment of the reverse-DNS application
-     * id (e.g. {@code dev.example.dragon7} -> "Dragon7"). Returns {@code null} when no usable
-     * segment exists (empty id or trailing dot), in which case identity fixes are skipped.
+     * The user-facing application name. Prefers the {@code jdesk.applicationName} system property
+     * — which the JDesk Gradle plugin embeds into the packaged app as a launch option, set to the
+     * same value as {@code CFBundleName} — so the {@code Quit <Name>} menu item matches the bold
+     * menu-bar title exactly. When the property is absent (e.g. a raw {@code gradlew run}), it
+     * falls back to the last segment of the reverse-DNS application id, capitalized
+     * (e.g. {@code dev.example.dragon7} -> "Dragon7"). Returns {@code null} when neither yields a
+     * usable name, in which case identity fixes are skipped.
      */
-    private static String displayName(String applicationId) {
+    static String displayName(String applicationId) {
+        String override = System.getProperty("jdesk.applicationName");
+        if (override != null && !override.isBlank()) {
+            return override;
+        }
         String segment = applicationId.substring(applicationId.lastIndexOf('.') + 1);
         if (segment.isEmpty()) {
             return null;
@@ -161,11 +169,45 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
             ObjC.sendVoid(appMenu, "addItem:", quitItem);
             ObjC.sendVoid(appItem, "setSubmenu:", appMenu);
 
+            // Standard Edit menu. On the jdesk://app custom scheme (WKWebView), macOS only routes
+            // ⌘C/⌘X/⌘V/⌘A to the web content when these first-responder actions exist in the menu,
+            // so a plain text field or a code editor has working clipboard out of the box. Items
+            // carry a nil target: AppKit dispatches copy:/cut:/paste:/selectAll: up the responder
+            // chain, which reaches the focused WKWebView.
+            MemorySegment editItem = ObjC.send(
+                    ObjC.send(ObjC.cls("NSMenuItem"), "alloc"), "init");
+            ObjC.autorelease(editItem);
+            ObjC.sendVoid(editItem, "setTitle:", ObjC.nsString("Edit"));
+            ObjC.sendVoid(mainMenu, "addItem:", editItem);
+            MemorySegment editMenu = ObjC.send(ObjC.send(ObjC.cls("NSMenu"), "alloc"),
+                    "initWithTitle:", ObjC.nsString("Edit"));
+            ObjC.autorelease(editMenu);
+            addStandardMenuItem(editMenu, "Undo", "z", "undo:");
+            addStandardMenuItem(editMenu, "Redo", "Z", "redo:"); // capital Z => ⇧⌘Z
+            ObjC.sendVoid(editMenu, "addItem:",
+                    ObjC.send(ObjC.cls("NSMenuItem"), "separatorItem"));
+            addStandardMenuItem(editMenu, "Cut", "x", "cut:");
+            addStandardMenuItem(editMenu, "Copy", "c", "copy:");
+            addStandardMenuItem(editMenu, "Paste", "v", "paste:");
+            addStandardMenuItem(editMenu, "Select All", "a", "selectAll:");
+            ObjC.sendVoid(editItem, "setSubmenu:", editMenu);
+
             ObjC.sendVoid(nsApp, "setMainMenu:", mainMenu);
         } catch (RuntimeException e) {
             // Best-effort cosmetic; never block startup over the menu bar name.
             LOG.log(System.Logger.Level.DEBUG, "Could not install application menu", e);
         }
+    }
+
+    /** Adds a nil-targeted first-responder menu item (Edit-menu clipboard/undo actions). */
+    private void addStandardMenuItem(MemorySegment menu, String title, String keyEquivalent,
+            String selector) {
+        MemorySegment item = ObjC.send(ObjC.send(ObjC.cls("NSMenuItem"), "alloc"), "init");
+        ObjC.autorelease(item);
+        ObjC.sendVoid(item, "setTitle:", ObjC.nsString(title));
+        ObjC.sendVoid(item, "setKeyEquivalent:", ObjC.nsString(keyEquivalent));
+        ObjC.sendVoid(item, "setAction:", ObjC.sel(selector));
+        ObjC.sendVoid(menu, "addItem:", item);
     }
 
     @Override
@@ -382,6 +424,28 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
         requireOpen();
         dispatcher.assertUiThread();
         return MacGlobalShortcut.register(accelerator, callback);
+    }
+
+    @Override
+    public java.util.concurrent.CompletionStage<dev.jdesk.api.NotificationResponse> showNotification(
+            dev.jdesk.api.InteractiveNotification notification) {
+        requireOpen();
+        dispatcher.assertUiThread();
+        return MacInteractiveNotification.show(notification);
+    }
+
+    @Override
+    public boolean share(dev.jdesk.api.ShareContent content) {
+        requireOpen();
+        dispatcher.assertUiThread();
+        return MacDesktopServices.share(content);
+    }
+
+    @Override
+    public boolean biometricsAvailable() {
+        requireOpen();
+        dispatcher.assertUiThread();
+        return MacDesktopServices.biometricsAvailable();
     }
 
     @Override

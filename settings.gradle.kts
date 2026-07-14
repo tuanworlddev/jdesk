@@ -59,6 +59,7 @@ include(
     ":modules:jdesk-packager",
     ":modules:jdesk-testkit",
     ":modules:jdesk-updater",
+    ":modules:jdesk-plugin",
     ":modules:jdesk-instance",
     ":test-apps:native-smoke",
     ":test-apps:security-probe",

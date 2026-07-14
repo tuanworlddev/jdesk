@@ -26,7 +26,10 @@ import org.junit.jupiter.api.io.TempDir;
 class RuntimeOptionsTest {
 
     private static final String[] KEYS = {
-            "jdesk.dev", "jdesk.assets.dir", "jdesk.assets.module", "jdesk.assets.classpath"
+            "jdesk.dev", "jdesk.assets.dir", "jdesk.assets.module", "jdesk.assets.classpath",
+            "jdesk.ipc.overflowPolicy", "jdesk.ipc.maxMessageBytes",
+            "jdesk.ipc.maxInFlightPerWindow", "jdesk.ipc.commandTimeoutMs",
+            "jdesk.ipc.maxQueuedEventsPerWindow"
     };
 
     private static void clearAll() {
@@ -84,6 +87,52 @@ class RuntimeOptionsTest {
             RuntimeOptions options = RuntimeOptions.fromSystemProperties();
             assertThat(options.assetSource()).isInstanceOf(MapAssetSource.class);
             assertThat(options.devMode()).isFalse();
+        } finally {
+            clearAll();
+        }
+    }
+
+    @Test
+    void ipcKnobsDefaultToTheCeilingAndCanBeLowered() {
+        clearAll();
+        try {
+            // Defaults with no properties.
+            RuntimeOptions d = RuntimeOptions.fromSystemProperties();
+            assertThat(d.overflowPolicy()).isEqualTo(EventOverflowPolicy.REJECT);
+            assertThat(d.limits().maxQueuedEventsPerWindow()).isEqualTo(256);
+
+            System.setProperty("jdesk.ipc.overflowPolicy", "coalesce");
+            System.setProperty("jdesk.ipc.maxQueuedEventsPerWindow", "64");
+            System.setProperty("jdesk.ipc.commandTimeoutMs", "5000");
+            System.setProperty("jdesk.ipc.maxMessageBytes", "262144");
+            RuntimeOptions tuned = RuntimeOptions.fromSystemProperties();
+            assertThat(tuned.overflowPolicy()).isEqualTo(EventOverflowPolicy.COALESCE);
+            assertThat(tuned.limits().maxQueuedEventsPerWindow()).isEqualTo(64);
+            assertThat(tuned.limits().defaultCommandTimeout().toMillis()).isEqualTo(5000);
+            assertThat(tuned.limits().maxMessageBytes()).isEqualTo(262144);
+        } finally {
+            clearAll();
+        }
+    }
+
+    @Test
+    void ipcKnobsFailClosedAboveTheCeilingOrOnBadValues() {
+        clearAll();
+        try {
+            System.setProperty("jdesk.ipc.maxMessageBytes", "2000000"); // above 1 MiB ceiling
+            assertThatThrownBy(RuntimeOptions::fromSystemProperties)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("jdesk.ipc");
+            clearAll();
+            System.setProperty("jdesk.ipc.overflowPolicy", "NONSENSE");
+            assertThatThrownBy(RuntimeOptions::fromSystemProperties)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("REJECT");
+            clearAll();
+            System.setProperty("jdesk.ipc.maxQueuedEventsPerWindow", "notanumber");
+            assertThatThrownBy(RuntimeOptions::fromSystemProperties)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("must be an integer");
         } finally {
             clearAll();
         }

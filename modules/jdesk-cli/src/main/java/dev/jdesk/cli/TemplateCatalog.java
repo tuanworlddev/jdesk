@@ -54,6 +54,16 @@ final class TemplateCatalog {
         // Framework projects need npm/Vite for both dev and production builds.
         files.removeIf(file -> "build.gradle.kts".equals(file.output()));
         files.add(new TemplateFile("framework/build.gradle.kts", "build.gradle.kts"));
+        if ("solid".equals(template)) {
+            // Solid compiles JSX through vite-plugin-solid, so it carries its own vite.config
+            // and a .jsx entry rather than the shared plain-JS FRAMEWORK_UI set.
+            files.add(new TemplateFile("solid/ui/package.json", "ui/package.json"));
+            files.add(new TemplateFile("solid/ui/index.html", "ui/index.html"));
+            files.add(new TemplateFile("solid/ui/vite.config.js", "ui/vite.config.js"));
+            files.add(new TemplateFile("solid/ui/src/main.jsx", "ui/src/main.jsx"));
+            files.add(new TemplateFile("solid/ui/src/style.css", "ui/src/style.css"));
+            return List.copyOf(files);
+        }
         files.addAll(direct(template, FRAMEWORK_UI));
         if ("svelte".equals(template)) {
             files.add(new TemplateFile("svelte/ui/src/App.svelte", "ui/src/App.svelte"));

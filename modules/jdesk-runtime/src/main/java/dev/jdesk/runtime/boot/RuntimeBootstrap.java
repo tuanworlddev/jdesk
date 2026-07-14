@@ -54,7 +54,8 @@ public final class RuntimeBootstrap implements JDeskBootstrap {
             }
             try (SingleInstanceSession session = instanceSession;
                  JDeskRuntime runtime = new JDeskRuntime(spec, provider, optionsFor(spec),
-                         activations == null ? spec.activationHandler() : activations::dispatch)) {
+                         activations == null ? spec.activationHandler() : activations::dispatch,
+                         Arrays.asList(args))) {
                 return runtime.run();
             }
         }

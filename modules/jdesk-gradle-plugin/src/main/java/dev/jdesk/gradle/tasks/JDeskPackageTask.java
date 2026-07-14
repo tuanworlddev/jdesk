@@ -157,6 +157,10 @@ public abstract class JDeskPackageTask extends DefaultTask {
                     .javaOption("--enable-native-access=ALL-UNNAMED")
                     .javaOption("-Djdesk.assets.classpath=web");
         }
+        // Carry the packaged display name into the runtime so the AppKit "Quit <Name>" menu
+        // item matches the bold CFBundleName menu-bar title (which jpackage derives from --name).
+        // Harmless on platforms whose adapters do not read it.
+        builder.javaOption("-Djdesk.applicationName=" + name);
         if (macOs) {
             builder.javaOption("-XstartOnFirstThread");
             String applicationId = getApplicationId().getOrNull();
@@ -265,20 +269,44 @@ public abstract class JDeskPackageTask extends DefaultTask {
             List<dev.jdesk.packager.ReleaseArtifacts.Checksum> checksums =
                     dev.jdesk.packager.ReleaseArtifacts.writeChecksums(
                             root, destination.toPath().resolve("checksums.sha256"));
-            dev.jdesk.packager.ReleaseArtifacts.writeSbom(
-                    destination.toPath().resolve("sbom.cyclonedx.json"),
-                    getApplicationId().getOrElse(name), version, checksums,
+            List<dev.jdesk.packager.ReleaseArtifacts.SoftwareComponent> libraries =
                     dev.jdesk.packager.ReleaseArtifacts.inspectJars(
                             java.util.stream.Stream.concat(
                                     java.util.stream.Stream.of(mainJar.toPath()),
                                     getRuntimeClasspathJars().getFiles().stream()
                                             .filter(File::isFile).map(File::toPath))
-                                    .distinct().toList()));
-            getLogger().lifecycle("jdeskPackage: wrote checksums.sha256 ({} files) and"
-                    + " sbom.cyclonedx.json (UNSIGNED)", checksums.size());
+                                    .distinct().toList());
+            String appId = getApplicationId().getOrElse(name);
+            dev.jdesk.packager.ReleaseArtifacts.writeSbom(
+                    destination.toPath().resolve("sbom.cyclonedx.json"),
+                    appId, version, checksums, libraries);
+            // Emit SPDX 2.3 too: consumers/scanners differ on format, and the EU CRA makes a
+            // machine-readable SBOM binding from Sept 2026. SOURCE_DATE_EPOCH (if set) keeps the
+            // creation timestamp reproducible; otherwise the current build time is recorded.
+            dev.jdesk.packager.ReleaseArtifacts.writeSpdxSbom(
+                    destination.toPath().resolve("sbom.spdx.json"),
+                    appId, version, checksums, libraries, sbomTimestamp());
+            getLogger().lifecycle("jdeskPackage: wrote checksums.sha256 ({} files),"
+                    + " sbom.cyclonedx.json and sbom.spdx.json (UNSIGNED)", checksums.size());
         } catch (RuntimeException e) {
             throw new GradleException("jdeskPackage: failed to write checksums/SBOM", e);
         }
+    }
+
+    /**
+     * ISO-8601 UTC instant for the SPDX {@code created} field. Honors {@code SOURCE_DATE_EPOCH}
+     * (seconds since the epoch) for reproducible builds; otherwise the current build time.
+     */
+    private static String sbomTimestamp() {
+        String epoch = System.getenv("SOURCE_DATE_EPOCH");
+        java.time.Instant instant;
+        if (epoch != null && epoch.matches("\\d+")) {
+            instant = java.time.Instant.ofEpochSecond(Long.parseLong(epoch));
+        } else {
+            instant = java.time.Instant.now();
+        }
+        return java.time.format.DateTimeFormatter.ISO_INSTANT.format(
+                instant.truncatedTo(java.time.temporal.ChronoUnit.SECONDS));
     }
 
     private static String platformModule() {

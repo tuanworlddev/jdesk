@@ -25,7 +25,27 @@ class JlinkArgumentsTest {
                 "--output", Path.of("build", "jdesk", "runtime image").toString(),
                 "--no-header-files",
                 "--no-man-pages",
+                "--strip-debug",
+                "--compress=zip-6",
                 "--add-options=--enable-native-access=ALL-UNNAMED");
+    }
+
+    @Test
+    void stripDebugAndCompressAreOnByDefaultAndCustomizable() {
+        List<String> defaults = JlinkArguments.builder()
+                .modules(List.of("java.base")).output(Path.of("out")).build().toArguments();
+        assertThat(defaults).contains("--strip-debug", "--compress=zip-6");
+
+        List<String> tuned = JlinkArguments.builder()
+                .modules(List.of("java.base")).output(Path.of("out"))
+                .compress("zip-9").build().toArguments();
+        assertThat(tuned).contains("--strip-debug", "--compress=zip-9")
+                .doesNotContain("--compress=zip-6");
+
+        List<String> off = JlinkArguments.builder()
+                .modules(List.of("java.base")).output(Path.of("out"))
+                .stripDebug(false).compress(null).build().toArguments();
+        assertThat(off).doesNotContain("--strip-debug").noneMatch(a -> a.startsWith("--compress"));
     }
 
     @Test
@@ -35,6 +55,8 @@ class JlinkArgumentsTest {
                 .output(Path.of("out"))
                 .noHeaderFiles(false)
                 .noManPages(false)
+                .stripDebug(false)
+                .compress(null)
                 .build()
                 .toArguments();
 

@@ -73,6 +73,14 @@ class PlatformApplicationDefaultsTest {
         assertThatThrownBy(() -> BARE.registerGlobalShortcut("CmdOrCtrl+K", () -> { }))
                 .isInstanceOf(JDeskException.class);
         assertThatThrownBy(() -> BARE.showNotification("t", "b")).isInstanceOf(JDeskException.class);
+        // Interactive notification default routes through the basic one, so it also fails here.
+        assertThatThrownBy(() -> BARE.showNotification(
+                dev.jdesk.api.InteractiveNotification.of("t", "b")))
+                .isInstanceOf(JDeskException.class);
+        assertThatThrownBy(() -> BARE.share(dev.jdesk.api.ShareContent.text("hi")))
+                .isInstanceOf(JDeskException.class);
+        // Biometrics simply reports unavailable by default (no throw).
+        org.assertj.core.api.Assertions.assertThat(BARE.biometricsAvailable()).isFalse();
 
         // Menu bar / open-url handler are no-ops on adapters without those concepts.
         BARE.setApplicationMenu(dev.jdesk.api.MenuSpec.of(), id -> { });
@@ -81,6 +89,45 @@ class PlatformApplicationDefaultsTest {
         // File-watch / PTY backends are optional capabilities; absent by default.
         org.assertj.core.api.Assertions.assertThat(BARE.fileWatchBackend()).isEmpty();
         org.assertj.core.api.Assertions.assertThat(BARE.ptyBackend()).isEmpty();
+    }
+
+    @Test
+    void interactiveNotificationDefaultDeliversPlainThenCompletesDismissed() throws Exception {
+        java.util.List<String> delivered = new java.util.ArrayList<>();
+        PlatformApplication plain = new PlatformApplication() {
+            @Override public UiDispatcher ui() {
+                return null;
+            }
+            @Override public PlatformWindow createWindow(NativeWindowConfig config) {
+                return null;
+            }
+            @Override public void openExternal(URI uri) {
+            }
+            @Override public String readClipboardText() {
+                return "";
+            }
+            @Override public void writeClipboardText(String text) {
+            }
+            @Override public MessageDialogResult showMessageDialog(MessageDialog dialog) {
+                return new MessageDialogResult(0, "OK");
+            }
+            @Override public void showNotification(String title, String body) {
+                delivered.add(title + ":" + body);
+            }
+            @Override public void runEventLoop() {
+            }
+            @Override public void requestStop() {
+            }
+            @Override public void close() {
+            }
+        };
+        // The default delivers title+body through the basic path and completes as dismissed.
+        dev.jdesk.api.NotificationResponse response = plain.showNotification(
+                dev.jdesk.api.InteractiveNotification.of("Done", "ok")
+                        .withActions(new dev.jdesk.api.InteractiveNotification.Action("x", "X")))
+                .toCompletableFuture().get();
+        org.assertj.core.api.Assertions.assertThat(delivered).containsExactly("Done:ok");
+        org.assertj.core.api.Assertions.assertThat(response.actionId()).isEmpty();
     }
 
     @Test

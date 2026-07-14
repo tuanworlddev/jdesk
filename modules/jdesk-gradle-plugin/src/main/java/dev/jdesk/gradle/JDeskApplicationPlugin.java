@@ -276,8 +276,9 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
                     t.getUsageDescriptions().set(extension.getDeepLink().getUsageDescriptions());
                     t.getFileAssociations().set(extension.getFileAssociations());
                     t.getAppIcon().set(extension.getAppIcon());
-                    t.getImageName().convention(extension.getApplicationId()
-                            .map(id -> id.substring(id.lastIndexOf('.') + 1)));
+                    t.getImageName().convention(extension.getApplicationName().orElse(
+                            extension.getApplicationId()
+                                    .map(id -> id.substring(id.lastIndexOf('.') + 1))));
                     t.getAppVersion().convention(projectVersion);
                     t.getJavaHome().set(javaHome);
                     t.getStagingDirectory().convention(
@@ -294,12 +295,15 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
             t.dependsOn(packageTask);
             t.getAppImageDirectory().set(
                     packageTask.flatMap(JDeskPackageTask::getDestination));
-            t.getImageName().set(extension.getApplicationId()
-                    .map(id -> id.substring(id.lastIndexOf('.') + 1)));
+            t.getImageName().set(extension.getApplicationName().orElse(
+                    extension.getApplicationId()
+                            .map(id -> id.substring(id.lastIndexOf('.') + 1))));
             t.getAppVersion().convention(projectVersion);
             t.getInstallerType().set(
                     project.getProviders().gradleProperty("jdeskInstallerType"));
             t.getMacSigningIdentity().set(extension.getSigning().getMacSigningIdentity());
+            t.getMacNotarizationProfile().set(
+                    extension.getSigning().getMacNotarizationProfile());
             t.getJavaHome().set(javaHome);
             t.getDestination().convention(
                     layout.getBuildDirectory().dir("jdesk/installer"));

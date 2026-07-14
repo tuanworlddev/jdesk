@@ -83,6 +83,8 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
     private final NavigationPolicy navigationPolicy;
     private final ManagedPolicy managedPolicy;
     private final Consumer<List<String>> activationHandler;
+    /** Cold-start command-line arguments, delivered to the activation handler once at ready. */
+    private final List<String> launchArguments;
     private final Map<WindowId, WindowRuntime> windows = new ConcurrentHashMap<>();
     private final Set<WindowId> windowIds = ConcurrentHashMap.newKeySet();
     private final AtomicInteger openWindows = new AtomicInteger();
@@ -166,6 +168,15 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
                         platformApp.ui().submit(() -> { unsubscribe.run(); return null; });
             });
         }
+        @Override public CompletionStage<dev.jdesk.api.Subscription> onFocusChanged(
+                Consumer<Boolean> listener) {
+            java.util.Objects.requireNonNull(listener, "listener");
+            return platformApp.ui().submit(() -> {
+                Runnable unsubscribe = window.onFocusChanged(listener);
+                return (dev.jdesk.api.Subscription) () ->
+                        platformApp.ui().submit(() -> { unsubscribe.run(); return null; });
+            });
+        }
 
         @Override
         public CompletionStage<Void> close() {
@@ -174,17 +185,23 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
     }
 
     public JDeskRuntime(ApplicationSpec spec, PlatformProvider provider, RuntimeOptions options) {
-        this(spec, provider, options, spec.activationHandler());
+        this(spec, provider, options, spec.activationHandler(), List.of());
     }
 
     JDeskRuntime(ApplicationSpec spec, PlatformProvider provider, RuntimeOptions options,
             Consumer<List<String>> activationHandler) {
+        this(spec, provider, options, activationHandler, List.of());
+    }
+
+    JDeskRuntime(ApplicationSpec spec, PlatformProvider provider, RuntimeOptions options,
+            Consumer<List<String>> activationHandler, List<String> launchArguments) {
         this.spec = spec;
         this.provider = provider;
         this.options = options;
         this.managedPolicy = ManagedPolicy.fromSystemProperties();
         this.activationHandler = java.util.Objects.requireNonNull(
                 activationHandler, "activationHandler");
+        this.launchArguments = List.copyOf(launchArguments);
         this.lifecycle = new LifecycleStateMachine(spec.lifecycleListeners());
         this.windowStateStore = new WindowStateStore(spec.id());
 
@@ -232,6 +249,14 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
                 assetWatcher = DevAssetWatcher.start(dir.root(), this::reloadAllWindows);
             }
             lifecycle.ready(this);
+            // Cold-start deep links: a fresh launch carrying a scheme URL (or other argv) is
+            // routed to the same activation handler as later single-instance activations, so
+            // apps handle deep links through one path on every platform. On macOS the URL also
+            // arrives via the openURL Apple Event, which the OS delivers instead of via argv;
+            // on Windows/Linux the OS relaunches with the URL in argv, which this forwards.
+            if (spec.singleInstance() && !launchArguments.isEmpty()) {
+                activationHandler.accept(launchArguments);
+            }
             platformApp.runEventLoop();
         } finally {
             if (automationSession != null) {
@@ -603,6 +628,23 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
 
     @Override public CompletionStage<Void> showNotification(String title, String body) {
         return platformApp.ui().submit(() -> { platformApp.showNotification(title, body); return null; });
+    }
+
+    @Override public CompletionStage<dev.jdesk.api.NotificationResponse> showNotification(
+            dev.jdesk.api.InteractiveNotification notification) {
+        java.util.Objects.requireNonNull(notification, "notification");
+        // Deliver on the UI thread; the platform returns a stage that completes when the user acts.
+        return platformApp.ui().submit(() -> platformApp.showNotification(notification))
+                .thenCompose(stage -> stage);
+    }
+
+    @Override public CompletionStage<Boolean> share(dev.jdesk.api.ShareContent content) {
+        java.util.Objects.requireNonNull(content, "content");
+        return platformApp.ui().submit(() -> platformApp.share(content));
+    }
+
+    @Override public CompletionStage<Boolean> biometricsAvailable() {
+        return platformApp.ui().submit(platformApp::biometricsAvailable);
     }
 
     private dev.jdesk.api.TrayHandle trayHandle(dev.jdesk.webview.spi.TrayControl control) {

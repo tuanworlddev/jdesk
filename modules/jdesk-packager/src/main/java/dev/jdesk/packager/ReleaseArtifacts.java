@@ -148,6 +148,103 @@ public final class ReleaseArtifacts {
         }
     }
 
+    /**
+     * Writes an SPDX 2.3 JSON SBOM alongside the CycloneDX one. The EU Cyber Resilience Act
+     * makes a machine-readable SBOM binding from Sept 2026, and consumers/scanners differ on
+     * which format they ingest — emitting both maximises compatibility. Lists the application
+     * package, each redistributed file, and the runtime libraries, related by {@code DEPENDS_ON}
+     * / {@code CONTAINS}. {@code created} is an ISO-8601 UTC instant (pass a fixed value, e.g.
+     * from {@code SOURCE_DATE_EPOCH}, for a reproducible build).
+     */
+    public static void writeSpdxSbom(Path sbomFile, String applicationId, String version,
+            List<Checksum> artifacts, List<SoftwareComponent> libraries, String created) {
+        String docName = applicationId + "-" + version;
+        String namespace = "https://spdx.org/spdxdocs/" + docName + "-"
+                + stableUuid(applicationId + "@" + version);
+        List<SoftwareComponent> libs = libraries.stream()
+                .sorted(java.util.Comparator.comparing(SoftwareComponent::purl)).toList();
+        StringBuilder json = new StringBuilder();
+        json.append("{\n");
+        json.append("  \"spdxVersion\": \"SPDX-2.3\",\n");
+        json.append("  \"dataLicense\": \"CC0-1.0\",\n");
+        json.append("  \"SPDXID\": \"SPDXRef-DOCUMENT\",\n");
+        json.append("  \"name\": \"").append(escape(docName)).append("\",\n");
+        json.append("  \"documentNamespace\": \"").append(escape(namespace)).append("\",\n");
+        json.append("  \"creationInfo\": {\n");
+        json.append("    \"created\": \"").append(escape(created)).append("\",\n");
+        json.append("    \"creators\": [ \"Tool: jdesk-packager\" ]\n");
+        json.append("  },\n");
+
+        json.append("  \"packages\": [\n");
+        json.append("    {\n");
+        json.append("      \"SPDXID\": \"SPDXRef-Application\",\n");
+        json.append("      \"name\": \"").append(escape(applicationId)).append("\",\n");
+        json.append("      \"versionInfo\": \"").append(escape(version)).append("\",\n");
+        json.append("      \"downloadLocation\": \"NOASSERTION\",\n");
+        json.append("      \"filesAnalyzed\": false,\n");
+        json.append("      \"licenseConcluded\": \"NOASSERTION\",\n");
+        json.append("      \"licenseDeclared\": \"NOASSERTION\",\n");
+        json.append("      \"copyrightText\": \"NOASSERTION\",\n");
+        json.append("      \"externalRefs\": [ { \"referenceCategory\": \"PACKAGE-MANAGER\",")
+                .append(" \"referenceType\": \"purl\", \"referenceLocator\": \"pkg:generic/")
+                .append(escape(applicationId)).append("@").append(escape(version))
+                .append("\" } ]\n");
+        json.append(libs.isEmpty() ? "    }\n" : "    },\n");
+        for (int i = 0; i < libs.size(); i++) {
+            SoftwareComponent lib = libs.get(i);
+            json.append("    {\n");
+            json.append("      \"SPDXID\": \"SPDXRef-Package-").append(i).append("\",\n");
+            json.append("      \"name\": \"").append(escape(lib.name())).append("\",\n");
+            json.append("      \"versionInfo\": \"").append(escape(lib.version())).append("\",\n");
+            json.append("      \"downloadLocation\": \"NOASSERTION\",\n");
+            json.append("      \"filesAnalyzed\": false,\n");
+            json.append("      \"licenseConcluded\": \"NOASSERTION\",\n");
+            json.append("      \"licenseDeclared\": \"NOASSERTION\",\n");
+            json.append("      \"copyrightText\": \"NOASSERTION\",\n");
+            json.append("      \"checksums\": [ { \"algorithm\": \"SHA256\", \"checksumValue\": \"")
+                    .append(lib.sha256()).append("\" } ],\n");
+            json.append("      \"externalRefs\": [ { \"referenceCategory\": \"PACKAGE-MANAGER\",")
+                    .append(" \"referenceType\": \"purl\", \"referenceLocator\": \"")
+                    .append(escape(lib.purl())).append("\" } ]\n");
+            json.append(i + 1 < libs.size() ? "    },\n" : "    }\n");
+        }
+        json.append("  ],\n");
+
+        json.append("  \"files\": [\n");
+        for (int i = 0; i < artifacts.size(); i++) {
+            Checksum artifact = artifacts.get(i);
+            json.append("    {\n");
+            json.append("      \"SPDXID\": \"SPDXRef-File-").append(i).append("\",\n");
+            json.append("      \"fileName\": \"").append(escape(artifact.relativePath()))
+                    .append("\",\n");
+            json.append("      \"checksums\": [ { \"algorithm\": \"SHA256\", \"checksumValue\": \"")
+                    .append(artifact.sha256()).append("\" } ]\n");
+            json.append(i + 1 < artifacts.size() ? "    },\n" : "    }\n");
+        }
+        json.append("  ],\n");
+
+        json.append("  \"relationships\": [\n");
+        json.append("    { \"spdxElementId\": \"SPDXRef-DOCUMENT\", \"relationshipType\":")
+                .append(" \"DESCRIBES\", \"relatedSpdxElement\": \"SPDXRef-Application\" }");
+        for (int i = 0; i < libs.size(); i++) {
+            json.append(",\n    { \"spdxElementId\": \"SPDXRef-Application\", \"relationshipType\":")
+                    .append(" \"DEPENDS_ON\", \"relatedSpdxElement\": \"SPDXRef-Package-")
+                    .append(i).append("\" }");
+        }
+        for (int i = 0; i < artifacts.size(); i++) {
+            json.append(",\n    { \"spdxElementId\": \"SPDXRef-Application\", \"relationshipType\":")
+                    .append(" \"CONTAINS\", \"relatedSpdxElement\": \"SPDXRef-File-")
+                    .append(i).append("\" }");
+        }
+        json.append("\n  ]\n");
+        json.append("}\n");
+        try {
+            Files.writeString(sbomFile, json.toString(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     /** Reads stable component identity and hashes from runtime JARs. */
     public static List<SoftwareComponent> inspectJars(List<Path> jars) {
         List<SoftwareComponent> components = new ArrayList<>();

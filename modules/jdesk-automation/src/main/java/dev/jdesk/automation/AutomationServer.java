@@ -92,6 +92,7 @@ final class AutomationServer implements AutomationSession {
         server.createContext("/snapshot", exchange -> guarded(exchange, this::handleSnapshot));
         server.createContext("/console", exchange -> guarded(exchange, this::handleConsole));
         server.createContext("/input", exchange -> guarded(exchange, this::handleInput));
+        server.createContext("/source", exchange -> guarded(exchange, this::handleSource));
         String configured = System.getProperty("jdesk.automation.dir");
         Path directory = configured == null || configured.isBlank()
                 ? Path.of(System.getProperty("user.home"), ".jdesk", "automation")
@@ -313,6 +314,25 @@ final class AutomationServer implements AutomationSession {
         try (OutputStream out = exchange.getResponseBody()) {
             out.write(snapshot);
         }
+    }
+
+    /**
+     * {@code GET /source?window=<id>} — the current page's serialized HTML, the WebDriver
+     * "get page source" primitive that a macOS E2E harness needs (Apple ships no WKWebView
+     * WebDriver, so this token-gated endpoint is JDesk's cross-platform answer).
+     */
+    private void handleSource(HttpExchange exchange) throws Exception {
+        Map<String, String> params = queryParams(exchange);
+        String window = params.get("window") == null ? "main" : params.get("window");
+        String wrapped = "(function(){try{return JSON.stringify("
+                + "document.documentElement ? document.documentElement.outerHTML : '');}"
+                + "catch(e){return undefined;}})()";
+        String raw = host.evaluate(new WindowId(window), wrapped)
+                .toCompletableFuture().get(15, TimeUnit.SECONDS);
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("window", window);
+        response.put("html", parseJsonOrNull(raw));
+        sendJson(exchange, 200, response);
     }
 
     private void handleConsole(HttpExchange exchange) throws IOException {

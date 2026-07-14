@@ -56,5 +56,33 @@ context.application().printFile(
 Platform status: macOS and Linux submit through the CUPS `lp` command (verified: a job to
 a non-existent printer is rejected, proving it reaches the spooler rather than silently
 succeeding). Windows uses the ShellExecute `print`/`printto` verb (default vs. named
-printer) — it does not honor `copies`/`paperSize` (a documented gap). Printing runs off
-the UI thread, so it is safe to call from a command handler.
+printer); it honors `copies` by submitting the job that many times, but not `paperSize`
+(which needs a full Win32 print pipeline — a documented gap). Printing runs off the UI
+thread, so it is safe to call from a command handler.
+
+## Notifications, sharing, and biometrics
+
+`context.application()` exposes a few more OS-integration surfaces:
+
+```java
+// Interactive notification — action buttons and an inline reply come back in the response.
+InteractiveNotification note = InteractiveNotification.of("Build finished", "3 tests passed")
+        .withActions(new InteractiveNotification.Action("open", "Open log"))
+        .withReply("Comment");
+NotificationResponse response = app.showNotification(note).toCompletableFuture().join();
+response.actionId().ifPresent(id -> ...);   // which button
+response.replyText().ifPresent(text -> ...); // what the user typed
+
+// OS share sheet for text and/or URLs.
+app.share(ShareContent.urls("https://example.com/report.pdf")).toCompletableFuture().join();
+
+// Gate a sensitive action on Touch ID / Windows Hello availability.
+if (app.biometricsAvailable().toCompletableFuture().join()) { ... }
+```
+
+Platform status: interactive notifications are implemented on macOS via `NSUserNotification`
+(action button, an additional-actions menu, and inline reply); the returned stage completes when
+the user acts. The share sheet uses `NSSharingServicePicker` and biometrics report
+`LAContext canEvaluatePolicy`. As with the other GUI surfaces, the visible popover / notification
+click / Touch-ID prompt are verified interactively, not by a unit test. A plain
+`showNotification(title, body)` remains for a simple banner.

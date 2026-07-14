@@ -107,6 +107,50 @@ class ReleaseArtifactsTest {
     }
 
     @Test
+    void spdxSbomIsValidAndDeterministic() throws Exception {
+        Files.writeString(dir.resolve("app.jar"), "jarbytes");
+        Path checksumFile = dir.resolve("checksums.sha256");
+        List<ReleaseArtifacts.Checksum> artifacts =
+                ReleaseArtifacts.writeChecksums(dir, checksumFile);
+
+        Path jar = dir.resolve("example-lib-4.5.6.jar");
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        manifest.getMainAttributes().putValue("Automatic-Module-Name", "dev.example.lib");
+        manifest.getMainAttributes().putValue("Implementation-Version", "4.5.6");
+        try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jar), manifest)) {
+            output.flush();
+        }
+        List<ReleaseArtifacts.SoftwareComponent> libraries =
+                ReleaseArtifacts.inspectJars(List.of(jar));
+
+        Path spdx1 = dir.resolve("sbom1.spdx.json");
+        Path spdx2 = dir.resolve("sbom2.spdx.json");
+        String created = "2026-07-14T00:00:00Z";
+        ReleaseArtifacts.writeSpdxSbom(spdx1, "dev.example.app", "1.2.3", artifacts, libraries, created);
+        ReleaseArtifacts.writeSpdxSbom(spdx2, "dev.example.app", "1.2.3", artifacts, libraries, created);
+
+        String json = Files.readString(spdx1, StandardCharsets.UTF_8);
+        assertThat(json).contains("\"spdxVersion\": \"SPDX-2.3\"")
+                .contains("\"dataLicense\": \"CC0-1.0\"")
+                .contains("\"SPDXID\": \"SPDXRef-DOCUMENT\"")
+                .contains("\"created\": \"2026-07-14T00:00:00Z\"")
+                .contains("\"SPDXID\": \"SPDXRef-Application\"")
+                .contains("\"versionInfo\": \"1.2.3\"")
+                .contains("\"algorithm\": \"SHA256\"")
+                .contains("dev.example.lib", "pkg:generic/dev.example.lib@4.5.6", "app.jar")
+                .contains("\"relationshipType\": \"DESCRIBES\"")
+                .contains("\"relationshipType\": \"DEPENDS_ON\"")
+                .contains("\"relationshipType\": \"CONTAINS\"");
+        // Balanced braces/brackets — a cheap well-formedness check without a JSON dep.
+        assertThat(json.chars().filter(c -> c == '{').count())
+                .isEqualTo(json.chars().filter(c -> c == '}').count());
+        assertThat(json.chars().filter(c -> c == '[').count())
+                .isEqualTo(json.chars().filter(c -> c == ']').count());
+        assertThat(Files.readString(spdx2)).isEqualTo(json); // deterministic with fixed created
+    }
+
+    @Test
     void stableUuidIsSeedDeterministic() {
         assertThat(ReleaseArtifacts.stableUuid("dev.example.app@1.0.0"))
                 .isEqualTo(ReleaseArtifacts.stableUuid("dev.example.app@1.0.0"))

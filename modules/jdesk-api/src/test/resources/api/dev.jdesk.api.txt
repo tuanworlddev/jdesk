@@ -13,10 +13,13 @@ type public abstract interface dev.jdesk.api.ApplicationHandle
   method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.FileDialogResult> dev.jdesk.api.ApplicationHandle.showOpenDialog(dev.jdesk.api.FileDialog$OpenDialog)
   method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.FileDialogResult> dev.jdesk.api.ApplicationHandle.showSaveDialog(dev.jdesk.api.FileDialog$SaveDialog)
   method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.MessageDialogResult> dev.jdesk.api.ApplicationHandle.showMessageDialog(dev.jdesk.api.MessageDialog)
+  method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.NotificationResponse> dev.jdesk.api.ApplicationHandle.showNotification(dev.jdesk.api.InteractiveNotification)
   method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.Subscription> dev.jdesk.api.ApplicationHandle.registerGlobalShortcut(java.lang.String,java.lang.Runnable)
   method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.SystemTheme> dev.jdesk.api.ApplicationHandle.systemTheme()
   method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.TrayHandle> dev.jdesk.api.ApplicationHandle.createTrayItem(dev.jdesk.api.TraySpec,java.util.function.Consumer<java.lang.String>)
   method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.WindowHandle> dev.jdesk.api.ApplicationHandle.openWindow(dev.jdesk.api.WindowConfig)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Boolean> dev.jdesk.api.ApplicationHandle.biometricsAvailable()
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Boolean> dev.jdesk.api.ApplicationHandle.share(dev.jdesk.api.ShareContent)
   method public abstract java.util.concurrent.CompletionStage<java.lang.String> dev.jdesk.api.ApplicationHandle.readClipboardText()
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.ApplicationHandle.openExternal(java.net.URI)
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.ApplicationHandle.printFile(dev.jdesk.api.PrintJob)
@@ -240,6 +243,28 @@ type public final record dev.jdesk.api.FileWatchOptions
   method public final java.lang.String dev.jdesk.api.FileWatchOptions.toString()
   method public java.time.Duration dev.jdesk.api.FileWatchOptions.coalesceWindow()
 
+type public final record dev.jdesk.api.InteractiveNotification
+  constructor public dev.jdesk.api.InteractiveNotification(java.lang.String,java.lang.String,java.util.List<dev.jdesk.api.InteractiveNotification$Action>,boolean,java.lang.String)
+  method public boolean dev.jdesk.api.InteractiveNotification.allowReply()
+  method public dev.jdesk.api.InteractiveNotification dev.jdesk.api.InteractiveNotification.withActions(dev.jdesk.api.InteractiveNotification$Action...)
+  method public dev.jdesk.api.InteractiveNotification dev.jdesk.api.InteractiveNotification.withReply(java.lang.String)
+  method public final boolean dev.jdesk.api.InteractiveNotification.equals(java.lang.Object)
+  method public final int dev.jdesk.api.InteractiveNotification.hashCode()
+  method public final java.lang.String dev.jdesk.api.InteractiveNotification.toString()
+  method public java.lang.String dev.jdesk.api.InteractiveNotification.body()
+  method public java.lang.String dev.jdesk.api.InteractiveNotification.replyPlaceholder()
+  method public java.lang.String dev.jdesk.api.InteractiveNotification.title()
+  method public java.util.List<dev.jdesk.api.InteractiveNotification$Action> dev.jdesk.api.InteractiveNotification.actions()
+  method public static dev.jdesk.api.InteractiveNotification dev.jdesk.api.InteractiveNotification.of(java.lang.String,java.lang.String)
+
+type public static final record dev.jdesk.api.InteractiveNotification$Action
+  constructor public dev.jdesk.api.InteractiveNotification$Action(java.lang.String,java.lang.String)
+  method public final boolean dev.jdesk.api.InteractiveNotification$Action.equals(java.lang.Object)
+  method public final int dev.jdesk.api.InteractiveNotification$Action.hashCode()
+  method public final java.lang.String dev.jdesk.api.InteractiveNotification$Action.toString()
+  method public java.lang.String dev.jdesk.api.InteractiveNotification$Action.id()
+  method public java.lang.String dev.jdesk.api.InteractiveNotification$Action.title()
+
 type public abstract interface dev.jdesk.api.InvocationContext
   method public abstract boolean dev.jdesk.api.InvocationContext.isCancelled()
   method public abstract dev.jdesk.api.ApplicationHandle dev.jdesk.api.InvocationContext.application()
@@ -367,6 +392,17 @@ type public final record dev.jdesk.api.MessageDialogResult
   method public int dev.jdesk.api.MessageDialogResult.buttonIndex()
   method public java.lang.String dev.jdesk.api.MessageDialogResult.buttonLabel()
 
+type public final record dev.jdesk.api.NotificationResponse
+  constructor public dev.jdesk.api.NotificationResponse(java.util.Optional<java.lang.String>,java.util.Optional<java.lang.String>)
+  method public final boolean dev.jdesk.api.NotificationResponse.equals(java.lang.Object)
+  method public final int dev.jdesk.api.NotificationResponse.hashCode()
+  method public final java.lang.String dev.jdesk.api.NotificationResponse.toString()
+  method public java.util.Optional<java.lang.String> dev.jdesk.api.NotificationResponse.actionId()
+  method public java.util.Optional<java.lang.String> dev.jdesk.api.NotificationResponse.replyText()
+  method public static dev.jdesk.api.NotificationResponse dev.jdesk.api.NotificationResponse.action(java.lang.String)
+  method public static dev.jdesk.api.NotificationResponse dev.jdesk.api.NotificationResponse.dismissed()
+  method public static dev.jdesk.api.NotificationResponse dev.jdesk.api.NotificationResponse.reply(java.lang.String,java.lang.String)
+
 type public final record dev.jdesk.api.PermissionDecision
   constructor public dev.jdesk.api.PermissionDecision(boolean,dev.jdesk.api.ErrorCode,java.lang.String)
   method public boolean dev.jdesk.api.PermissionDecision.allowed()
@@ -434,6 +470,16 @@ type public abstract interface dev.jdesk.api.SecretStore
   method public abstract java.util.Optional<java.lang.String> dev.jdesk.api.SecretStore.get(java.lang.String)
   method public abstract void dev.jdesk.api.SecretStore.delete(java.lang.String)
   method public abstract void dev.jdesk.api.SecretStore.put(java.lang.String,java.lang.String)
+
+type public final record dev.jdesk.api.ShareContent
+  constructor public dev.jdesk.api.ShareContent(java.lang.String,java.util.List<java.lang.String>)
+  method public final boolean dev.jdesk.api.ShareContent.equals(java.lang.Object)
+  method public final int dev.jdesk.api.ShareContent.hashCode()
+  method public final java.lang.String dev.jdesk.api.ShareContent.toString()
+  method public java.lang.String dev.jdesk.api.ShareContent.text()
+  method public java.util.List<java.lang.String> dev.jdesk.api.ShareContent.urls()
+  method public static dev.jdesk.api.ShareContent dev.jdesk.api.ShareContent.text(java.lang.String)
+  method public static dev.jdesk.api.ShareContent dev.jdesk.api.ShareContent.urls(java.lang.String...)
 
 type public abstract interface dev.jdesk.api.Subscription implements java.lang.AutoCloseable annotations=[@java.lang.FunctionalInterface()]
   method public abstract void dev.jdesk.api.Subscription.close()
@@ -510,6 +556,7 @@ type public abstract interface dev.jdesk.api.WindowHandle
   method public abstract dev.jdesk.api.EventEmitter dev.jdesk.api.WindowHandle.events()
   method public abstract dev.jdesk.api.WindowId dev.jdesk.api.WindowHandle.id()
   method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.Subscription> dev.jdesk.api.WindowHandle.onFileDrop(java.util.function.Consumer<java.util.List<java.nio.file.Path>>)
+  method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.Subscription> dev.jdesk.api.WindowHandle.onFocusChanged(java.util.function.Consumer<java.lang.Boolean>)
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.close()
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.focus()
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.hide()

@@ -44,6 +44,7 @@ Request bodies are capped at 1 MiB.
 | `POST /evaluate` `{"window":"main","script":"..."}` | Evaluates JS; returns `{"result":<parsed JSON>, "value":"<raw string>"}` — `result` is the JSON-decoded value (objects/arrays/numbers), `value` the raw string for back-compat |
 | `POST /input` `{"window":"main","action":"click|type|focus|hover|key","selector":"...","text":"...","key":"..."}` | Synthesizes DOM interaction on the matched element; returns `{"ok":true/false}` |
 | `GET /snapshot?window=main` | PNG screenshot of the real WebView |
+| `GET /source?window=main` | The page's serialized HTML (`document.documentElement.outerHTML`) — the WebDriver "get page source" primitive; returns `{"window":"main","html":"..."}` |
 | `GET /console?window=main` | Captured page console lines (`console.*`, uncaught errors, **and the earliest module/parse-load failures**) |
 
 ## A minimal E2E check
@@ -79,6 +80,10 @@ flows through the real bridge, capability checks, and command handlers.
 > `/evaluate` will NOT fire the listeners your page registered**, and it is a common trap.
 > To click, type, or focus and have the page react, always use `/input` (it dispatches into
 > the page's own world). Reserve `/evaluate` for reading state and asserting results.
+>
+> Each `/evaluate` call is wrapped and run on its own, so declarations never leak between calls
+> — pass an **expression** (`({a: 1, b: computeB()})`), or an IIFE for multi-statement logic
+> (`(() => { const x = ...; return x; })()`). The parsed value comes back under `result`.
 
 Earliest failures too: if the page crashes in a module import or a parse error before any
 script runs, `/console` still shows it — the capture script installs its error listeners

@@ -64,6 +64,8 @@ final class MacWindow extends NativeHandle implements PlatformWindow {
     private final MacWebView webView;
     private final List<BooleanSupplier> closeRequestedHandlers = new CopyOnWriteArrayList<>();
     private final List<Runnable> closedHandlers = new CopyOnWriteArrayList<>();
+    private final List<java.util.function.Consumer<Boolean>> focusChangedHandlers =
+            new CopyOnWriteArrayList<>();
     private boolean destroyed;
 
     MacWindow(MacPlatformApplication app, NativeWindowConfig config) {
@@ -150,6 +152,16 @@ final class MacWindow extends NativeHandle implements PlatformWindow {
                                 lookup.findStatic(MacWindow.class, "impWindowWillClose",
                                         MethodType.methodType(void.class, MemorySegment.class,
                                                 MemorySegment.class, MemorySegment.class)))
+                        .method("windowDidBecomeKey:", "v@:@",
+                                FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS),
+                                lookup.findStatic(MacWindow.class, "impWindowDidBecomeKey",
+                                        MethodType.methodType(void.class, MemorySegment.class,
+                                                MemorySegment.class, MemorySegment.class)))
+                        .method("windowDidResignKey:", "v@:@",
+                                FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS),
+                                lookup.findStatic(MacWindow.class, "impWindowDidResignKey",
+                                        MethodType.methodType(void.class, MemorySegment.class,
+                                                MemorySegment.class, MemorySegment.class)))
                         .register();
             } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new IllegalStateException(e);
@@ -193,6 +205,32 @@ final class MacWindow extends NativeHandle implements PlatformWindow {
             window.onWillClose();
         } catch (Throwable t) {
             LOG.log(Level.ERROR, "windowWillClose teardown failed for {0}", window.id, t);
+        }
+    }
+
+    @SuppressWarnings("unused") // IMP upcall
+    static void impWindowDidBecomeKey(MemorySegment self, MemorySegment cmd,
+            MemorySegment notification) {
+        fireFocusChanged(self, true);
+    }
+
+    @SuppressWarnings("unused") // IMP upcall
+    static void impWindowDidResignKey(MemorySegment self, MemorySegment cmd,
+            MemorySegment notification) {
+        fireFocusChanged(self, false);
+    }
+
+    private static void fireFocusChanged(MemorySegment self, boolean focused) {
+        MacWindow window = PEERS.get(self.address());
+        if (window == null) {
+            return;
+        }
+        for (java.util.function.Consumer<Boolean> handler : window.focusChangedHandlers) {
+            try {
+                handler.accept(focused);
+            } catch (RuntimeException e) {
+                LOG.log(Level.ERROR, "focus-changed handler failed for {0}", window.id, e);
+            }
         }
     }
 
@@ -254,6 +292,12 @@ final class MacWindow extends NativeHandle implements PlatformWindow {
     public Subscription onClosed(Runnable handler) {
         closedHandlers.add(handler);
         return () -> closedHandlers.remove(handler);
+    }
+
+    @Override
+    public Runnable onFocusChanged(java.util.function.Consumer<Boolean> listener) {
+        focusChangedHandlers.add(listener);
+        return () -> focusChangedHandlers.remove(listener);
     }
 
     @Override

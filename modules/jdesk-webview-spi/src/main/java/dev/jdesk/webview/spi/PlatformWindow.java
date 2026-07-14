@@ -63,6 +63,14 @@ public interface PlatformWindow extends AutoCloseable {
         return () -> { };
     }
 
+    /**
+     * Registers a window focus-change listener (UI thread): {@code true} when the window becomes
+     * key/active, {@code false} when it resigns. Returns an unsubscribe action. Default: no-op.
+     */
+    default Runnable onFocusChanged(java.util.function.Consumer<Boolean> listener) {
+        return () -> { };
+    }
+
     @Override
     void close();
 }

@@ -118,6 +118,24 @@ or `'unsafe-hashes'` unless you set an explicit acknowledgement option that appe
 build report. See the [CSP reference](../concepts/security-model.md) and
 [the security model](../concepts/security-model.md).
 
+## Web-platform differences by OS
+
+The `jdesk://app/` scheme is served by each OS's own WebView, and a few web-platform capabilities
+differ. Test anything in this list on every target OS.
+
+| Capability | Windows (WebView2) | macOS (WKWebView) | Linux (WebKitGTK) |
+| --- | --- | --- | --- |
+| **Secure context / `crypto.subtle`** | Yes (scheme registered as secure) | **No** — WKWebView exposes no API to mark a custom scheme secure, so `window.isSecureContext` is false and `crypto.subtle` is unavailable | Yes |
+| HTTP Range (206) for large media | Yes | Yes | Yes |
+| POST body to asset routes | Yes | Yes | Yes |
+
+On macOS, if you need hashing/crypto in the frontend, use a pure-JS implementation (e.g.
+`@noble/hashes`) rather than `crypto.subtle`, or move the work into a Java command over IPC. Some UI
+toolkits (Monaco, for example) inject `<style>` elements at runtime and so need `style-src
+'unsafe-inline'` — widen only that directive with the [per-directive CSP builder](#the-default-content-security-policy)
+and keep `script-src 'self'` (no `'unsafe-eval'`); a release build requires
+`-Djdesk.security.acknowledgeUnsafeCsp=true` to accept the `style-src` relaxation.
+
 ## Range requests and large media
 
 The resolver understands single-range `Range: bytes=...` requests and answers them with
