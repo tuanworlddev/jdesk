@@ -66,7 +66,7 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
         }
         this.config = config;
         this.constructionPool = ObjC.autoreleasePoolPush();
-        String displayName = displayName(config.applicationId());
+        String displayName = MacApplicationName.displayName(config.applicationId());
         applyProcessName(displayName);
         this.nsApp = ObjC.send(ObjC.cls("NSApplication"), "sharedApplication");
         try {
@@ -81,27 +81,6 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
         this.dispatcher = new MacUiDispatcher(config.devMode());
         this.blockRegistry = new NativeCallbackRegistry("macos-app-blocks", Arena.ofShared());
         markOpen();
-    }
-
-    /**
-     * The user-facing application name. Prefers the {@code jdesk.applicationName} system property
-     * — which the JDesk Gradle plugin embeds into the packaged app as a launch option, set to the
-     * same value as {@code CFBundleName} — so the {@code Quit <Name>} menu item matches the bold
-     * menu-bar title exactly. When the property is absent (e.g. a raw {@code gradlew run}), it
-     * falls back to the last segment of the reverse-DNS application id, capitalized
-     * (e.g. {@code dev.example.dragon7} -> "Dragon7"). Returns {@code null} when neither yields a
-     * usable name, in which case identity fixes are skipped.
-     */
-    static String displayName(String applicationId) {
-        String override = System.getProperty("jdesk.applicationName");
-        if (override != null && !override.isBlank()) {
-            return override;
-        }
-        String segment = applicationId.substring(applicationId.lastIndexOf('.') + 1);
-        if (segment.isEmpty()) {
-            return null;
-        }
-        return Character.toUpperCase(segment.charAt(0)) + segment.substring(1);
     }
 
     /**
