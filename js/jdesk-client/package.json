@@ -1,10 +1,20 @@
 {
   "name": "jdesk-client",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "Typed JDesk IPC client runtime for web frontends; generated command bindings are produced by jdesk-codegen.",
   "type": "module",
   "license": "Apache-2.0",
   "private": false,
+  "homepage": "https://jdesk.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tuanworlddev/jdesk.git",
+    "directory": "js/jdesk-client"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

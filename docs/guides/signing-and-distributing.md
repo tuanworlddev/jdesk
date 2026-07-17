@@ -88,7 +88,7 @@ checked in:
 CI packages are `UNSIGNED` because these credentials are not present in CI. Do not treat any
 current artifact as signed. See the [verification report](../../VERIFICATION.md) and
 [packaging and signing](../packaging/packaging-and-signing.md) for exactly what is proven,
-and [implementation status](../../IMPLEMENTATION_STATUS.md) for the Phase-7 gate list.
+and [current status](../../STATUS.md) for the remaining distribution gates.
 
 ## Publish the framework and npm packages
 

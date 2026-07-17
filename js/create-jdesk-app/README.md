@@ -14,7 +14,8 @@ Run it with no arguments and it walks you through a guided setup:
 1. **Project name** — type a name (or press Enter for `my-jdesk-app`).
 2. **Package name** — it suggests `com.example.<name>`; press Enter to accept, or type your
    own reverse-DNS id.
-3. **Template** — pick a frontend with the ↑/↓ arrow keys and Enter.
+3. **Build and template** — choose Gradle or Maven, then pick a frontend with the ↑/↓
+   arrow keys and Enter.
 
 It then scaffolds the project (with a progress spinner) and prints exactly what to run next.
 Any option you pass on the command line is used as-is and its prompt is skipped, so power
@@ -37,7 +38,9 @@ cd my-app
 
 | Option | Description |
 | --- | --- |
-| `-t, --template <name>` | `basic`, `structured`, `vanilla`, `react`, `vue`, or `svelte` (default `basic`) |
+| `-b, --build <system>` | `gradle` or `maven` (default `gradle`) |
+| `--maven` | Shorthand for `--build maven` |
+| `-t, --template <name>` | `basic`, `structured`, `vanilla`, `react`, `vue`, `svelte`, or `solid` (default `basic`) |
 | `-p, --package <id>` | Reverse-DNS Java package / application id (default `com.example.<name>`) |
 | `--jdesk-version <v>` | Framework version to depend on |
 | `--jdesk-source <dir>` | Use a local JDesk checkout (composite build) — for framework development |

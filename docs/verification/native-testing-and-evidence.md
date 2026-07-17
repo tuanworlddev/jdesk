@@ -5,7 +5,7 @@ from a real native run — never a hand-edited status. This page explains the ev
 system ([spec sections 17.3, 18](../../JDESK_CORE_FRAMEWORK_SPEC.md)), the probe suites,
 and how to run them. The source of truth for what is actually verified is
 [../../VERIFICATION.md](../../VERIFICATION.md) and
-[../../IMPLEMENTATION_STATUS.md](../../IMPLEMENTATION_STATUS.md).
+[../../STATUS.md](../../STATUS.md).
 
 ## Why
 

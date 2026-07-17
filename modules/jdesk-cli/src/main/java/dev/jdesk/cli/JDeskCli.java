@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 
 /** Command-line project generator for JDesk applications. */
 public final class JDeskCli {
-    private static final String DEFAULT_VERSION = "0.1.2";
+    private static final String DEFAULT_VERSION = "0.1.3";
     private static final Pattern PACKAGE_NAME = Pattern.compile(
             "[a-z_][a-z0-9_]*(\\.[a-z_][a-z0-9_]*)+");
     private static final Set<String> TEMPLATES =
@@ -58,11 +58,8 @@ public final class JDeskCli {
                     + options.target.toAbsolutePath().normalize());
             if ("maven".equals(options.template)) {
                 out.println("Next: cd " + options.target);
-                out.println("  # Pre-alpha: JDesk is not on Maven Central yet. Install it");
-                out.println("  # into your local repository first, from a JDesk checkout:");
-                out.println("  #   ./gradlew publishToMavenLocal");
                 out.println("  (cd ui && java Build.java)   # build the UI");
-                out.println("  mvn compile                 # resolve deps, generate bindings");
+                out.println("  mvn compile                 # resolve JDesk from Maven Central");
                 out.println("  mvn exec:exec               # run the app");
             } else {
                 out.println("Next: cd " + options.target + " && ./gradlew run");

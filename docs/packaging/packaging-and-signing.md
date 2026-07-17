@@ -133,4 +133,4 @@ until real credentials are supplied.
 
 - [../development/gradle-plugin-reference.md](../development/gradle-plugin-reference.md) — the packaging tasks.
 - [../platform/prerequisites.md](../platform/prerequisites.md) — JDK 25 + jlink/jpackage, per-OS runtimes.
-- [../../IMPLEMENTATION_STATUS.md](../../IMPLEMENTATION_STATUS.md) — Phase 7 gate list.
+- [../../STATUS.md](../../STATUS.md) and [../../ROADMAP.md](../../ROADMAP.md) — current gates.

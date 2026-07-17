@@ -2,6 +2,7 @@ package dev.jdesk.api;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletionStage;
 
 /**
  * A user notification that can carry action buttons and an inline reply field. The user's choice

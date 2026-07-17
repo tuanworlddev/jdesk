@@ -125,7 +125,7 @@ targets; directly verifiable checksums and the SBOM are generated on every packa
 signing identity. The release workflow stages checksummed JARs and can add GitHub artifact
 attestations, but OS signing/notarization still requires the publisher's credentials.
 Confirm what is proven on your platform in the [verification matrix](../../VERIFICATION.md)
-and the [implementation status](../../IMPLEMENTATION_STATUS.md).
+and the [current status](../../STATUS.md).
 
 ## Next steps
 
