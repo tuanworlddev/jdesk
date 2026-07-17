@@ -32,12 +32,15 @@ per-platform status.
 `jdeskInstaller` produces a **real but UNSIGNED** installer unless a signing identity is
 configured for the current OS. Unsigned packages are fine for development and internal
 verification, but they are labeled `UNSIGNED` and **do not satisfy a signed-release gate**.
-Signing itself is delegated to the OS toolchains (`signtool`, `codesign` + `notarytool`,
-`dpkg-sig`/`rpmsign`); the plugin only invokes them from the values you set. On macOS, when both
+Signing itself is delegated to the OS toolchains (`signtool`, `codesign` + `notarytool`, and
+`gpg`); the plugin invokes and then verifies them from the values you set. On macOS, when both
 `macSigningIdentity` and `macNotarizationProfile` are set, `jdeskInstaller` code-signs the image
 (Hardened Runtime + secure timestamp), then **automatically submits the built installer to Apple
 notarization and staples the ticket** (`xcrun notarytool submit --wait` + `stapler staple`) so it
-launches without a Gatekeeper prompt. The command lines are built by `SigningCommands` in
+launches without a Gatekeeper prompt. It validates the stapled ticket before succeeding. Windows
+artifacts are Authenticode-signed with an RFC 3161 timestamp and checked with `signtool verify`;
+Linux installers receive an armored detached `.asc` signature which is checked with `gpg --verify`.
+The command lines are built by `SigningCommands` in
 `jdesk-packager` (unit-tested independently of any certificate).
 
 ## Configure the signing hooks
@@ -58,6 +61,8 @@ jdesk {
 
         // Linux — package signing
         linuxSigningKey.set("<GPG key id>")
+        // For headless CI; prefer this environment variable over a literal secret.
+        linuxSigningPassphrase.set(providers.environmentVariable("JDESK_GPG_PASSPHRASE"))
     }
 }
 ```
@@ -68,22 +73,24 @@ jdesk {
 | `windowsTimestampUrl` | `signtool` | RFC 3161 timestamp URL. |
 | `macSigningIdentity` | `codesign` | Developer ID Application identity. |
 | `macNotarizationProfile` | `notarytool` | Notarization keychain profile (`--keychain-profile`). |
-| `linuxSigningKey` | `dpkg-sig` / `rpmsign` | GPG package-signing key id. |
+| `linuxSigningKey` | `gpg` | GPG key id for an armored detached installer signature. |
+| `linuxSigningPassphrase` | `gpg` stdin | Optional headless passphrase; never placed in the process arguments. |
 
 When at least one identity is set for the current OS, the installer step signs using it;
-otherwise the artifact is `UNSIGNED`.
+otherwise the artifact is `UNSIGNED`. A Windows certificate also requires a timestamp URL, and a
+macOS notarization profile requires a signing identity; inconsistent configuration fails before
+`jpackage` runs.
 
 ## A signed pipeline needs your credentials
 
-The signing hooks are a **configuration surface**, not a turnkey signed pipeline. A fully
-wired, signed-and-notarized end-to-end release is Phase-7 work and is **not yet
-demonstrated**. It also requires credentials that only you can supply and that are never
-checked in:
+The signing hooks and post-sign verification are wired end to end, but a publicly trusted signed
+release is **not yet demonstrated**. It requires credentials that only the publisher can supply
+and that are never checked in:
 
 - **Windows** — an Authenticode code-signing certificate.
 - **macOS** — a Developer ID Application certificate plus an Apple notarization profile;
   the flow is `codesign` → `notarytool submit` → `stapler`.
-- **Linux** — a GPG key for package/repository signing.
+- **Linux** — a GPG key for detached artifact signing; repository metadata signing is separate.
 
 CI packages are `UNSIGNED` because these credentials are not present in CI. Do not treat any
 current artifact as signed. See the [verification report](../../VERIFICATION.md) and
@@ -92,26 +99,23 @@ and [current status](../../STATUS.md) for the remaining distribution gates.
 
 ## Publish the framework and npm packages
 
-Distributing your *app* is the installer above. If you are also publishing JDesk itself or
-its JS packages, the flows are:
+Distributing your *app* is the installer above. JDesk framework releases are published only by the
+tag-gated GitHub workflow after the complete platform matrix passes:
 
 ```bash
 # Framework artifacts — local verification, no credentials:
 ./gradlew publishToMavenLocal
 
-# Real publish (credentials supplied at invocation, never checked in):
-./gradlew publish \
-  -PjdeskPublishUrl=https://maven.pkg.github.com/tuanworlddev/jdesk \
-  -PjdeskPublishUser=<user> -PjdeskPublishToken=<token>
+# Validate every synchronized version before tagging:
+python3 scripts/verify_release_versions.py --tag v0.1.3
 
-# The two npm packages:
-npm --prefix js/create-jdesk-app publish --access public   # the scaffolder
-npm --prefix js/jdesk-client publish --access public       # jdesk-client runtime
+# Maintainers push the exact tag only after its commit is green:
+git push origin v0.1.3
 ```
 
-A signed Maven release adds an in-memory PGP key (`-PsigningKey=... -PsigningPassword=...`).
-Publishing to a public repository requires repository credentials and an npm token that
-only the account owner can supply. See
+A Maven Central release uses an in-memory PGP key and Central Portal token from GitHub secrets.
+Both npm packages authorize `release.yml` as a trusted publisher and use short-lived GitHub OIDC
+credentials with provenance; there is no long-lived npm write token. See
 [scaffolding and publishing](../development/scaffolding-and-publishing.md) for the full
 publish → consume chain.
 

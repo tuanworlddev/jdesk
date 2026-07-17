@@ -7,11 +7,11 @@ not complete.
 ## 0.1.3 — public release integrity
 
 - [ ] Maven Central, Gradle Plugin Portal, npm and GitHub publish the same version from one tag.
-- [ ] Release CI rejects any Gradle/JavaScript/template/tag version drift.
+- [x] Release CI rejects any Gradle/JavaScript/template/tag version drift.
 - [ ] A public-only canary scaffolds and builds Gradle basic, Gradle React and Maven applications.
-- [ ] `npm create jdesk-app@latest` works without `--jdesk-version`, a source checkout or credentials.
+- [x] `npm create jdesk-app@latest` works without `--jdesk-version`, a source checkout or credentials.
 - [ ] README, CLI output, website and package metadata describe the actual public state.
-- [ ] GitHub repository description, homepage and topics are populated.
+- [x] GitHub repository description, homepage and topics are populated.
 
 ## 0.2 — production distribution and WebView sessions
 
@@ -55,4 +55,3 @@ not complete.
   platform with rolling release baselines.
 - [ ] Public API review is complete; experimental APIs are marked; compatibility/deprecation policy is
   enforced by CI; release/support/security policies are ready for 1.0.
-

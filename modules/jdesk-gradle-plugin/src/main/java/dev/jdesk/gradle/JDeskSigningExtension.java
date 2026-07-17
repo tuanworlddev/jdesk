@@ -23,8 +23,14 @@ public abstract class JDeskSigningExtension {
     /** macOS notarization keychain profile name (notarytool {@code --keychain-profile}). */
     public abstract Property<String> getMacNotarizationProfile();
 
-    /** Linux package signing key id (GPG). */
+    /** Linux GPG key id for an armored detached installer signature. */
     public abstract Property<String> getLinuxSigningKey();
+
+    /**
+     * Optional GPG passphrase for headless signing. Prefer a lazy environment-variable provider;
+     * the installer task sends it to gpg over stdin and never places it on the command line.
+     */
+    public abstract Property<String> getLinuxSigningPassphrase();
 
     /** True when at least one signing identity is configured for the current OS. */
     public boolean isConfiguredForAnyPlatform() {
