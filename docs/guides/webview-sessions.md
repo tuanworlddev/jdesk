@@ -49,10 +49,10 @@ window.clearWebViewData(Set.of(
 
 `CACHE` includes the engine's memory and disk HTTP caches where separately exposed. Completion means
 the native asynchronous clear operation finished; callers can then reload or navigate as needed.
-For `LOCAL_STORAGE`, WebView2 uses its inclusive `ALL_DOM_STORAGE` category because the narrower
-category does not clear JDesk's custom-scheme storage. This also removes IndexedDB, CacheStorage,
-service workers and other DOM-accessible storage in that WebView2 profile. WKWebView and WebKitGTK
-use their narrower native local-storage categories.
+For `LOCAL_STORAGE`, JDesk supplements WebView2's profile API by clearing storage in the loaded
+`jdesk://` document because WebView2's profile operation does not remove custom-scheme storage.
+That synchronous write updates the backing store shared by the session; the native profile clear
+still handles standard origins. WKWebView and WebKitGTK use their native local-storage categories.
 
 The implementation uses public engine APIs:
 

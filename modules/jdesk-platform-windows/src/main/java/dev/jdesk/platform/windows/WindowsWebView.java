@@ -733,7 +733,6 @@ final class WindowsWebView implements PlatformWebView {
 
     @Override
     public CompletionStage<Void> clearData(Set<WebViewDataType> dataTypes) {
-        CompletableFuture<Void> future = new CompletableFuture<>();
         int kinds = 0;
         if (dataTypes.contains(WebViewDataType.COOKIES)) {
             kinds |= WebView2.BROWSING_DATA_COOKIES;
@@ -742,11 +741,24 @@ final class WindowsWebView implements PlatformWebView {
             kinds |= WebView2.BROWSING_DATA_DISK_CACHE;
         }
         if (dataTypes.contains(WebViewDataType.LOCAL_STORAGE)) {
-            // WebView2 does not clear custom-scheme localStorage with the narrow 0x4
-            // kind. Its documented aggregate DOM-storage kind includes localStorage
-            // and also covers custom-scheme-backed DOM storage.
-            kinds |= WebView2.BROWSING_DATA_ALL_DOM_STORAGE;
+            kinds |= WebView2.BROWSING_DATA_LOCAL_STORAGE;
         }
+        int nativeKinds = kinds;
+        if (dataTypes.contains(WebViewDataType.LOCAL_STORAGE)) {
+            // ClearBrowsingData does not remove localStorage for WebView2 custom schemes,
+            // including jdesk://. Clearing it in one loaded document updates the backing
+            // store shared by every window in this session; the profile API below still
+            // handles standard origins and all other selected data kinds.
+            return evaluate("(() => { try { localStorage.clear(); return true; } "
+                    + "catch (_) { return false; } })()")
+                    .handle((ignored, evaluateError) -> clearProfileData(nativeKinds))
+                    .thenCompose(stage -> stage);
+        }
+        return clearProfileData(nativeKinds);
+    }
+
+    private CompletionStage<Void> clearProfileData(int kinds) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
         MemorySegment completion = ComCallback.hrHandler(registry,
                 "ClearBrowsingDataCompletedHandler",
                 WebView2.IID_CLEAR_BROWSING_DATA_COMPLETED_HANDLER,
