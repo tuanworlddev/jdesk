@@ -656,6 +656,23 @@ public final class Main {
                         WebViewDataType.CACHE,
                         WebViewDataType.LOCAL_STORAGE))
                         .toCompletableFuture().get(15, TimeUnit.SECONDS);
+                // WebView2 can retain DOM storage in an already loaded document even after
+                // the profile clear completes. Reopen one window in the still-live shared
+                // session there to verify the backing session data. WebKit reflects the clear
+                // in the existing document; recreating a custom-scheme document after clearing
+                // can instead make its DOM storage unavailable.
+                boolean windows = System.getProperty("os.name", "")
+                        .toLowerCase(java.util.Locale.ROOT).contains("windows");
+                if (windows) {
+                    runtime.closeWindow(sharedB).toCompletableFuture().get(10, TimeUnit.SECONDS);
+                    runtime.openWindow(WindowConfig.builder().id(sharedB.value())
+                            .title("session shared B after clear")
+                            .entry("jdesk://app/index-secondary.html")
+                            .webViewSession(sharedSession).build())
+                            .toCompletableFuture().get(15, TimeUnit.SECONDS);
+                    awaitJavascriptValue(runtime, sharedB, "document.readyState", "complete",
+                            Duration.ofSeconds(10));
+                }
                 String afterClear = runtime.evaluate(sharedB,
                         "String(localStorage.getItem('" + key + "'))")
                         .toCompletableFuture().get(5, TimeUnit.SECONDS);
