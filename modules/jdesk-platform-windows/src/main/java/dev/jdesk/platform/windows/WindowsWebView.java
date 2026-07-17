@@ -1,6 +1,7 @@
 package dev.jdesk.platform.windows;
 
 import dev.jdesk.api.Subscription;
+import dev.jdesk.api.WebViewDataType;
 import dev.jdesk.ffm.NativeCallbackRegistry;
 import dev.jdesk.webview.spi.InitScripts;
 import dev.jdesk.webview.spi.AssetRequest;
@@ -24,6 +25,7 @@ import java.lang.foreign.MemorySegment;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -727,6 +729,76 @@ final class WindowsWebView implements PlatformWebView {
                 java.util.Optional.of("WebView2 " + environment.browserVersion()),
                 java.util.Optional.empty(),
                 java.util.Optional.ofNullable(pid));
+    }
+
+    @Override
+    public CompletionStage<Void> clearData(Set<WebViewDataType> dataTypes) {
+        int kinds = 0;
+        if (dataTypes.contains(WebViewDataType.COOKIES)) {
+            kinds |= WebView2.BROWSING_DATA_COOKIES;
+        }
+        if (dataTypes.contains(WebViewDataType.CACHE)) {
+            kinds |= WebView2.BROWSING_DATA_DISK_CACHE;
+        }
+        if (dataTypes.contains(WebViewDataType.LOCAL_STORAGE)) {
+            kinds |= WebView2.BROWSING_DATA_LOCAL_STORAGE;
+        }
+        int nativeKinds = kinds;
+        if (dataTypes.contains(WebViewDataType.LOCAL_STORAGE)) {
+            // ClearBrowsingData does not remove localStorage for WebView2 custom schemes,
+            // including jdesk://. Clearing it in one loaded document updates the backing
+            // store shared by every window in this session; the profile API below still
+            // handles standard origins and all other selected data kinds.
+            return evaluate("(() => { try { localStorage.clear(); return true; } "
+                    + "catch (_) { return false; } })()")
+                    .handle((ignored, evaluateError) -> clearProfileData(nativeKinds))
+                    .thenCompose(stage -> stage);
+        }
+        return clearProfileData(nativeKinds);
+    }
+
+    private CompletionStage<Void> clearProfileData(int kinds) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        MemorySegment completion = ComCallback.hrHandler(registry,
+                "ClearBrowsingDataCompletedHandler",
+                WebView2.IID_CLEAR_BROWSING_DATA_COMPLETED_HANDLER,
+                (self, hr) -> {
+                    if (hr < 0) {
+                        future.completeExceptionally(
+                                new Hresult.ComException("ClearBrowsingData", hr));
+                    } else {
+                        future.complete(null);
+                    }
+                    return Hresult.S_OK;
+                });
+        MemorySegment webView13 = MemorySegment.NULL;
+        MemorySegment profile = MemorySegment.NULL;
+        MemorySegment profile2 = MemorySegment.NULL;
+        try (Arena confined = Arena.ofConfined()) {
+            webView13 = ComRuntime.queryInterface(webView, WebView2.IID_WEBVIEW2_13);
+            MemorySegment out = confined.allocate(ADDRESS);
+            ComRuntime.invokeChecked(webView13, WebView2.WV13_GET_PROFILE,
+                    "get_Profile", THIS_PTR, out);
+            profile = out.get(ADDRESS, 0);
+            profile2 = ComRuntime.queryInterface(profile, WebView2.IID_PROFILE2);
+            ComRuntime.invokeChecked(profile2, WebView2.PROFILE2_CLEAR_BROWSING_DATA,
+                    "ClearBrowsingData",
+                    FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, ADDRESS),
+                    kinds, completion);
+        } catch (RuntimeException e) {
+            future.completeExceptionally(e);
+        } finally {
+            if (!profile2.equals(MemorySegment.NULL)) {
+                ComRuntime.release(profile2);
+            }
+            if (!profile.equals(MemorySegment.NULL)) {
+                ComRuntime.release(profile);
+            }
+            if (!webView13.equals(MemorySegment.NULL)) {
+                ComRuntime.release(webView13);
+            }
+        }
+        return future;
     }
     @Override public boolean devToolsEnabled(){return devToolsEnabled;}
 

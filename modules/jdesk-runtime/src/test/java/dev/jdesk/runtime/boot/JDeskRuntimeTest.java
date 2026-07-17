@@ -17,6 +17,7 @@ import dev.jdesk.api.UiDispatcher;
 import dev.jdesk.api.WindowConfig;
 import dev.jdesk.api.WindowHandle;
 import dev.jdesk.api.WindowId;
+import dev.jdesk.api.WebViewDataType;
 import dev.jdesk.runtime.assets.MapAssetSource;
 import dev.jdesk.webview.spi.NativeWindowConfig;
 import dev.jdesk.webview.spi.NavigationDecision;
@@ -37,6 +38,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -127,6 +129,7 @@ class JDeskRuntimeTest {
         volatile NavigationListener navigationListener;
         volatile Consumer<URI> committedListener;
         volatile Consumer<WebViewProcessFailure> failureListener;
+        volatile Set<WebViewDataType> clearedData = Set.of();
         volatile boolean closed;
 
         @Override
@@ -191,6 +194,12 @@ class JDeskRuntimeTest {
             return new WebViewDiagnostics(Optional.empty(), Optional.empty(), Optional.empty());
         }
         @Override public boolean devToolsEnabled(){return false;}
+
+        @Override
+        public CompletionStage<Void> clearData(Set<WebViewDataType> dataTypes) {
+            clearedData = Set.copyOf(dataTypes);
+            return CompletableFuture.completedFuture(null);
+        }
 
         @Override
         public void close() {
@@ -965,6 +974,21 @@ class JDeskRuntimeTest {
             int before = webView.navigations.size();
             webView.simulateProcessFailure();
             assertThat(webView.navigations).hasSize(before + 1).last().isEqualTo(URI.create(ENTRY));
+        }
+    }
+
+    @Test
+    void windowHandleClearsSelectedDataForItsNativeSession() throws Exception {
+        try (RunningRuntime running = new RunningRuntime(List.of(RunningRuntime.window("main")))) {
+            running.awaitReady();
+            WindowHandle handle = running.runtime.window(new WindowId("main")).orElseThrow();
+            Set<WebViewDataType> selected = Set.of(
+                    WebViewDataType.COOKIES, WebViewDataType.LOCAL_STORAGE);
+
+            handle.clearWebViewData(selected).toCompletableFuture().get(5, TimeUnit.SECONDS);
+
+            assertThat(running.provider.app.windows.getFirst().webView.clearedData)
+                    .isEqualTo(selected);
         }
     }
 

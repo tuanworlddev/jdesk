@@ -195,6 +195,37 @@ ICoreWebView2_2 IID=9E8F0CF8-E670-4B5E-B2BC-73E061E3184C parent=ICoreWebView2
   [66] get_CookieManager
   [67] get_Environment
 
+ICoreWebView2_13 IID=f75f09a8-667e-4983-88d6-c8773f315e84 parent=ICoreWebView2_12
+  [ 0] QueryInterface
+  [ 1] AddRef
+  [ 2] Release
+  [ 3..104] inherited ICoreWebView2 through ICoreWebView2_12 methods
+  [105] get_Profile
+
+ICoreWebView2Profile IID=79110ad3-cd5d-4373-8bc3-c60658f17a5f parent=IUnknown
+  [ 0] QueryInterface
+  [ 1] AddRef
+  [ 2] Release
+  [ 3] get_ProfileName
+  [ 4] get_IsInPrivateModeEnabled
+  [ 5] get_ProfilePath
+  [ 6] get_DefaultDownloadFolderPath
+  [ 7] put_DefaultDownloadFolderPath
+  [ 8] get_PreferredColorScheme
+  [ 9] put_PreferredColorScheme
+
+ICoreWebView2Profile2 IID=fa740d4b-5eae-4344-a8ad-74be31925397 parent=ICoreWebView2Profile
+  [ 0..9] inherited ICoreWebView2Profile methods
+  [10] ClearBrowsingData
+  [11] ClearBrowsingDataInTimeRange
+  [12] ClearBrowsingDataAll
+
+ICoreWebView2ClearBrowsingDataCompletedHandler IID=e9710a06-1d1d-49b2-8234-226f35846ae5 parent=IUnknown
+  [ 0] QueryInterface
+  [ 1] AddRef
+  [ 2] Release
+  [ 3] Invoke
+
 ICoreWebView2Settings IID=e562e4f0-d7fa-43ac-8d71-c05150499f00 parent=IUnknown
   [ 0] QueryInterface
   [ 1] AddRef

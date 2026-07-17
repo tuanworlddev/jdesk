@@ -512,6 +512,13 @@ type public abstract interface dev.jdesk.api.UiDispatcher
   method public abstract void dev.jdesk.api.UiDispatcher.assertUiThread()
   method public abstract void dev.jdesk.api.UiDispatcher.execute(java.lang.Runnable)
 
+type public final enum dev.jdesk.api.WebViewDataType
+  field public static final dev.jdesk.api.WebViewDataType dev.jdesk.api.WebViewDataType.CACHE
+  field public static final dev.jdesk.api.WebViewDataType dev.jdesk.api.WebViewDataType.COOKIES
+  field public static final dev.jdesk.api.WebViewDataType dev.jdesk.api.WebViewDataType.LOCAL_STORAGE
+  method public static dev.jdesk.api.WebViewDataType dev.jdesk.api.WebViewDataType.valueOf(java.lang.String)
+  method public static dev.jdesk.api.WebViewDataType[] dev.jdesk.api.WebViewDataType.values()
+
 type public final record dev.jdesk.api.WebViewSessionConfig
   field public static final dev.jdesk.api.WebViewSessionConfig dev.jdesk.api.WebViewSessionConfig.DEFAULT
   constructor public dev.jdesk.api.WebViewSessionConfig(java.lang.String,dev.jdesk.api.WebViewSessionConfig$Storage,java.util.Optional<java.lang.String>)
@@ -582,6 +589,7 @@ type public abstract interface dev.jdesk.api.WindowHandle
   method public abstract dev.jdesk.api.WindowId dev.jdesk.api.WindowHandle.id()
   method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.Subscription> dev.jdesk.api.WindowHandle.onFileDrop(java.util.function.Consumer<java.util.List<java.nio.file.Path>>)
   method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.Subscription> dev.jdesk.api.WindowHandle.onFocusChanged(java.util.function.Consumer<java.lang.Boolean>)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.clearWebViewData(java.util.Set<dev.jdesk.api.WebViewDataType>)
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.close()
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.focus()
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.hide()

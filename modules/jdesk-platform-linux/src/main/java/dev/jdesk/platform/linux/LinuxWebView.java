@@ -1,6 +1,7 @@
 package dev.jdesk.platform.linux;
 
 import dev.jdesk.api.Subscription;
+import dev.jdesk.api.WebViewDataType;
 import dev.jdesk.ffm.NativeCallbackRegistry;
 import dev.jdesk.webview.spi.InitScripts;
 import dev.jdesk.webview.spi.NativeWindowConfig;
@@ -23,6 +24,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
@@ -153,6 +155,7 @@ final class LinuxWebView implements PlatformWebView {
     private final NativeCallbackRegistry registry;
     private final MemorySegment webView;              // + one owned ref (g_object_ref_sink)
     private final MemorySegment userContentManager;   // + one owned ref (g_object_ref)
+    private final MemorySegment webContext;           // application-owned
     private final boolean devToolsEnabled;
     private final List<Consumer<String>> messageListeners = new CopyOnWriteArrayList<>();
     private final List<NavigationListener> navigationListeners = new CopyOnWriteArrayList<>();
@@ -165,10 +168,12 @@ final class LinuxWebView implements PlatformWebView {
         this.registry = window.callbackRegistry();
         final MemorySegment view;
         final MemorySegment manager;
+        final MemorySegment context;
         final boolean actualDevToolsEnabled;
         try (Arena confined = Arena.ofConfined()) {
+            context = app.webContext(config.webViewSession());
             MemorySegment created = (MemorySegment) Gtk.WEBKIT_WEB_VIEW_NEW_WITH_CONTEXT
-                    .invokeExact(app.webContext(config.webViewSession()));
+                    .invokeExact(context);
             if (created.equals(MemorySegment.NULL)) {
                 throw new IllegalStateException("webkit_web_view_new failed");
             }
@@ -218,6 +223,7 @@ final class LinuxWebView implements PlatformWebView {
         }
         this.webView = view;
         this.userContentManager = manager;
+        this.webContext = context;
         this.devToolsEnabled = actualDevToolsEnabled;
 
         PEERS.put(view.address(), this);
@@ -608,6 +614,49 @@ final class LinuxWebView implements PlatformWebView {
                 Optional.empty());
     }
     @Override public boolean devToolsEnabled(){return devToolsEnabled;}
+
+    @Override
+    public CompletionStage<Void> clearData(Set<WebViewDataType> dataTypes) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        int types = 0;
+        if (dataTypes.contains(WebViewDataType.COOKIES)) {
+            types |= Gtk.WEBKIT_WEBSITE_DATA_COOKIES;
+        }
+        if (dataTypes.contains(WebViewDataType.CACHE)) {
+            types |= Gtk.WEBKIT_WEBSITE_DATA_MEMORY_CACHE
+                    | Gtk.WEBKIT_WEBSITE_DATA_DISK_CACHE;
+        }
+        if (dataTypes.contains(WebViewDataType.LOCAL_STORAGE)) {
+            types |= Gtk.WEBKIT_WEBSITE_DATA_LOCAL_STORAGE;
+        }
+        long token = TOKENS.getAndIncrement();
+        ASYNC.put(token, (source, result) -> {
+            try (Arena confined = Arena.ofConfined()) {
+                MemorySegment errorSlot = confined.allocate(ADDRESS);
+                errorSlot.set(ADDRESS, 0, MemorySegment.NULL);
+                int cleared = (int) Gtk.WEBKIT_WEBSITE_DATA_MANAGER_CLEAR_FINISH
+                        .invokeExact(source, result, errorSlot);
+                if (cleared == 0) {
+                    future.completeExceptionally(new IllegalStateException(
+                            "website data clear failed: " + Gtk.takeErrorMessage(errorSlot)));
+                } else {
+                    future.complete(null);
+                }
+            } catch (Throwable t) {
+                future.completeExceptionally(Gtk.rethrow(t));
+            }
+        });
+        try {
+            MemorySegment dataManager = (MemorySegment)
+                    Gtk.WEBKIT_WEB_CONTEXT_GET_WEBSITE_DATA_MANAGER.invokeExact(webContext);
+            Gtk.WEBKIT_WEBSITE_DATA_MANAGER_CLEAR.invokeExact(dataManager, types, 0L,
+                    MemorySegment.NULL, ASYNC_READY_STUB, MemorySegment.ofAddress(token));
+        } catch (Throwable t) {
+            ASYNC.remove(token);
+            future.completeExceptionally(Gtk.rethrow(t));
+        }
+        return future;
+    }
 
     /** Called from the window's destroy path; detaches and releases the pipeline. */
     void destroyFromWindow() {

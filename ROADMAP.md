@@ -26,12 +26,14 @@ not complete.
       WebView2 also supports named persistent profiles.
     - [ ] Persistent DOM storage for the custom `jdesk://` origin remains unavailable on WKWebView
       and WebKitGTK; named profiles are rejected instead of silently sharing or losing state.
-  - [ ] Cookie CRUD, selective cache/site-data clearing, proxy policy and controlled downloads remain.
+  - [x] Session-wide selective clearing covers cookies, memory/disk cache and local storage.
+  - [ ] Cookie CRUD, proxy policy and controlled downloads remain.
 - [ ] Permission requests for camera, microphone, geolocation, notifications and clipboard are
   capability-gated, origin-aware and deny by default.
 - [ ] Session isolation and download paths have traversal, symlink, overwrite and cancellation tests.
-  - [x] A real WKWebView probe proves same-session sharing, cross-session isolation and the native
-    user-agent override; API tests reject traversal-like ids and control characters.
+  - [x] A real WKWebView probe proves same-session sharing, cross-session isolation, native
+    user-agent override and session-wide local-storage clearing; API tests reject traversal-like
+    ids and control characters.
   - [x] Real Windows/Linux probes cover their session contracts.
   - [ ] Download symlink/overwrite/cancellation probes remain.
 

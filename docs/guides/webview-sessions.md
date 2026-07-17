@@ -32,9 +32,31 @@ and attempts to remove it after all controllers and environments close. A privat
 multiple windows during one application run, so those windows deliberately see the same cookies and
 web storage. It is never reused on the next launch.
 
+## Clear session data
+
+Clearing is exposed on an open window and applies to every window that shares its session. Existing
+documents are not reloaded automatically.
+
+```java
+import dev.jdesk.api.WebViewDataType;
+import java.util.Set;
+
+window.clearWebViewData(Set.of(
+        WebViewDataType.COOKIES,
+        WebViewDataType.CACHE,
+        WebViewDataType.LOCAL_STORAGE));
+```
+
+`CACHE` includes the engine's memory and disk HTTP caches where separately exposed. Completion means
+the native asynchronous clear operation finished; callers can then reload or navigate as needed.
+For `LOCAL_STORAGE`, JDesk supplements WebView2's profile API by clearing storage in the loaded
+`jdesk://` document because WebView2's profile operation does not remove custom-scheme storage.
+That synchronous write updates the backing store shared by the session; the native profile clear
+still handles standard origins. WKWebView and WebKitGTK use their native local-storage categories.
+
 The implementation uses public engine APIs:
 
-- Windows: one WebView2 environment/user-data folder per session and
+- Windows: one WebView2 environment/user-data folder per session,
   `ICoreWebView2Settings2::put_UserAgent`.
 - macOS: `WKWebsiteDataStore` (`nonPersistentDataStore` or the default persistent store)
   and `WKWebView.customUserAgent`.
@@ -53,15 +75,17 @@ The implementation uses public engine APIs:
   remain for compatibility but must not be used when durable DOM storage is required. Private
   sessions support in-process DOM storage. Windows supports named persistent sessions.
 
-Cookie CRUD, selective site-data/cache clearing, proxy configuration, download decisions and
-origin-aware permission prompts remain roadmap work. The current API intentionally does not expose
-partial adapter-specific controls.
+Cookie CRUD, proxy configuration, download decisions and origin-aware permission prompts remain
+roadmap work. The current API intentionally does not expose partial adapter-specific controls.
 
 ## Engine references
 
 - [WebView2 user-data folders](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/user-data-folder)
-  and [`ICoreWebView2Settings2`](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2settings2)
-- [`WKWebsiteDataStore`](https://developer.apple.com/documentation/webkit/wkwebsitedatastore)
+  [`ICoreWebView2Settings2`](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2settings2),
+  and [clear browsing data](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/clear-browsing-data)
+- [`WKWebsiteDataStore`](https://developer.apple.com/documentation/webkit/wkwebsitedatastore),
+  [`removeData`](https://developer.apple.com/documentation/webkit/wkwebsitedatastore/removedata%28oftypes%3Amodifiedsince%3Acompletionhandler%3A%29),
   and [`WKWebView.customUserAgent`](https://developer.apple.com/documentation/webkit/wkwebview/customuseragent)
 - [WebKitGTK `WebContext`](https://webkitgtk.org/reference/webkit2gtk/stable/class.WebContext.html)
   and [`WebView`](https://webkitgtk.org/reference/webkit2gtk/stable/class.WebView.html)
+- [WebKitGTK `WebsiteDataManager.clear`](https://webkitgtk.org/reference/webkit2gtk/stable/method.WebsiteDataManager.clear.html)

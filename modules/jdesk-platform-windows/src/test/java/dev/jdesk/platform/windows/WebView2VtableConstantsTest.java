@@ -14,5 +14,12 @@ class WebView2VtableConstantsTest {
         assertThat(WebView2.SETTINGS2_PUT_USER_AGENT).isEqualTo(22);
         assertThat(WebView2.IID_SETTINGS2)
                 .isEqualTo("ee9a0f68-f46c-4e32-ac23-ef8cac224d2a");
+        assertThat(WebView2.WV13_GET_PROFILE).isEqualTo(105);
+        assertThat(WebView2.PROFILE2_CLEAR_BROWSING_DATA).isEqualTo(10);
+        assertThat(WebView2.BROWSING_DATA_LOCAL_STORAGE).isEqualTo(0x4);
+        assertThat(WebView2.IID_WEBVIEW2_13)
+                .isEqualTo("f75f09a8-667e-4983-88d6-c8773f315e84");
+        assertThat(WebView2.IID_PROFILE2)
+                .isEqualTo("fa740d4b-5eae-4344-a8ad-74be31925397");
     }
 }
