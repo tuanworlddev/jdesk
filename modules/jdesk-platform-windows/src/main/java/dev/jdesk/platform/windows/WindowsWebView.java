@@ -742,7 +742,10 @@ final class WindowsWebView implements PlatformWebView {
             kinds |= WebView2.BROWSING_DATA_DISK_CACHE;
         }
         if (dataTypes.contains(WebViewDataType.LOCAL_STORAGE)) {
-            kinds |= WebView2.BROWSING_DATA_LOCAL_STORAGE;
+            // WebView2 does not clear custom-scheme localStorage with the narrow 0x4
+            // kind. Its documented aggregate DOM-storage kind includes localStorage
+            // and also covers custom-scheme-backed DOM storage.
+            kinds |= WebView2.BROWSING_DATA_ALL_DOM_STORAGE;
         }
         MemorySegment completion = ComCallback.hrHandler(registry,
                 "ClearBrowsingDataCompletedHandler",

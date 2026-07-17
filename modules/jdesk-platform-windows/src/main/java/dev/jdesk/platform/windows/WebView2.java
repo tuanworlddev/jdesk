@@ -70,7 +70,7 @@ final class WebView2 {
 
     // ---- ICoreWebView2Profile2 ----
     static final int PROFILE2_CLEAR_BROWSING_DATA = 10;
-    static final int BROWSING_DATA_LOCAL_STORAGE = 0x4;
+    static final int BROWSING_DATA_ALL_DOM_STORAGE = 0x20;
     static final int BROWSING_DATA_COOKIES = 0x40;
     static final int BROWSING_DATA_DISK_CACHE = 0x100;
 

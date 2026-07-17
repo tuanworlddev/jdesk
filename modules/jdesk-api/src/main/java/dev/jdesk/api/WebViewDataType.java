@@ -6,6 +6,10 @@ public enum WebViewDataType {
     COOKIES,
     /** In-memory and on-disk HTTP caches. */
     CACHE,
-    /** Origin local storage. */
+    /**
+     * Origin local storage. WebView2 clears its inclusive DOM-storage group so custom-scheme
+     * local storage is covered; that engine can therefore also remove IndexedDB, CacheStorage,
+     * service workers and related DOM-accessible storage.
+     */
     LOCAL_STORAGE
 }
