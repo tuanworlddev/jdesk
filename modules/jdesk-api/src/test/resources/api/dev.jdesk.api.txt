@@ -512,6 +512,30 @@ type public abstract interface dev.jdesk.api.UiDispatcher
   method public abstract void dev.jdesk.api.UiDispatcher.assertUiThread()
   method public abstract void dev.jdesk.api.UiDispatcher.execute(java.lang.Runnable)
 
+type public final record dev.jdesk.api.WebViewCookie
+  constructor public dev.jdesk.api.WebViewCookie(java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.util.Optional<java.time.Instant>,boolean,boolean)
+  method public boolean dev.jdesk.api.WebViewCookie.httpOnly()
+  method public boolean dev.jdesk.api.WebViewCookie.secure()
+  method public dev.jdesk.api.WebViewCookieKey dev.jdesk.api.WebViewCookie.key()
+  method public final boolean dev.jdesk.api.WebViewCookie.equals(java.lang.Object)
+  method public final int dev.jdesk.api.WebViewCookie.hashCode()
+  method public final java.lang.String dev.jdesk.api.WebViewCookie.toString()
+  method public java.lang.String dev.jdesk.api.WebViewCookie.domain()
+  method public java.lang.String dev.jdesk.api.WebViewCookie.name()
+  method public java.lang.String dev.jdesk.api.WebViewCookie.path()
+  method public java.lang.String dev.jdesk.api.WebViewCookie.value()
+  method public java.util.Optional<java.time.Instant> dev.jdesk.api.WebViewCookie.expiresAt()
+  method public static dev.jdesk.api.WebViewCookie dev.jdesk.api.WebViewCookie.session(java.lang.String,java.lang.String,java.lang.String,java.lang.String,boolean,boolean)
+
+type public final record dev.jdesk.api.WebViewCookieKey
+  constructor public dev.jdesk.api.WebViewCookieKey(java.lang.String,java.lang.String,java.lang.String)
+  method public final boolean dev.jdesk.api.WebViewCookieKey.equals(java.lang.Object)
+  method public final int dev.jdesk.api.WebViewCookieKey.hashCode()
+  method public final java.lang.String dev.jdesk.api.WebViewCookieKey.toString()
+  method public java.lang.String dev.jdesk.api.WebViewCookieKey.domain()
+  method public java.lang.String dev.jdesk.api.WebViewCookieKey.name()
+  method public java.lang.String dev.jdesk.api.WebViewCookieKey.path()
+
 type public final enum dev.jdesk.api.WebViewDataType
   field public static final dev.jdesk.api.WebViewDataType dev.jdesk.api.WebViewDataType.CACHE
   field public static final dev.jdesk.api.WebViewDataType dev.jdesk.api.WebViewDataType.COOKIES
@@ -591,6 +615,7 @@ type public abstract interface dev.jdesk.api.WindowHandle
   method public abstract java.util.concurrent.CompletionStage<dev.jdesk.api.Subscription> dev.jdesk.api.WindowHandle.onFocusChanged(java.util.function.Consumer<java.lang.Boolean>)
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.clearWebViewData(java.util.Set<dev.jdesk.api.WebViewDataType>)
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.close()
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.deleteWebViewCookie(dev.jdesk.api.WebViewCookieKey)
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.focus()
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.hide()
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.print()
@@ -600,7 +625,9 @@ type public abstract interface dev.jdesk.api.WindowHandle
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.setMaximized(boolean)
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.setMinimized(boolean)
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.setTitle(java.lang.String)
+  method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.setWebViewCookie(dev.jdesk.api.WebViewCookie)
   method public abstract java.util.concurrent.CompletionStage<java.lang.Void> dev.jdesk.api.WindowHandle.show()
+  method public abstract java.util.concurrent.CompletionStage<java.util.List<dev.jdesk.api.WebViewCookie>> dev.jdesk.api.WindowHandle.webViewCookies()
   method public abstract java.util.concurrent.CompletionStage<java.util.Optional<java.lang.String>> dev.jdesk.api.WindowHandle.showContextMenu(dev.jdesk.api.MenuSpec)
 
 type public final record dev.jdesk.api.WindowId

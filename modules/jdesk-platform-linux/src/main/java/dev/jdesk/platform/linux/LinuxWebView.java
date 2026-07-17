@@ -1,6 +1,8 @@
 package dev.jdesk.platform.linux;
 
 import dev.jdesk.api.Subscription;
+import dev.jdesk.api.WebViewCookie;
+import dev.jdesk.api.WebViewCookieKey;
 import dev.jdesk.api.WebViewDataType;
 import dev.jdesk.ffm.NativeCallbackRegistry;
 import dev.jdesk.webview.spi.InitScripts;
@@ -21,6 +23,8 @@ import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.net.URI;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -656,6 +660,255 @@ final class LinuxWebView implements PlatformWebView {
             future.completeExceptionally(Gtk.rethrow(t));
         }
         return future;
+    }
+
+    @Override
+    public CompletionStage<List<WebViewCookie>> cookies() {
+        CompletableFuture<List<WebViewCookie>> future = new CompletableFuture<>();
+        long token = TOKENS.getAndIncrement();
+        ASYNC.put(token, (source, result) -> {
+            try (Arena confined = Arena.ofConfined()) {
+                MemorySegment errorSlot = confined.allocate(ADDRESS);
+                errorSlot.set(ADDRESS, 0, MemorySegment.NULL);
+                MemorySegment list = (MemorySegment)
+                        Gtk.WEBKIT_COOKIE_MANAGER_GET_ALL_COOKIES_FINISH.invokeExact(
+                                source, result, errorSlot);
+                if (list.equals(MemorySegment.NULL)) {
+                    MemorySegment error = errorSlot.get(ADDRESS, 0);
+                    if (!error.equals(MemorySegment.NULL)) {
+                        future.completeExceptionally(new IllegalStateException(
+                                "get all cookies failed: " + Gtk.takeErrorMessage(errorSlot)));
+                    } else {
+                        future.complete(List.of());
+                    }
+                    return;
+                }
+                try {
+                    List<WebViewCookie> cookies = new ArrayList<>();
+                    for (MemorySegment node = list; !node.equals(MemorySegment.NULL);
+                            node = node.reinterpret(16).get(ADDRESS, 8)) {
+                        MemorySegment cookie = node.reinterpret(16).get(ADDRESS, 0);
+                        cookies.add(javaCookie(cookie));
+                    }
+                    future.complete(List.copyOf(cookies));
+                } finally {
+                    freeCookieList(list);
+                }
+            } catch (Throwable t) {
+                future.completeExceptionally(Gtk.rethrow(t));
+            }
+        });
+        try {
+            Gtk.WEBKIT_COOKIE_MANAGER_GET_ALL_COOKIES.invokeExact(cookieManager(),
+                    MemorySegment.NULL, ASYNC_READY_STUB, MemorySegment.ofAddress(token));
+        } catch (Throwable t) {
+            ASYNC.remove(token);
+            future.completeExceptionally(Gtk.rethrow(t));
+        }
+        return future;
+    }
+
+    @Override
+    public CompletionStage<Void> setCookie(WebViewCookie cookie) {
+        MemorySegment nativeCookie;
+        try {
+            nativeCookie = nativeCookie(cookie);
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+        return mutateCookie(nativeCookie, true);
+    }
+
+    @Override
+    public CompletionStage<Void> deleteCookie(WebViewCookieKey key) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        long token = TOKENS.getAndIncrement();
+        ASYNC.put(token, (source, result) -> {
+            MemorySegment copy = MemorySegment.NULL;
+            try (Arena confined = Arena.ofConfined()) {
+                MemorySegment errorSlot = confined.allocate(ADDRESS);
+                errorSlot.set(ADDRESS, 0, MemorySegment.NULL);
+                MemorySegment list = (MemorySegment)
+                        Gtk.WEBKIT_COOKIE_MANAGER_GET_ALL_COOKIES_FINISH.invokeExact(
+                                source, result, errorSlot);
+                if (list.equals(MemorySegment.NULL)) {
+                    MemorySegment error = errorSlot.get(ADDRESS, 0);
+                    if (!error.equals(MemorySegment.NULL)) {
+                        future.completeExceptionally(new IllegalStateException(
+                                "locate cookie for delete failed: "
+                                        + Gtk.takeErrorMessage(errorSlot)));
+                    } else {
+                        future.complete(null);
+                    }
+                    return;
+                }
+                try {
+                    for (MemorySegment node = list; !node.equals(MemorySegment.NULL);
+                            node = node.reinterpret(16).get(ADDRESS, 8)) {
+                        MemorySegment candidate = node.reinterpret(16).get(ADDRESS, 0);
+                        if (matchesCookieKey(candidate, key)) {
+                            copy = (MemorySegment) Gtk.SOUP_COOKIE_COPY.invokeExact(candidate);
+                            break;
+                        }
+                    }
+                } finally {
+                    freeCookieList(list);
+                }
+                if (copy.equals(MemorySegment.NULL)) {
+                    future.complete(null); // Missing keys are intentionally idempotent.
+                } else {
+                    MemorySegment cookieToDelete = copy;
+                    copy = MemorySegment.NULL; // mutateCookie now owns and frees it.
+                    mutateCookie(cookieToDelete, false).whenComplete((ignored, error) -> {
+                        if (error == null) {
+                            future.complete(null);
+                        } else {
+                            future.completeExceptionally(error);
+                        }
+                    });
+                }
+            } catch (Throwable t) {
+                if (!copy.equals(MemorySegment.NULL)) {
+                    freeCookie(copy);
+                }
+                future.completeExceptionally(Gtk.rethrow(t));
+            }
+        });
+        try {
+            Gtk.WEBKIT_COOKIE_MANAGER_GET_ALL_COOKIES.invokeExact(cookieManager(),
+                    MemorySegment.NULL, ASYNC_READY_STUB, MemorySegment.ofAddress(token));
+        } catch (Throwable t) {
+            ASYNC.remove(token);
+            future.completeExceptionally(Gtk.rethrow(t));
+        }
+        return future;
+    }
+
+    private CompletionStage<Void> mutateCookie(MemorySegment cookie, boolean add) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        long token = TOKENS.getAndIncrement();
+        ASYNC.put(token, (source, result) -> {
+            try (Arena confined = Arena.ofConfined()) {
+                MemorySegment errorSlot = confined.allocate(ADDRESS);
+                errorSlot.set(ADDRESS, 0, MemorySegment.NULL);
+                int changed = add
+                        ? (int) Gtk.WEBKIT_COOKIE_MANAGER_ADD_COOKIE_FINISH.invokeExact(
+                                source, result, errorSlot)
+                        : (int) Gtk.WEBKIT_COOKIE_MANAGER_DELETE_COOKIE_FINISH.invokeExact(
+                                source, result, errorSlot);
+                if (changed == 0 && !errorSlot.get(ADDRESS, 0).equals(MemorySegment.NULL)) {
+                    future.completeExceptionally(new IllegalStateException(
+                            (add ? "add" : "delete") + " cookie failed: "
+                                    + Gtk.takeErrorMessage(errorSlot)));
+                } else {
+                    // Deleting a missing key is intentionally idempotent.
+                    future.complete(null);
+                }
+            } catch (Throwable t) {
+                future.completeExceptionally(Gtk.rethrow(t));
+            } finally {
+                freeCookie(cookie);
+            }
+        });
+        try {
+            if (add) {
+                Gtk.WEBKIT_COOKIE_MANAGER_ADD_COOKIE.invokeExact(cookieManager(), cookie,
+                        MemorySegment.NULL, ASYNC_READY_STUB, MemorySegment.ofAddress(token));
+            } else {
+                Gtk.WEBKIT_COOKIE_MANAGER_DELETE_COOKIE.invokeExact(cookieManager(), cookie,
+                        MemorySegment.NULL, ASYNC_READY_STUB, MemorySegment.ofAddress(token));
+            }
+        } catch (Throwable t) {
+            ASYNC.remove(token);
+            freeCookie(cookie);
+            future.completeExceptionally(Gtk.rethrow(t));
+        }
+        return future;
+    }
+
+    private MemorySegment cookieManager() throws Throwable {
+        MemorySegment dataManager = (MemorySegment)
+                Gtk.WEBKIT_WEB_CONTEXT_GET_WEBSITE_DATA_MANAGER.invokeExact(webContext);
+        return (MemorySegment)
+                Gtk.WEBKIT_WEBSITE_DATA_MANAGER_GET_COOKIE_MANAGER.invokeExact(dataManager);
+    }
+
+    private WebViewCookie javaCookie(MemorySegment cookie) throws Throwable {
+        MemorySegment expires = (MemorySegment) Gtk.SOUP_COOKIE_GET_EXPIRES.invokeExact(cookie);
+        Optional<Instant> expiresAt = expires.equals(MemorySegment.NULL)
+                ? Optional.empty()
+                : Optional.of(Instant.ofEpochSecond(
+                        (long) Gtk.G_DATE_TIME_TO_UNIX.invokeExact(expires)));
+        return new WebViewCookie(
+                Gtk.javaString((MemorySegment) Gtk.SOUP_COOKIE_GET_NAME.invokeExact(cookie)),
+                Gtk.javaString((MemorySegment) Gtk.SOUP_COOKIE_GET_VALUE.invokeExact(cookie)),
+                Gtk.javaString((MemorySegment) Gtk.SOUP_COOKIE_GET_DOMAIN.invokeExact(cookie)),
+                Gtk.javaString((MemorySegment) Gtk.SOUP_COOKIE_GET_PATH.invokeExact(cookie)),
+                expiresAt,
+                (int) Gtk.SOUP_COOKIE_GET_SECURE.invokeExact(cookie) != 0,
+                (int) Gtk.SOUP_COOKIE_GET_HTTP_ONLY.invokeExact(cookie) != 0);
+    }
+
+    private boolean matchesCookieKey(MemorySegment cookie, WebViewCookieKey key) throws Throwable {
+        return key.name().equals(Gtk.javaString(
+                (MemorySegment) Gtk.SOUP_COOKIE_GET_NAME.invokeExact(cookie)))
+                && key.domain().equals(Gtk.javaString(
+                        (MemorySegment) Gtk.SOUP_COOKIE_GET_DOMAIN.invokeExact(cookie)))
+                && key.path().equals(Gtk.javaString(
+                        (MemorySegment) Gtk.SOUP_COOKIE_GET_PATH.invokeExact(cookie)));
+    }
+
+    private MemorySegment nativeCookie(WebViewCookie cookie) {
+        try (Arena confined = Arena.ofConfined()) {
+            MemorySegment nativeCookie = (MemorySegment) Gtk.SOUP_COOKIE_NEW.invokeExact(
+                    confined.allocateFrom(cookie.name()), confined.allocateFrom(cookie.value()),
+                    confined.allocateFrom(cookie.domain()), confined.allocateFrom(cookie.path()),
+                    -1);
+            if (nativeCookie.equals(MemorySegment.NULL)) {
+                throw new IllegalArgumentException("libsoup rejected cookie " + cookie.key());
+            }
+            try {
+                if (cookie.expiresAt().isPresent()) {
+                    MemorySegment date = (MemorySegment)
+                            Gtk.G_DATE_TIME_NEW_FROM_UNIX_UTC.invokeExact(
+                                    cookie.expiresAt().orElseThrow().getEpochSecond());
+                    if (date.equals(MemorySegment.NULL)) {
+                        throw new IllegalArgumentException(
+                                "Cookie expiry is outside the GLib supported range");
+                    }
+                    try {
+                        Gtk.SOUP_COOKIE_SET_EXPIRES.invokeExact(nativeCookie, date);
+                    } finally {
+                        Gtk.G_DATE_TIME_UNREF.invokeExact(date);
+                    }
+                }
+                Gtk.SOUP_COOKIE_SET_SECURE.invokeExact(nativeCookie, cookie.secure() ? 1 : 0);
+                Gtk.SOUP_COOKIE_SET_HTTP_ONLY.invokeExact(
+                        nativeCookie, cookie.httpOnly() ? 1 : 0);
+                return nativeCookie;
+            } catch (Throwable t) {
+                freeCookie(nativeCookie);
+                throw t;
+            }
+        } catch (Throwable t) {
+            throw Gtk.rethrow(t);
+        }
+    }
+
+    private static void freeCookieList(MemorySegment list) throws Throwable {
+        for (MemorySegment node = list; !node.equals(MemorySegment.NULL);
+                node = node.reinterpret(16).get(ADDRESS, 8)) {
+            freeCookie(node.reinterpret(16).get(ADDRESS, 0));
+        }
+        Gtk.G_LIST_FREE.invokeExact(list);
+    }
+
+    private static void freeCookie(MemorySegment cookie) {
+        try {
+            Gtk.SOUP_COOKIE_FREE.invokeExact(cookie);
+        } catch (Throwable t) {
+            throw Gtk.rethrow(t);
+        }
     }
 
     /** Called from the window's destroy path; detaches and releases the pipeline. */

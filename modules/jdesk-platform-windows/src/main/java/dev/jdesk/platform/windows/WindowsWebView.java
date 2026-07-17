@@ -1,6 +1,8 @@
 package dev.jdesk.platform.windows;
 
 import dev.jdesk.api.Subscription;
+import dev.jdesk.api.WebViewCookie;
+import dev.jdesk.api.WebViewCookieKey;
 import dev.jdesk.api.WebViewDataType;
 import dev.jdesk.ffm.NativeCallbackRegistry;
 import dev.jdesk.webview.spi.InitScripts;
@@ -23,8 +25,11 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.MemorySegment;
 import java.net.URI;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -35,6 +40,7 @@ import java.util.function.Consumer;
 
 import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
+import static java.lang.foreign.ValueLayout.JAVA_DOUBLE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
@@ -78,6 +84,12 @@ final class WindowsWebView implements PlatformWebView {
             FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS);
     private static final FunctionDescriptor THIS_INT =
             FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT);
+    private static final FunctionDescriptor THIS_DOUBLE =
+            FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_DOUBLE);
+    private static final FunctionDescriptor THIS_3PTR =
+            FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS, ADDRESS);
+    private static final FunctionDescriptor THIS_4PTR_OUT =
+            FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS);
     private static final FunctionDescriptor REMOVE_TOKEN =
             FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_LONG);
 
@@ -755,6 +767,157 @@ final class WindowsWebView implements PlatformWebView {
                     .thenCompose(stage -> stage);
         }
         return clearProfileData(nativeKinds);
+    }
+
+    @Override
+    public CompletionStage<List<WebViewCookie>> cookies() {
+        CompletableFuture<List<WebViewCookie>> future = new CompletableFuture<>();
+        MemorySegment completion = ComCallback.hrPtrHandler(registry,
+                "GetCookiesCompletedHandler", WebView2.IID_GET_COOKIES_COMPLETED_HANDLER,
+                (self, hr, cookieList) -> {
+                    if (hr < 0) {
+                        future.completeExceptionally(new Hresult.ComException("GetCookies", hr));
+                        return Hresult.S_OK;
+                    }
+                    try {
+                        future.complete(readCookies(cookieList));
+                    } catch (RuntimeException e) {
+                        future.completeExceptionally(e);
+                    }
+                    return Hresult.S_OK;
+                });
+        MemorySegment manager = MemorySegment.NULL;
+        try (Arena confined = Arena.ofConfined()) {
+            manager = cookieManager(confined);
+            ComRuntime.invokeChecked(manager, WebView2.COOKIE_MANAGER_GET_COOKIES,
+                    "CookieManager.GetCookies", THIS_PTR_PTR,
+                    MemorySegment.NULL, completion);
+        } catch (RuntimeException e) {
+            future.completeExceptionally(e);
+        } finally {
+            ComRuntime.release(manager);
+        }
+        return future;
+    }
+
+    @Override
+    public CompletionStage<Void> setCookie(WebViewCookie cookie) {
+        MemorySegment manager = MemorySegment.NULL;
+        MemorySegment nativeCookie = MemorySegment.NULL;
+        try (Arena confined = Arena.ofConfined()) {
+            manager = cookieManager(confined);
+            MemorySegment out = confined.allocate(ADDRESS);
+            ComRuntime.invokeChecked(manager, WebView2.COOKIE_MANAGER_CREATE_COOKIE,
+                    "CookieManager.CreateCookie", THIS_4PTR_OUT,
+                    WideStrings.alloc(confined, cookie.name()),
+                    WideStrings.alloc(confined, cookie.value()),
+                    WideStrings.alloc(confined, cookie.domain()),
+                    WideStrings.alloc(confined, cookie.path()), out);
+            nativeCookie = out.get(ADDRESS, 0);
+            if (cookie.expiresAt().isPresent()) {
+                ComRuntime.invokeChecked(nativeCookie, WebView2.COOKIE_PUT_EXPIRES,
+                        "Cookie.put_Expires", THIS_DOUBLE,
+                        cookie.expiresAt().orElseThrow().toEpochMilli() / 1_000.0);
+            }
+            ComRuntime.invokeChecked(nativeCookie, WebView2.COOKIE_PUT_IS_SECURE,
+                    "Cookie.put_IsSecure", THIS_INT, cookie.secure() ? 1 : 0);
+            ComRuntime.invokeChecked(nativeCookie, WebView2.COOKIE_PUT_IS_HTTP_ONLY,
+                    "Cookie.put_IsHttpOnly", THIS_INT, cookie.httpOnly() ? 1 : 0);
+            ComRuntime.invokeChecked(manager, WebView2.COOKIE_MANAGER_ADD_OR_UPDATE_COOKIE,
+                    "CookieManager.AddOrUpdateCookie", THIS_PTR, nativeCookie);
+            return CompletableFuture.completedFuture(null);
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        } finally {
+            ComRuntime.release(nativeCookie);
+            ComRuntime.release(manager);
+        }
+    }
+
+    @Override
+    public CompletionStage<Void> deleteCookie(WebViewCookieKey key) {
+        MemorySegment manager = MemorySegment.NULL;
+        try (Arena confined = Arena.ofConfined()) {
+            manager = cookieManager(confined);
+            ComRuntime.invokeChecked(manager,
+                    WebView2.COOKIE_MANAGER_DELETE_WITH_DOMAIN_AND_PATH,
+                    "CookieManager.DeleteCookiesWithDomainAndPath", THIS_3PTR,
+                    WideStrings.alloc(confined, key.name()),
+                    WideStrings.alloc(confined, key.domain()),
+                    WideStrings.alloc(confined, key.path()));
+            return CompletableFuture.completedFuture(null);
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        } finally {
+            ComRuntime.release(manager);
+        }
+    }
+
+    private MemorySegment cookieManager(Arena arena) {
+        MemorySegment out = arena.allocate(ADDRESS);
+        ComRuntime.invokeChecked(webView, WebView2.WV_GET_COOKIE_MANAGER,
+                "get_CookieManager", THIS_PTR, out);
+        return out.get(ADDRESS, 0);
+    }
+
+    private List<WebViewCookie> readCookies(MemorySegment cookieList) {
+        try (Arena confined = Arena.ofConfined()) {
+            MemorySegment countOut = confined.allocate(JAVA_INT);
+            ComRuntime.invokeChecked(cookieList, WebView2.COOKIE_LIST_GET_COUNT,
+                    "CookieList.get_Count", THIS_PTR, countOut);
+            int count = countOut.get(JAVA_INT, 0);
+            List<WebViewCookie> cookies = new ArrayList<>(count);
+            for (int index = 0; index < count; index++) {
+                MemorySegment cookieOut = confined.allocate(ADDRESS);
+                ComRuntime.invokeChecked(cookieList, WebView2.COOKIE_LIST_GET_VALUE_AT_INDEX,
+                        "CookieList.GetValueAtIndex",
+                        FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, ADDRESS),
+                        index, cookieOut);
+                MemorySegment cookie = cookieOut.get(ADDRESS, 0);
+                try {
+                    cookies.add(readCookie(cookie, confined));
+                } finally {
+                    ComRuntime.release(cookie);
+                }
+            }
+            return List.copyOf(cookies);
+        }
+    }
+
+    private WebViewCookie readCookie(MemorySegment cookie, Arena arena) {
+        boolean session = readBool(cookie, WebView2.COOKIE_GET_IS_SESSION,
+                "Cookie.get_IsSession", arena);
+        Optional<Instant> expiresAt = session
+                ? Optional.empty()
+                : Optional.of(Instant.ofEpochMilli(Math.round(readDouble(cookie,
+                        WebView2.COOKIE_GET_EXPIRES, "Cookie.get_Expires", arena) * 1_000.0)));
+        return new WebViewCookie(
+                readString(cookie, WebView2.COOKIE_GET_NAME, "Cookie.get_Name", arena),
+                readString(cookie, WebView2.COOKIE_GET_VALUE, "Cookie.get_Value", arena),
+                readString(cookie, WebView2.COOKIE_GET_DOMAIN, "Cookie.get_Domain", arena),
+                readString(cookie, WebView2.COOKIE_GET_PATH, "Cookie.get_Path", arena),
+                expiresAt,
+                readBool(cookie, WebView2.COOKIE_GET_IS_SECURE, "Cookie.get_IsSecure", arena),
+                readBool(cookie, WebView2.COOKIE_GET_IS_HTTP_ONLY,
+                        "Cookie.get_IsHttpOnly", arena));
+    }
+
+    private String readString(MemorySegment object, int slot, String operation, Arena arena) {
+        MemorySegment out = arena.allocate(ADDRESS);
+        ComRuntime.invokeChecked(object, slot, operation, THIS_PTR, out);
+        return WideStrings.readAndFreeCoTaskMem(out.get(ADDRESS, 0));
+    }
+
+    private boolean readBool(MemorySegment object, int slot, String operation, Arena arena) {
+        MemorySegment out = arena.allocate(JAVA_INT);
+        ComRuntime.invokeChecked(object, slot, operation, THIS_PTR, out);
+        return out.get(JAVA_INT, 0) != 0;
+    }
+
+    private double readDouble(MemorySegment object, int slot, String operation, Arena arena) {
+        MemorySegment out = arena.allocate(JAVA_DOUBLE);
+        ComRuntime.invokeChecked(object, slot, operation, THIS_PTR, out);
+        return out.get(JAVA_DOUBLE, 0);
     }
 
     private CompletionStage<Void> clearProfileData(int kinds) {

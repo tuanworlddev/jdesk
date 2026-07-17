@@ -2,6 +2,8 @@ package dev.jdesk.platform.macos;
 
 import dev.jdesk.api.Subscription;
 import dev.jdesk.api.WebViewSessionConfig;
+import dev.jdesk.api.WebViewCookie;
+import dev.jdesk.api.WebViewCookieKey;
 import dev.jdesk.api.WebViewDataType;
 import dev.jdesk.ffm.NativeCallbackRegistry;
 import dev.jdesk.webview.spi.InitScripts;
@@ -25,6 +27,10 @@ import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.net.URI;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -959,6 +965,131 @@ final class MacWebView implements PlatformWebView {
             future.completeExceptionally(e);
         }
         return future;
+    }
+
+    @Override
+    public CompletionStage<List<WebViewCookie>> cookies() {
+        CompletableFuture<List<WebViewCookie>> future = new CompletableFuture<>();
+        MemorySegment completion = ObjCBlock.create1(app.blockRegistry(), "getAllCookiesCompletion",
+                (block, array) -> {
+                    try {
+                        long count = ObjC.sendLong(array, "count");
+                        List<WebViewCookie> result = new ArrayList<>(Math.toIntExact(count));
+                        for (long i = 0; i < count; i++) {
+                            result.add(javaCookie(ObjC.sendIndexed(array, "objectAtIndex:", i)));
+                        }
+                        future.complete(List.copyOf(result));
+                    } catch (RuntimeException e) {
+                        future.completeExceptionally(e);
+                    }
+                });
+        try {
+            ObjC.sendVoid(cookieStore(), "getAllCookies:", completion);
+        } catch (RuntimeException e) {
+            future.completeExceptionally(e);
+        }
+        return future;
+    }
+
+    @Override
+    public CompletionStage<Void> setCookie(WebViewCookie cookie) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        MemorySegment completion = ObjCBlock.create0(app.blockRegistry(), "setCookieCompletion",
+                block -> future.complete(null));
+        try {
+            ObjC.sendVoid(cookieStore(), "setCookie:completionHandler:",
+                    nativeCookie(cookie), completion);
+        } catch (RuntimeException e) {
+            future.completeExceptionally(e);
+        }
+        return future;
+    }
+
+    @Override
+    public CompletionStage<Void> deleteCookie(WebViewCookieKey key) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        MemorySegment deleted = ObjCBlock.create0(app.blockRegistry(), "deleteCookieCompletion",
+                block -> future.complete(null));
+        MemorySegment located = ObjCBlock.create1(app.blockRegistry(), "locateCookieForDelete",
+                (block, array) -> {
+                    try {
+                        long count = ObjC.sendLong(array, "count");
+                        for (long i = 0; i < count; i++) {
+                            MemorySegment cookie = ObjC.sendIndexed(array, "objectAtIndex:", i);
+                            if (key.name().equals(ObjC.javaString(ObjC.send(cookie, "name")))
+                                    && key.domain().equals(ObjC.javaString(
+                                            ObjC.send(cookie, "domain")))
+                                    && key.path().equals(ObjC.javaString(
+                                            ObjC.send(cookie, "path")))) {
+                                ObjC.sendVoid(cookieStore(), "deleteCookie:completionHandler:",
+                                        cookie, deleted);
+                                return;
+                            }
+                        }
+                        future.complete(null); // Missing keys are intentionally idempotent.
+                    } catch (RuntimeException e) {
+                        future.completeExceptionally(e);
+                    }
+                });
+        try {
+            ObjC.sendVoid(cookieStore(), "getAllCookies:", located);
+        } catch (RuntimeException e) {
+            future.completeExceptionally(e);
+        }
+        return future;
+    }
+
+    private MemorySegment cookieStore() {
+        return ObjC.send(websiteDataStore, "httpCookieStore");
+    }
+
+    private WebViewCookie javaCookie(MemorySegment cookie) {
+        MemorySegment expiresDate = ObjC.send(cookie, "expiresDate");
+        Optional<Instant> expiresAt = expiresDate.equals(MemorySegment.NULL)
+                ? Optional.empty()
+                : Optional.of(Instant.ofEpochMilli(Math.round(
+                        ObjC.sendDouble(expiresDate, "timeIntervalSince1970") * 1_000.0)));
+        return new WebViewCookie(
+                ObjC.javaString(ObjC.send(cookie, "name")),
+                ObjC.javaString(ObjC.send(cookie, "value")),
+                ObjC.javaString(ObjC.send(cookie, "domain")),
+                ObjC.javaString(ObjC.send(cookie, "path")),
+                expiresAt,
+                ObjC.sendBool(cookie, "isSecure"),
+                ObjC.sendBool(cookie, "isHTTPOnly"));
+    }
+
+    private MemorySegment nativeCookie(WebViewCookie cookie) {
+        StringBuilder header = new StringBuilder(cookie.name()).append('=').append(cookie.value());
+        // NSHTTPCookie treats any explicit Domain attribute as a domain cookie and
+        // canonicalizes it with a leading dot. Omit it for host-only identities so a
+        // round trip preserves WebViewCookieKey.domain().
+        if (cookie.domain().startsWith(".")) {
+            header.append("; Domain=").append(cookie.domain());
+        }
+        header.append("; Path=").append(cookie.path());
+        cookie.expiresAt().ifPresent(expires -> header.append("; Expires=").append(
+                DateTimeFormatter.RFC_1123_DATE_TIME.format(expires.atZone(ZoneOffset.UTC))));
+        if (cookie.secure()) {
+            header.append("; Secure");
+        }
+        if (cookie.httpOnly()) {
+            header.append("; HttpOnly");
+        }
+        MemorySegment fields = ObjC.send(ObjC.cls("NSDictionary"),
+                "dictionaryWithObject:forKey:", ObjC.nsString(header.toString()),
+                ObjC.nsString("Set-Cookie"));
+        String host = cookie.domain().startsWith(".")
+                ? cookie.domain().substring(1) : cookie.domain();
+        MemorySegment url = ObjC.send(ObjC.cls("NSURL"), "URLWithString:",
+                ObjC.nsString((cookie.secure() ? "https" : "http") + "://" + host
+                        + cookie.path()));
+        MemorySegment parsed = ObjC.send(ObjC.cls("NSHTTPCookie"),
+                "cookiesWithResponseHeaderFields:forURL:", fields, url);
+        if (ObjC.sendLong(parsed, "count") == 0) {
+            throw new IllegalArgumentException("Foundation rejected the cookie");
+        }
+        return ObjC.sendIndexed(parsed, "objectAtIndex:", 0);
     }
 
     /** Called from the window's willClose path; detaches and releases the pipeline. */

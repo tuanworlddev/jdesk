@@ -75,7 +75,8 @@ Java→JS event; async command on a non-UI thread; cancellation of a real sleepi
 unknown-command rejection; capability denial *before* handler execution; oversize-payload
 rejection; 100 concurrent invokes with correct ids; remote-navigation blocked; asset
 200/404/traversal-rejected; same-session Web storage sharing, cross-session isolation, native
-user-agent override and session-wide native data clearing; secondary-window create/close/recreate
+user-agent override, session-wide native data clearing, and native cookie create/read/update/delete
+(including expiry, Secure, HttpOnly and idempotent deletion); secondary-window create/close/recreate
 cycles; clean shutdown
 with zero pending invocations. The page renders `PASS <run-id>` only after all Java and JS
 assertions pass. A **stress** profile (`-PjdeskStress=true`) adds ≥ 10,000 IPC round trips

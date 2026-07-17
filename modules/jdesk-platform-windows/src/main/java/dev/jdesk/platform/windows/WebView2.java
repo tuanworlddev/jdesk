@@ -23,6 +23,8 @@ final class WebView2 {
     static final String IID_PROFILE2 = "fa740d4b-5eae-4344-a8ad-74be31925397";
     static final String IID_CLEAR_BROWSING_DATA_COMPLETED_HANDLER =
             "e9710a06-1d1d-49b2-8234-226f35846ae5";
+    static final String IID_GET_COOKIES_COMPLETED_HANDLER =
+            "5a4f5069-5c15-47c3-8646-f4de1c116670";
     static final String IID_WEB_MESSAGE_RECEIVED_HANDLER = "57213f19-00e6-49fa-8e07-898ea01ecbd2";
     static final String IID_NAVIGATION_STARTING_HANDLER = "9adbe429-f36d-432b-9ddc-f8881fbd76e3";
     static final String IID_NAVIGATION_COMPLETED_HANDLER = "d33a35bf-1c49-4f98-93ab-006e0533fe1c";
@@ -65,6 +67,7 @@ final class WebView2 {
     static final int WV_ADD_NEW_WINDOW_REQUESTED = 44;
     static final int WV_ADD_WEB_RESOURCE_REQUESTED = 55;
     static final int WV_ADD_WEB_RESOURCE_REQUESTED_FILTER = 57;
+    static final int WV_GET_COOKIE_MANAGER = 66;
     // ICoreWebView2_13 appends get_Profile after the inherited slots.
     static final int WV13_GET_PROFILE = 105;
 
@@ -73,6 +76,29 @@ final class WebView2 {
     static final int BROWSING_DATA_LOCAL_STORAGE = 0x4;
     static final int BROWSING_DATA_COOKIES = 0x40;
     static final int BROWSING_DATA_DISK_CACHE = 0x100;
+
+    // ---- ICoreWebView2CookieManager ----
+    static final int COOKIE_MANAGER_CREATE_COOKIE = 3;
+    static final int COOKIE_MANAGER_GET_COOKIES = 5;
+    static final int COOKIE_MANAGER_ADD_OR_UPDATE_COOKIE = 6;
+    static final int COOKIE_MANAGER_DELETE_WITH_DOMAIN_AND_PATH = 9;
+
+    // ---- ICoreWebView2CookieList ----
+    static final int COOKIE_LIST_GET_COUNT = 3;
+    static final int COOKIE_LIST_GET_VALUE_AT_INDEX = 4;
+
+    // ---- ICoreWebView2Cookie ----
+    static final int COOKIE_GET_NAME = 3;
+    static final int COOKIE_GET_VALUE = 4;
+    static final int COOKIE_GET_DOMAIN = 6;
+    static final int COOKIE_GET_PATH = 7;
+    static final int COOKIE_GET_EXPIRES = 8;
+    static final int COOKIE_PUT_EXPIRES = 9;
+    static final int COOKIE_GET_IS_HTTP_ONLY = 10;
+    static final int COOKIE_PUT_IS_HTTP_ONLY = 11;
+    static final int COOKIE_GET_IS_SECURE = 14;
+    static final int COOKIE_PUT_IS_SECURE = 15;
+    static final int COOKIE_GET_IS_SESSION = 16;
 
     // ---- ICoreWebView2Settings ----
     static final int SETTINGS_GET_ARE_DEV_TOOLS_ENABLED = 11;

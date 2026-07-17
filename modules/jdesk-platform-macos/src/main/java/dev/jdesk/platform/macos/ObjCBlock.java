@@ -35,8 +35,11 @@ final class ObjCBlock {
 
     private static final FunctionDescriptor INVOKE2_DESC =
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS);
+    private static final FunctionDescriptor INVOKE1_DESC =
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS);
     private static final FunctionDescriptor INVOKE0_DESC = FunctionDescriptor.ofVoid(ADDRESS);
     private static final MethodHandle FN0_INVOKE;
+    private static final MethodHandle FN1_INVOKE;
     private static final MethodHandle FN2_INVOKE;
     /** Calls a received block's invoke pointer with one NSInteger argument. */
     private static final MethodHandle INVOKE_WITH_LONG = ObjC.LINKER.downcallHandle(
@@ -46,6 +49,8 @@ final class ObjCBlock {
         try {
             FN0_INVOKE = MethodHandles.lookup().findVirtual(Fn0.class, "invoke",
                     MethodType.methodType(void.class, MemorySegment.class));
+            FN1_INVOKE = MethodHandles.lookup().findVirtual(Fn1.class, "invoke",
+                    MethodType.methodType(void.class, MemorySegment.class, MemorySegment.class));
             FN2_INVOKE = MethodHandles.lookup().findVirtual(Fn2.class, "invoke",
                     MethodType.methodType(void.class, MemorySegment.class, MemorySegment.class,
                             MemorySegment.class));
@@ -57,6 +62,11 @@ final class ObjCBlock {
     /** Java body of a no-argument completion block. */
     interface Fn0 {
         void invoke(MemorySegment block);
+    }
+
+    /** Java body of a one-object-argument completion block. */
+    interface Fn1 {
+        void invoke(MemorySegment block, MemorySegment arg0);
     }
 
     /** Java body of a two-object-argument completion block. */
@@ -86,6 +96,31 @@ final class ObjCBlock {
         };
         MethodHandle handle = FN0_INVOKE.bindTo(gated);
         MemorySegment stub = ObjC.LINKER.upcallStub(handle, INVOKE0_DESC, arena);
+        MemorySegment block = globalBlock(arena, stub);
+        registry.register(new NativeCallbackRegistry.Registration(
+                name, gated, handle, stub, null, () -> { }));
+        return block;
+    }
+
+    /** Builds a completion block of shape {@code void (^)(id)}. */
+    static MemorySegment create1(NativeCallbackRegistry registry, String name, Fn1 body) {
+        Arena arena = registry.arena();
+        CallbackGate gate = registry.gate();
+        Fn1 gated = (block, arg0) -> {
+            if (!gate.enter()) {
+                LOG.log(Level.WARNING, "Rejected late block callback {0} after close", name);
+                return;
+            }
+            try {
+                body.invoke(block, arg0);
+            } catch (Throwable t) {
+                LOG.log(Level.ERROR, "Block callback {0} threw", name, t);
+            } finally {
+                gate.exit();
+            }
+        };
+        MethodHandle handle = FN1_INVOKE.bindTo(gated);
+        MemorySegment stub = ObjC.LINKER.upcallStub(handle, INVOKE1_DESC, arena);
         MemorySegment block = globalBlock(arena, stub);
         registry.register(new NativeCallbackRegistry.Registration(
                 name, gated, handle, stub, null, () -> { }));

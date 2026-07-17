@@ -54,6 +54,30 @@ For `LOCAL_STORAGE`, JDesk supplements WebView2's profile API by clearing storag
 That synchronous write updates the backing store shared by the session; the native profile clear
 still handles standard origins. WKWebView and WebKitGTK use their native local-storage categories.
 
+## Manage cookies
+
+Cookie operations are also session-wide and include `HttpOnly` cookies that page JavaScript cannot
+inspect. Call them through any open window in the target session:
+
+```java
+import dev.jdesk.api.WebViewCookie;
+import dev.jdesk.api.WebViewCookieKey;
+
+var key = new WebViewCookieKey("session", "example.com", "/");
+window.setWebViewCookie(WebViewCookie.session(
+        key.name(), "token", key.domain(), key.path(), true, true));
+
+var cookies = window.webViewCookies();
+window.deleteWebViewCookie(key); // idempotent
+```
+
+Construct `WebViewCookie` directly with `Optional<Instant>` for a persistent cookie; an empty
+expiry means a session cookie. `setWebViewCookie` creates or replaces the cookie identified by
+name, domain and path. A domain beginning with `.` is a domain cookie; a domain without it is
+host-only. SameSite and partitioned-cookie attributes are not represented in this first portable
+contract. Use `clearWebViewData(Set.of(WebViewDataType.COOKIES))` to delete every cookie in the
+session.
+
 The implementation uses public engine APIs:
 
 - Windows: one WebView2 environment/user-data folder per session,
@@ -75,8 +99,8 @@ The implementation uses public engine APIs:
   remain for compatibility but must not be used when durable DOM storage is required. Private
   sessions support in-process DOM storage. Windows supports named persistent sessions.
 
-Cookie CRUD, proxy configuration, download decisions and origin-aware permission prompts remain
-roadmap work. The current API intentionally does not expose partial adapter-specific controls.
+Proxy configuration, download decisions and origin-aware permission prompts remain roadmap work.
+The current API intentionally does not expose partial adapter-specific controls.
 
 ## Engine references
 
@@ -89,3 +113,6 @@ roadmap work. The current API intentionally does not expose partial adapter-spec
 - [WebKitGTK `WebContext`](https://webkitgtk.org/reference/webkit2gtk/stable/class.WebContext.html)
   and [`WebView`](https://webkitgtk.org/reference/webkit2gtk/stable/class.WebView.html)
 - [WebKitGTK `WebsiteDataManager.clear`](https://webkitgtk.org/reference/webkit2gtk/stable/method.WebsiteDataManager.clear.html)
+- [WebView2 `ICoreWebView2CookieManager`](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/icorewebview2cookiemanager)
+- [WKHTTPCookieStore](https://developer.apple.com/documentation/webkit/wkhttpcookiestore)
+- [WebKitGTK `CookieManager`](https://webkitgtk.org/reference/webkit2gtk/stable/class.CookieManager.html)

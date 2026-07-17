@@ -3,8 +3,11 @@ package dev.jdesk.webview.spi;
 import dev.jdesk.api.ErrorCode;
 import dev.jdesk.api.JDeskException;
 import dev.jdesk.api.Subscription;
+import dev.jdesk.api.WebViewCookie;
+import dev.jdesk.api.WebViewCookieKey;
 import dev.jdesk.api.WebViewDataType;
 import java.net.URI;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -57,6 +60,24 @@ public interface PlatformWebView extends AutoCloseable {
         return CompletableFuture.failedFuture(
                 new JDeskException(ErrorCode.ILLEGAL_STATE,
                         "WebView data clearing is not supported by this platform adapter"));
+    }
+
+    /** Returns all HTTP cookies in the native browser session that owns this view. */
+    default CompletionStage<List<WebViewCookie>> cookies() {
+        return CompletableFuture.failedFuture(new JDeskException(ErrorCode.ILLEGAL_STATE,
+                "WebView cookie management is not supported by this platform adapter"));
+    }
+
+    /** Adds or updates an HTTP cookie in the native browser session that owns this view. */
+    default CompletionStage<Void> setCookie(WebViewCookie cookie) {
+        return CompletableFuture.failedFuture(new JDeskException(ErrorCode.ILLEGAL_STATE,
+                "WebView cookie management is not supported by this platform adapter"));
+    }
+
+    /** Deletes an HTTP cookie from the native browser session that owns this view. */
+    default CompletionStage<Void> deleteCookie(WebViewCookieKey key) {
+        return CompletableFuture.failedFuture(new JDeskException(ErrorCode.ILLEGAL_STATE,
+                "WebView cookie management is not supported by this platform adapter"));
     }
 
     @Override
