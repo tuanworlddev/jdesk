@@ -11,9 +11,9 @@ under `docs/verification/` preserve them.
 - Stability: **pre-alpha**; public API compatibility is checked, but breaking changes remain
   possible before 1.0 under the documented support policy.
 - Primary targets: Windows x64, macOS ARM64, Linux x64.
-- Latest verified main commit: `af9a4c8`.
-- Main CI: [run 29519572858](https://github.com/tuanworlddev/jdesk/actions/runs/29519572858).
-- CodeQL: [run 29519572747](https://github.com/tuanworlddev/jdesk/actions/runs/29519572747).
+- Latest verified main commit: `f3f1cb5`.
+- Main CI: [run 29547854377](https://github.com/tuanworlddev/jdesk/actions/runs/29547854377).
+- CodeQL: [run 29547854369](https://github.com/tuanworlddev/jdesk/actions/runs/29547854369).
 
 ## Distribution
 
@@ -58,4 +58,3 @@ open product surfaces are:
 - executable plugin loading/tooling (the current module is the security model only);
 - a supported E2E SDK, Maven tooling parity and secondary CPU architectures;
 - store formats, rolling performance baselines, soak tests and pre-1.0 API freeze.
-
