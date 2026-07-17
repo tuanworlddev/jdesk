@@ -195,10 +195,10 @@ discard it at application shutdown. The builder optionally accepts a complete us
 Session ids follow `[a-zA-Z0-9._-]{1,64}`; unsafe ids and control characters in user agents throw
 `INVALID_REQUEST`.
 
-Windows and Linux support named persistent profiles. WKWebView rejects persistent DOM storage for
-the custom `jdesk://` origin, so macOS named persistent sessions fail before creating a window;
-private sessions support in-process DOM storage. Cookie/cache/proxy and download lifecycle methods
-are not public yet; see the roadmap rather than depending on adapter internals.
+Windows supports named persistent profiles. WKWebView and WebKitGTK reject persistent DOM storage
+for the custom `jdesk://` origin, so macOS/Linux named persistent sessions fail before creating a
+window; private sessions support in-process DOM storage. Cookie/cache/proxy and download lifecycle
+methods are not public yet; see the roadmap rather than depending on adapter internals.
 
 ### `WindowId`
 

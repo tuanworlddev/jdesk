@@ -274,9 +274,6 @@ final class Gtk {
             "webkit_web_context_get_default", FunctionDescriptor.of(ADDRESS));
     static final MethodHandle WEBKIT_WEB_CONTEXT_NEW_EPHEMERAL = dl(
             "webkit_web_context_new_ephemeral", FunctionDescriptor.of(ADDRESS));
-    static final MethodHandle WEBKIT_WEB_CONTEXT_NEW_WITH_WEBSITE_DATA_MANAGER = dl(
-            "webkit_web_context_new_with_website_data_manager",
-            FunctionDescriptor.of(ADDRESS, ADDRESS));
     static final MethodHandle WEBKIT_WEB_CONTEXT_REGISTER_URI_SCHEME = dl(
             "webkit_web_context_register_uri_scheme",
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS));

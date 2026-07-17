@@ -670,9 +670,11 @@ public final class Main {
             try {
                 WebViewSessionConfig persistentSession = WebViewSessionConfig
                         .persistent("smoke-persistent").build();
-                boolean macOs = System.getProperty("os.name", "")
-                        .toLowerCase(java.util.Locale.ROOT).contains("mac");
-                if (macOs) {
+                String osName = System.getProperty("os.name", "")
+                        .toLowerCase(java.util.Locale.ROOT);
+                boolean persistentCustomSchemeUnsupported = osName.contains("mac")
+                        || osName.contains("linux");
+                if (persistentCustomSchemeUnsupported) {
                     try {
                         runtime.openWindow(WindowConfig.builder().id(first.value())
                                 .title("unsupported persistent session")
@@ -680,15 +682,15 @@ public final class Main {
                                 .webViewSession(persistentSession).build())
                                 .toCompletableFuture().get(15, TimeUnit.SECONDS);
                         evidence.addCase("java:webview-persistent-session-contract", false,
-                                "macOS accepted a named persistent jdesk:// session");
+                                "WebKit accepted a named persistent jdesk:// session");
                     } catch (Exception expected) {
                         String detail = String.valueOf(expected);
                         persistentSessionPassed = detail.contains(
-                                "Named persistent WebView sessions are not supported on macOS");
+                                "Named persistent WebView sessions are not supported");
                         evidence.addCase("java:webview-persistent-session-contract",
                                 persistentSessionPassed,
                                 persistentSessionPassed
-                                        ? "macOS rejected unsupported named persistence"
+                                        ? "WebKit rejected unsupported named persistence"
                                         : detail);
                     }
                 } else {

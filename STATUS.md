@@ -49,9 +49,10 @@ The current primary-platform CI covers:
 
 The current codebase also contains the first `WebViewSession` slice: stable session ids,
 private storage isolation and native user-agent overrides on all three adapters, plus named
-persistent profiles on Windows and Linux. A real WKWebView run proves same-session `localStorage`
+persistent profiles on Windows. A real WKWebView run proves same-session `localStorage`
 sharing, isolation between private sessions, the exact user-agent override and fail-fast handling
-for unsupported named persistence. Durable `jdesk://` DOM storage on WKWebView and
+for unsupported named persistence; CI repeats the contract probes on WebView2 and WebKitGTK.
+Durable `jdesk://` DOM storage on WKWebView/WebKitGTK and
 cookie/cache/proxy/download/permission controls are still incomplete, so the roadmap item remains
 open.
 

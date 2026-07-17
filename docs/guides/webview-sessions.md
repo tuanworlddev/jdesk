@@ -20,11 +20,11 @@ WindowConfig main = WindowConfig.builder()
         .build();
 ```
 
-On Windows and Linux, replace `privateSession("login")` with `persistent("account-a")` when that
-profile must survive application restarts.
+On Windows, replace `privateSession("login")` with `persistent("account-a")` when that profile must
+survive application restarts.
 
-`PERSISTENT` state is stored in an application- and session-scoped profile on Windows and Linux.
-On macOS, the native default data store is retained for backward compatibility, but WebKit rejects
+`PERSISTENT` state is stored in an application- and session-scoped profile on Windows. On macOS and
+Linux, the native default data store is retained for backward compatibility, but WebKit rejects
 persistent DOM storage for the custom `jdesk://` origin with a `SecurityError`; named persistent
 sessions therefore fail before the window is created. `PRIVATE` state is
 memory-only on WKWebView/WebKitGTK; WebView2 uses a unique adapter-owned temporary user-data folder
@@ -38,7 +38,7 @@ The implementation uses public engine APIs:
   `ICoreWebView2Settings2::put_UserAgent`.
 - macOS: `WKWebsiteDataStore` (`nonPersistentDataStore` or the default persistent store)
   and `WKWebView.customUserAgent`.
-- Linux: one `WebKitWebContext` and `WebKitWebsiteDataManager` per session plus
+- Linux: one ephemeral `WebKitWebContext` per private session plus
   `webkit_settings_set_user_agent`.
 
 ## Validation and compatibility
@@ -48,10 +48,10 @@ The implementation uses public engine APIs:
 - User agents must contain 1–1024 printable characters; CR/LF and other controls are rejected.
 - Reopening one id with different settings in a running application fails instead of silently mixing
   profiles.
-- WKWebView persistent stores do not expose DOM storage to the custom `jdesk://` origin. The macOS
-  adapter rejects named persistent sessions on every OS version; its `default` profile remains for
-  compatibility but must not be used when durable DOM storage is required. Private sessions support
-  in-process DOM storage. Windows and Linux support named persistent sessions.
+- WKWebView and WebKitGTK persistent stores do not expose DOM storage to the custom `jdesk://`
+  origin. The macOS and Linux adapters reject named persistent sessions; their `default` profiles
+  remain for compatibility but must not be used when durable DOM storage is required. Private
+  sessions support in-process DOM storage. Windows supports named persistent sessions.
 
 Cookie CRUD, selective site-data/cache clearing, proxy configuration, download decisions and
 origin-aware permission prompts remain roadmap work. The current API intentionally does not expose

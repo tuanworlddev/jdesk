@@ -23,8 +23,6 @@ import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import dev.jdesk.api.MessageDialog;
 import dev.jdesk.api.MessageDialogResult;
 import java.util.HashMap;
@@ -52,6 +50,9 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
     /** The application currently serving {@code jdesk://} requests. */
     private static final AtomicReference<LinuxPlatformApplication> SCHEME_TARGET =
             new AtomicReference<>();
+    private static final Object DEFAULT_SCHEME_LOCK = new Object();
+    /** The process-wide default context accepts one registration per scheme. */
+    private static boolean defaultSchemeRegistered;
 
     private final PlatformApplicationConfig config;
     private final LinuxUiDispatcher dispatcher;
@@ -151,7 +152,11 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
                     "WebKit returned no context for session '" + session.id() + "'");
         }
         try {
-            registerJdeskScheme(context);
+            if (session.storage() == WebViewSessionConfig.Storage.PERSISTENT) {
+                registerDefaultJdeskScheme(context);
+            } else {
+                registerJdeskScheme(context);
+            }
         } catch (RuntimeException e) {
             Gtk.gObjectUnref(context);
             throw e;
@@ -167,17 +172,14 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
             if (session.storage() == WebViewSessionConfig.Storage.PRIVATE) {
                 return (MemorySegment) Gtk.WEBKIT_WEB_CONTEXT_NEW_EPHEMERAL.invokeExact();
             }
-            Path data = sessionRoot("XDG_DATA_HOME", ".local/share", session.id());
-            Path cache = sessionRoot("XDG_CACHE_HOME", ".cache", session.id());
-            Files.createDirectories(data);
-            Files.createDirectories(cache);
-            MemorySegment manager = WebsiteDataManager.create(data, cache);
-            try {
-                return (MemorySegment) Gtk.WEBKIT_WEB_CONTEXT_NEW_WITH_WEBSITE_DATA_MANAGER
-                        .invokeExact(manager);
-            } finally {
-                Gtk.gObjectUnref(manager);
+            if (!session.id().equals(WebViewSessionConfig.DEFAULT.id())) {
+                throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                        "Named persistent WebView sessions are not supported on Linux; "
+                                + "use the 'default' session or a private session");
             }
+            MemorySegment defaultContext = (MemorySegment)
+                    Gtk.WEBKIT_WEB_CONTEXT_GET_DEFAULT.invokeExact();
+            return Gtk.gObjectRef(defaultContext);
         } catch (RuntimeException e) {
             throw e;
         } catch (Throwable t) {
@@ -186,23 +188,13 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
         }
     }
 
-    private Path sessionRoot(String environment, String fallback, String sessionId) {
-        String override = System.getProperty("jdesk.paths.dir");
-        Path base;
-        if (override != null && !override.isBlank()) {
-            base = Path.of(override).resolve(safePathSegment(config.applicationId()));
-        } else {
-            String configured = System.getenv(environment);
-            base = configured == null || configured.isBlank()
-                    ? Path.of(System.getProperty("user.home", ".")).resolve(fallback)
-                    : Path.of(configured);
-            base = base.resolve(safePathSegment(config.applicationId()));
+    private static void registerDefaultJdeskScheme(MemorySegment context) {
+        synchronized (DEFAULT_SCHEME_LOCK) {
+            if (!defaultSchemeRegistered) {
+                registerJdeskScheme(context);
+                defaultSchemeRegistered = true;
+            }
         }
-        return base.resolve("webview").resolve(sessionId).toAbsolutePath().normalize();
-    }
-
-    private static String safePathSegment(String value) {
-        return value.replaceAll("[^a-zA-Z0-9._-]", "_").replace("..", "_");
     }
 
     @SuppressWarnings("unused") // WebKitURISchemeRequestCallback upcall (GTK main thread)
