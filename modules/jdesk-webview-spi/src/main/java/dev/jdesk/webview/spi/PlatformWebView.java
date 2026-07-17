@@ -1,7 +1,12 @@
 package dev.jdesk.webview.spi;
 
+import dev.jdesk.api.ErrorCode;
+import dev.jdesk.api.JDeskException;
 import dev.jdesk.api.Subscription;
+import dev.jdesk.api.WebViewDataType;
 import java.net.URI;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.function.Consumer;
 
@@ -46,6 +51,13 @@ public interface PlatformWebView extends AutoCloseable {
 
     /** Actual engine setting after native WebView initialization. */
     boolean devToolsEnabled();
+
+    /** Clears selected data for the native browser session that owns this view. */
+    default CompletionStage<Void> clearData(Set<WebViewDataType> dataTypes) {
+        return CompletableFuture.failedFuture(
+                new JDeskException(ErrorCode.ILLEGAL_STATE,
+                        "WebView data clearing is not supported by this platform adapter"));
+    }
 
     @Override
     void close();

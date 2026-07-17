@@ -39,7 +39,6 @@ final class ObjC {
     @SuppressWarnings("unused")
     private static final SymbolLookup APPKIT = SymbolLookup.libraryLookup(
             "/System/Library/Frameworks/AppKit.framework/AppKit", RUNTIME_ARENA);
-    @SuppressWarnings("unused")
     private static final SymbolLookup WEBKIT = SymbolLookup.libraryLookup(
             "/System/Library/Frameworks/WebKit.framework/WebKit", RUNTIME_ARENA);
     static final SymbolLookup SYSTEM = LINKER.defaultLookup();
@@ -102,6 +101,8 @@ final class ObjC {
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS);
     private static final FunctionDescriptor D_VOID_ID_ID =
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS, ADDRESS);
+    private static final FunctionDescriptor D_VOID_ID_ID_ID =
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS);
     private static final FunctionDescriptor D_VOID_BOOL =
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, JAVA_BYTE);
     private static final FunctionDescriptor D_VOID_LONG =
@@ -212,6 +213,20 @@ final class ObjC {
         } catch (Throwable t) {
             throw rethrow(t);
         }
+    }
+
+    static void sendVoid(MemorySegment receiver, String selector, MemorySegment a,
+            MemorySegment b, MemorySegment c) {
+        try {
+            msgSend(D_VOID_ID_ID_ID).invokeExact(receiver, sel(selector), a, b, c);
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
+    }
+
+    /** Reads an exported WebKit {@code NSString * const}. */
+    static MemorySegment webKitObjectConstant(String name) {
+        return WEBKIT.findOrThrow(name).reinterpret(ADDRESS.byteSize()).get(ADDRESS, 0);
     }
 
     static void sendVoidBool(MemorySegment receiver, String selector, boolean value) {

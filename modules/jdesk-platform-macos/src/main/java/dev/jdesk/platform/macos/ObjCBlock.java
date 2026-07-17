@@ -35,6 +35,8 @@ final class ObjCBlock {
 
     private static final FunctionDescriptor INVOKE2_DESC =
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS);
+    private static final FunctionDescriptor INVOKE0_DESC = FunctionDescriptor.ofVoid(ADDRESS);
+    private static final MethodHandle FN0_INVOKE;
     private static final MethodHandle FN2_INVOKE;
     /** Calls a received block's invoke pointer with one NSInteger argument. */
     private static final MethodHandle INVOKE_WITH_LONG = ObjC.LINKER.downcallHandle(
@@ -42,6 +44,8 @@ final class ObjCBlock {
 
     static {
         try {
+            FN0_INVOKE = MethodHandles.lookup().findVirtual(Fn0.class, "invoke",
+                    MethodType.methodType(void.class, MemorySegment.class));
             FN2_INVOKE = MethodHandles.lookup().findVirtual(Fn2.class, "invoke",
                     MethodType.methodType(void.class, MemorySegment.class, MemorySegment.class,
                             MemorySegment.class));
@@ -50,12 +54,42 @@ final class ObjCBlock {
         }
     }
 
+    /** Java body of a no-argument completion block. */
+    interface Fn0 {
+        void invoke(MemorySegment block);
+    }
+
     /** Java body of a two-object-argument completion block. */
     interface Fn2 {
         void invoke(MemorySegment block, MemorySegment arg0, MemorySegment arg1);
     }
 
     private ObjCBlock() {
+    }
+
+    /** Builds a completion block of shape {@code void (^)(void)}. */
+    static MemorySegment create0(NativeCallbackRegistry registry, String name, Fn0 body) {
+        Arena arena = registry.arena();
+        CallbackGate gate = registry.gate();
+        Fn0 gated = block -> {
+            if (!gate.enter()) {
+                LOG.log(Level.WARNING, "Rejected late block callback {0} after close", name);
+                return;
+            }
+            try {
+                body.invoke(block);
+            } catch (Throwable t) {
+                LOG.log(Level.ERROR, "Block callback {0} threw", name, t);
+            } finally {
+                gate.exit();
+            }
+        };
+        MethodHandle handle = FN0_INVOKE.bindTo(gated);
+        MemorySegment stub = ObjC.LINKER.upcallStub(handle, INVOKE0_DESC, arena);
+        MemorySegment block = globalBlock(arena, stub);
+        registry.register(new NativeCallbackRegistry.Registration(
+                name, gated, handle, stub, null, () -> { }));
+        return block;
     }
 
     /**
@@ -82,6 +116,14 @@ final class ObjCBlock {
         MethodHandle handle = FN2_INVOKE.bindTo(gated);
         MemorySegment stub = ObjC.LINKER.upcallStub(handle, INVOKE2_DESC, arena);
 
+        MemorySegment block = globalBlock(arena, stub);
+
+        registry.register(new NativeCallbackRegistry.Registration(
+                name, gated, handle, stub, null, () -> { }));
+        return block;
+    }
+
+    private static MemorySegment globalBlock(Arena arena, MemorySegment stub) {
         // struct Block_descriptor_1 { unsigned long reserved; unsigned long size; }
         MemorySegment descriptor = arena.allocate(16, 8);
         descriptor.set(JAVA_LONG, 0, 0L);
@@ -94,8 +136,6 @@ final class ObjCBlock {
         block.set(ADDRESS, 16, stub);
         block.set(ADDRESS, 24, descriptor);
 
-        registry.register(new NativeCallbackRegistry.Registration(
-                name, gated, handle, stub, null, () -> { }));
         return block;
     }
 

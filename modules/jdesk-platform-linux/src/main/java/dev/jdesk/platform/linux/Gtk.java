@@ -23,6 +23,11 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
  * each constant.
  */
 final class Gtk {
+    // WebKitWebsiteDataTypes (public flags in WebKitWebsiteData.h).
+    static final int WEBKIT_WEBSITE_DATA_MEMORY_CACHE = 1 << 0;
+    static final int WEBKIT_WEBSITE_DATA_DISK_CACHE = 1 << 1;
+    static final int WEBKIT_WEBSITE_DATA_LOCAL_STORAGE = 1 << 4;
+    static final int WEBKIT_WEBSITE_DATA_COOKIES = 1 << 8;
     static final Linker LINKER = Linker.nativeLinker();
 
     /** Process-lifetime arena owning the library lookups (never closed by design). */
@@ -279,6 +284,9 @@ final class Gtk {
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS));
     static final MethodHandle WEBKIT_WEB_CONTEXT_GET_SECURITY_MANAGER = dl(
             "webkit_web_context_get_security_manager", FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle WEBKIT_WEB_CONTEXT_GET_WEBSITE_DATA_MANAGER = dl(
+            "webkit_web_context_get_website_data_manager",
+            FunctionDescriptor.of(ADDRESS, ADDRESS));
     static final MethodHandle WEBKIT_SECURITY_MANAGER_REGISTER_URI_SCHEME_AS_SECURE = dl(
             "webkit_security_manager_register_uri_scheme_as_secure",
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
@@ -324,6 +332,12 @@ final class Gtk {
     static final MethodHandle WEBKIT_WEB_VIEW_GET_SNAPSHOT_FINISH = dl(
             "webkit_web_view_get_snapshot_finish",
             FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, ADDRESS));
+    static final MethodHandle WEBKIT_WEBSITE_DATA_MANAGER_CLEAR = dl(
+            "webkit_website_data_manager_clear",
+            FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT, JAVA_LONG, ADDRESS, ADDRESS, ADDRESS));
+    static final MethodHandle WEBKIT_WEBSITE_DATA_MANAGER_CLEAR_FINISH = dl(
+            "webkit_website_data_manager_clear_finish",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
     static final MethodHandle WEBKIT_USER_CONTENT_MANAGER_REGISTER_SCRIPT_MESSAGE_HANDLER = dl(
             "webkit_user_content_manager_register_script_message_handler",
             FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));

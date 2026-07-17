@@ -2,6 +2,7 @@ package dev.jdesk.platform.macos;
 
 import dev.jdesk.api.Subscription;
 import dev.jdesk.api.WebViewSessionConfig;
+import dev.jdesk.api.WebViewDataType;
 import dev.jdesk.ffm.NativeCallbackRegistry;
 import dev.jdesk.webview.spi.InitScripts;
 import dev.jdesk.webview.spi.AssetRequest;
@@ -28,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
@@ -131,6 +133,7 @@ final class MacWebView implements PlatformWebView {
     private final MemorySegment scriptMessageHandler;  // owned (+1); also retained by the controller
     private final MemorySegment schemeHandler;         // owned (+1); also retained by the configuration
     private final MemorySegment navigationDelegate;    // owned (+1); navigationDelegate is weak
+    private final MemorySegment websiteDataStore;      // application-owned
     private final boolean devToolsEnabled;
     private final List<Consumer<String>> messageListeners = new CopyOnWriteArrayList<>();
     private final List<NavigationListener> navigationListeners = new CopyOnWriteArrayList<>();
@@ -150,7 +153,7 @@ final class MacWebView implements PlatformWebView {
         MemorySegment configuration = ObjC.send(
                 ObjC.send(ObjC.cls("WKWebViewConfiguration"), "alloc"), "init");
         try {
-            configureSession(configuration, config.webViewSession());
+            this.websiteDataStore = configureSession(configuration, config.webViewSession());
             this.userContentController =
                     ObjC.retain(ObjC.send(configuration, "userContentController"));
             this.scriptMessageHandler =
@@ -226,10 +229,11 @@ final class MacWebView implements PlatformWebView {
         this.devToolsEnabled = actualDevToolsEnabled;
     }
 
-    private void configureSession(MemorySegment configuration,
+    private MemorySegment configureSession(MemorySegment configuration,
             WebViewSessionConfig session) {
-        ObjC.sendVoid(configuration, "setWebsiteDataStore:",
-                app.websiteDataStore(session));
+        MemorySegment dataStore = app.websiteDataStore(session);
+        ObjC.sendVoid(configuration, "setWebsiteDataStore:", dataStore);
+        return dataStore;
     }
 
     private MemorySegment newPeerInstance(MemorySegment cls, String name) {
@@ -926,6 +930,36 @@ final class MacWebView implements PlatformWebView {
         return new WebViewDiagnostics(version, Optional.empty(), Optional.empty());
     }
     @Override public boolean devToolsEnabled(){return devToolsEnabled;}
+
+    @Override
+    public CompletionStage<Void> clearData(Set<WebViewDataType> dataTypes) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        MemorySegment nativeTypes = ObjC.send(ObjC.cls("NSMutableSet"), "set");
+        if (dataTypes.contains(WebViewDataType.COOKIES)) {
+            ObjC.sendVoid(nativeTypes, "addObject:",
+                    ObjC.webKitObjectConstant("WKWebsiteDataTypeCookies"));
+        }
+        if (dataTypes.contains(WebViewDataType.CACHE)) {
+            ObjC.sendVoid(nativeTypes, "addObject:",
+                    ObjC.webKitObjectConstant("WKWebsiteDataTypeMemoryCache"));
+            ObjC.sendVoid(nativeTypes, "addObject:",
+                    ObjC.webKitObjectConstant("WKWebsiteDataTypeDiskCache"));
+        }
+        if (dataTypes.contains(WebViewDataType.LOCAL_STORAGE)) {
+            ObjC.sendVoid(nativeTypes, "addObject:",
+                    ObjC.webKitObjectConstant("WKWebsiteDataTypeLocalStorage"));
+        }
+        MemorySegment completion = ObjCBlock.create0(app.blockRegistry(),
+                "clearWebsiteDataCompletion", block -> future.complete(null));
+        try {
+            ObjC.sendVoid(websiteDataStore,
+                    "removeDataOfTypes:modifiedSince:completionHandler:",
+                    nativeTypes, ObjC.send(ObjC.cls("NSDate"), "distantPast"), completion);
+        } catch (RuntimeException e) {
+            future.completeExceptionally(e);
+        }
+        return future;
+    }
 
     /** Called from the window's willClose path; detaches and releases the pipeline. */
     void destroyFromWindow() {

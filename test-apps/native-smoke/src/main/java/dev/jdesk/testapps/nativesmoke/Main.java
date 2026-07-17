@@ -9,6 +9,7 @@ import dev.jdesk.api.CommandRegistry;
 import dev.jdesk.api.WindowConfig;
 import dev.jdesk.api.WindowId;
 import dev.jdesk.api.WebViewSessionConfig;
+import dev.jdesk.api.WebViewDataType;
 import dev.jdesk.runtime.assets.ClasspathAssetSource;
 import dev.jdesk.runtime.assets.CspValidator;
 import dev.jdesk.runtime.boot.JDeskRuntime;
@@ -650,12 +651,21 @@ public final class Main {
                         .toCompletableFuture().get(5, TimeUnit.SECONDS);
                 String actualUserAgent = runtime.evaluate(sharedA, "navigator.userAgent")
                         .toCompletableFuture().get(5, TimeUnit.SECONDS);
+                runtime.window(sharedA).orElseThrow().clearWebViewData(Set.of(
+                        WebViewDataType.COOKIES,
+                        WebViewDataType.CACHE,
+                        WebViewDataType.LOCAL_STORAGE))
+                        .toCompletableFuture().get(15, TimeUnit.SECONDS);
+                String afterClear = runtime.evaluate(sharedB,
+                        "String(localStorage.getItem('" + key + "'))")
+                        .toCompletableFuture().get(5, TimeUnit.SECONDS);
                 boolean passed = "shared-value".equals(sharedValue)
                         && "null".equals(isolatedValue)
-                        && userAgent.equals(actualUserAgent);
+                        && userAgent.equals(actualUserAgent)
+                        && "null".equals(afterClear);
                 evidence.addCase("java:webview-session-isolation", passed,
                         "shared=" + sharedValue + " isolated=" + isolatedValue
-                                + " ua=" + actualUserAgent);
+                                + " ua=" + actualUserAgent + " afterClear=" + afterClear);
                 sessionIsolationPassed = passed;
             } catch (Exception e) {
                 evidence.addCase("java:webview-session-isolation", false, String.valueOf(e));

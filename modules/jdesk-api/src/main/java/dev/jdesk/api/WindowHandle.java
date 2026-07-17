@@ -3,6 +3,7 @@ package dev.jdesk.api;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletionStage;
 import java.util.function.Consumer;
 
@@ -21,6 +22,12 @@ public interface WindowHandle {
     CompletionStage<Void> setMaximized(boolean maximized);
     CompletionStage<Void> setFullscreen(boolean fullscreen);
     CompletionStage<Void> setAlwaysOnTop(boolean alwaysOnTop);
+
+    /**
+     * Clears selected browser data for every window in this window's WebView session.
+     * Existing documents are not reloaded automatically. An empty set is a no-op.
+     */
+    CompletionStage<Void> clearWebViewData(Set<WebViewDataType> dataTypes);
 
     /** Opens the OS print dialog for this window's current page content. */
     CompletionStage<Void> print();

@@ -15,6 +15,7 @@ import dev.jdesk.api.PtySpec;
 import dev.jdesk.api.WindowConfig;
 import dev.jdesk.api.WindowId;
 import dev.jdesk.api.WindowHandle;
+import dev.jdesk.api.WebViewDataType;
 import dev.jdesk.runtime.assets.AssetResolver;
 import dev.jdesk.runtime.automation.AutomationHost;
 import dev.jdesk.runtime.automation.AutomationProvider;
@@ -46,6 +47,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -150,6 +152,19 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
         }
         @Override public CompletionStage<Void> setAlwaysOnTop(boolean value) {
             return controlWindow(id(), w -> w.setAlwaysOnTop(value));
+        }
+        @Override public CompletionStage<Void> clearWebViewData(Set<WebViewDataType> dataTypes) {
+            Set<WebViewDataType> copy = Set.copyOf(Objects.requireNonNull(dataTypes, "dataTypes"));
+            if (copy.isEmpty()) {
+                return CompletableFuture.completedFuture(null);
+            }
+            WindowRuntime current = windows.get(id());
+            if (current == null) {
+                return CompletableFuture.failedFuture(
+                        new JDeskException(ErrorCode.WINDOW_CLOSED, "Unknown or closed window"));
+            }
+            return platformApp.ui().submit(() -> current.window.webView().clearData(copy))
+                    .thenCompose(stage -> stage);
         }
         @Override public CompletionStage<Void> print() {
             return controlWindow(id(), PlatformWindow::print);

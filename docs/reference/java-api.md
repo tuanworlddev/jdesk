@@ -132,6 +132,7 @@ mutating operations return a `CompletionStage<Void>` that completes on the UI th
 | `CompletionStage<Void> setMaximized(boolean maximized)` | Maximizes/restores. |
 | `CompletionStage<Void> setFullscreen(boolean fullscreen)` | Enters/leaves fullscreen. |
 | `CompletionStage<Void> setAlwaysOnTop(boolean alwaysOnTop)` | Toggles always-on-top. |
+| `CompletionStage<Void> clearWebViewData(Set<WebViewDataType> types)` | Clears selected cookies, cache and/or local storage for the entire session without reloading documents. |
 | `CompletionStage<Void> print()` | Opens the OS print dialog for this window's current page. |
 | `CompletionStage<Optional<String>> showContextMenu(MenuSpec menu)` | Pops up a native context menu (modal) and completes with the chosen action id, or empty. macOS. |
 | `CompletionStage<Subscription> onFileDrop(Consumer<List<Path>> listener)` | Delivers absolute paths of files dropped on the window (which HTML5 cannot expose); HTML5 DnD still works. macOS. |
@@ -197,8 +198,12 @@ Session ids follow `[a-zA-Z0-9._-]{1,64}`; unsafe ids and control characters in 
 
 Windows supports named persistent profiles. WKWebView and WebKitGTK reject persistent DOM storage
 for the custom `jdesk://` origin, so macOS/Linux named persistent sessions fail before creating a
-window; private sessions support in-process DOM storage. Cookie/cache/proxy and download lifecycle
-methods are not public yet; see the roadmap rather than depending on adapter internals.
+window; private sessions support in-process DOM storage.
+
+`WindowHandle.clearWebViewData(Set<WebViewDataType>)` asynchronously clears selected cookies,
+memory/disk cache and/or local storage for the window's entire session. It does not reload existing
+documents. An empty set completes immediately without entering native code. Cookie CRUD, proxy and
+download lifecycle methods remain roadmap work.
 
 ### `WindowId`
 
