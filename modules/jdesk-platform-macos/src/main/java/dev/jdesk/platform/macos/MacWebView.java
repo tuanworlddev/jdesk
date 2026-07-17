@@ -1,6 +1,7 @@
 package dev.jdesk.platform.macos;
 
 import dev.jdesk.api.Subscription;
+import dev.jdesk.api.WebViewSessionConfig;
 import dev.jdesk.ffm.NativeCallbackRegistry;
 import dev.jdesk.webview.spi.InitScripts;
 import dev.jdesk.webview.spi.AssetRequest;
@@ -130,6 +131,7 @@ final class MacWebView implements PlatformWebView {
     private final MemorySegment scriptMessageHandler;  // owned (+1); also retained by the controller
     private final MemorySegment schemeHandler;         // owned (+1); also retained by the configuration
     private final MemorySegment navigationDelegate;    // owned (+1); navigationDelegate is weak
+    private final boolean devToolsEnabled;
     private final List<Consumer<String>> messageListeners = new CopyOnWriteArrayList<>();
     private final List<NavigationListener> navigationListeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<URI>> committedListeners = new CopyOnWriteArrayList<>();
@@ -148,6 +150,7 @@ final class MacWebView implements PlatformWebView {
         MemorySegment configuration = ObjC.send(
                 ObjC.send(ObjC.cls("WKWebViewConfiguration"), "alloc"), "init");
         try {
+            configureSession(configuration, config.webViewSession());
             this.userContentController =
                     ObjC.retain(ObjC.send(configuration, "userContentController"));
             this.scriptMessageHandler =
@@ -207,14 +210,26 @@ final class MacWebView implements PlatformWebView {
         }
         ObjC.release(configuration); // the view holds its own reference
 
+        config.webViewSession().userAgent().ifPresent(userAgent ->
+                ObjC.sendVoid(webView, "setCustomUserAgent:", ObjC.nsString(userAgent)));
+
         this.navigationDelegate = newPeerInstance(navigationDelegateClass, "navigationDelegate");
         ObjC.sendVoid(webView, "setNavigationDelegate:", navigationDelegate);
 
+        boolean actualDevToolsEnabled = false;
         if (config.devToolsEnabled()
                 && ObjC.sendBool(webView, "respondsToSelector:", ObjC.sel("setInspectable:"))) {
             // Public API since macOS 13.3; enables Safari Web Inspector attachment.
             ObjC.sendVoidBool(webView, "setInspectable:", true);
+            actualDevToolsEnabled = ObjC.sendBool(webView, "isInspectable");
         }
+        this.devToolsEnabled = actualDevToolsEnabled;
+    }
+
+    private void configureSession(MemorySegment configuration,
+            WebViewSessionConfig session) {
+        ObjC.sendVoid(configuration, "setWebsiteDataStore:",
+                app.websiteDataStore(session));
     }
 
     private MemorySegment newPeerInstance(MemorySegment cls, String name) {
@@ -781,8 +796,13 @@ final class MacWebView implements PlatformWebView {
 
     private static String describeError(MemorySegment error) {
         try {
-            String description = ObjC.javaString(ObjC.send(error, "localizedDescription"));
-            return description == null ? "unknown error" : description;
+            String localized = ObjC.javaString(ObjC.send(error, "localizedDescription"));
+            String description = ObjC.javaString(ObjC.send(error, "description"));
+            if (description != null && !description.equals(localized)) {
+                return (localized == null ? "unknown error" : localized)
+                        + " (" + description + ")";
+            }
+            return localized == null ? "unknown error" : localized;
         } catch (RuntimeException e) {
             return "unknown error";
         }
@@ -905,7 +925,7 @@ final class MacWebView implements PlatformWebView {
         }
         return new WebViewDiagnostics(version, Optional.empty(), Optional.empty());
     }
-    @Override public boolean devToolsEnabled(){return app.config().devMode();}
+    @Override public boolean devToolsEnabled(){return devToolsEnabled;}
 
     /** Called from the window's willClose path; detaches and releases the pipeline. */
     void destroyFromWindow() {

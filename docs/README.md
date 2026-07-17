@@ -47,6 +47,7 @@ Task-oriented how-tos for when you are building.
 - [Create a redacted support bundle](guides/diagnostics-and-support.md)
 - [Grant capabilities and permissions](guides/capabilities-and-permissions.md)
 - [Manage windows and the app lifecycle](guides/managing-windows.md)
+- [Share or isolate WebView sessions](guides/webview-sessions.md)
 - [Serve assets over `jdesk://app/`](guides/serving-assets.md)
 - [Choose a frontend framework](guides/choosing-a-frontend.md)
 - [Use the dev loop and HMR](guides/the-dev-loop.md)

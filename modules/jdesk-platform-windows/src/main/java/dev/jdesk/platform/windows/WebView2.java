@@ -18,6 +18,7 @@ final class WebView2 {
     static final String IID_CONTROLLER = "4d00c0d1-9434-4eb6-8078-8697a560334f";
     static final String IID_WEBVIEW2 = "76eceacb-0462-4d94-ac83-423a6793775e";
     static final String IID_SETTINGS = "e562e4f0-d7fa-43ac-8d71-c05150499f00";
+    static final String IID_SETTINGS2 = "ee9a0f68-f46c-4e32-ac23-ef8cac224d2a";
     static final String IID_WEB_MESSAGE_RECEIVED_HANDLER = "57213f19-00e6-49fa-8e07-898ea01ecbd2";
     static final String IID_NAVIGATION_STARTING_HANDLER = "9adbe429-f36d-432b-9ddc-f8881fbd76e3";
     static final String IID_NAVIGATION_COMPLETED_HANDLER = "d33a35bf-1c49-4f98-93ab-006e0533fe1c";
@@ -62,8 +63,11 @@ final class WebView2 {
     static final int WV_ADD_WEB_RESOURCE_REQUESTED_FILTER = 57;
 
     // ---- ICoreWebView2Settings ----
-    static final int SETTINGS_PUT_ARE_DEV_TOOLS_ENABLED = 8;
-    static final int SETTINGS_PUT_ARE_DEFAULT_CONTEXT_MENUS_ENABLED = 12;
+    static final int SETTINGS_GET_ARE_DEV_TOOLS_ENABLED = 11;
+    static final int SETTINGS_PUT_ARE_DEV_TOOLS_ENABLED = 12;
+    static final int SETTINGS_PUT_ARE_DEFAULT_CONTEXT_MENUS_ENABLED = 14;
+    // ICoreWebView2Settings ends at slot 20; Settings2 appends get/put UserAgent.
+    static final int SETTINGS2_PUT_USER_AGENT = 22;
 
     // ---- ICoreWebView2WebMessageReceivedEventArgs ----
     static final int MSG_ARGS_GET_SOURCE = 3;

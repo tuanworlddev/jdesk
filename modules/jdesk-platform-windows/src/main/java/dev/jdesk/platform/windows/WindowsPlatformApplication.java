@@ -17,6 +17,9 @@ import java.util.function.BooleanSupplier;
 import java.net.URI;
 import dev.jdesk.api.MessageDialog;
 import dev.jdesk.api.MessageDialogResult;
+import dev.jdesk.api.WebViewSessionConfig;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * One Win32 application: the constructing thread becomes the STA/UI thread
@@ -26,11 +29,15 @@ import dev.jdesk.api.MessageDialogResult;
 final class WindowsPlatformApplication extends NativeHandle implements PlatformApplication {
     private final PlatformApplicationConfig config;
     private final WindowsUiDispatcher dispatcher;
-    private final WebView2Environment environment;
+    private final Map<String, SessionEnvironment> environments = new HashMap<>();
     private final Arena msgArena = Arena.ofShared();
     private final List<NativeCallbackRegistry> streamRegistries = new CopyOnWriteArrayList<>();
     private volatile boolean stopRequested;
     private volatile WindowsPtyBackend ptyBackend;
+
+    private record SessionEnvironment(WebViewSessionConfig config,
+            WebView2Environment environment) {
+    }
 
     WindowsPlatformApplication(PlatformApplicationConfig config) {
         super("WindowsPlatformApplication");
@@ -39,7 +46,6 @@ final class WindowsPlatformApplication extends NativeHandle implements PlatformA
         // S_OK or S_FALSE (already initialized) are both acceptable.
         Hresult.check(hr, "CoInitializeEx");
         this.dispatcher = new WindowsUiDispatcher(config.devMode());
-        this.environment = WebView2Environment.create(config, this::pumpOnce);
         markOpen();
     }
 
@@ -48,7 +54,19 @@ final class WindowsPlatformApplication extends NativeHandle implements PlatformA
         return dispatcher;
     }
 
-    WebView2Environment environment() {
+    WebView2Environment environment(WebViewSessionConfig session) {
+        SessionEnvironment existing = environments.get(session.id());
+        if (existing != null) {
+            if (!existing.config().equals(session)) {
+                throw new JDeskException(ErrorCode.INVALID_REQUEST,
+                        "WebView session '" + session.id()
+                                + "' was already opened with different settings");
+            }
+            return existing.environment();
+        }
+        WebView2Environment environment = WebView2Environment.create(config, session,
+                this::pumpOnce);
+        environments.put(session.id(), new SessionEnvironment(session, environment));
         return environment;
     }
 
@@ -209,7 +227,10 @@ final class WindowsPlatformApplication extends NativeHandle implements PlatformA
             streamRegistry.close();
         }
         streamRegistries.clear();
-        environment.close();
+        for (SessionEnvironment session : environments.values()) {
+            session.environment().close();
+        }
+        environments.clear();
         dispatcher.close();
         msgArena.close();
         Win32.coUninitialize();

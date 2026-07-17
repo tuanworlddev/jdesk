@@ -218,6 +218,14 @@ ICoreWebView2Settings IID=e562e4f0-d7fa-43ac-8d71-c05150499f00 parent=IUnknown
   [19] get_IsBuiltInErrorPageEnabled
   [20] put_IsBuiltInErrorPageEnabled
 
+ICoreWebView2Settings2 IID=ee9a0f68-f46c-4e32-ac23-ef8cac224d2a parent=ICoreWebView2Settings
+  [ 0] QueryInterface
+  [ 1] AddRef
+  [ 2] Release
+  [ 3..20] inherited ICoreWebView2Settings methods
+  [21] get_UserAgent
+  [22] put_UserAgent
+
 ICoreWebView2WebMessageReceivedEventHandler IID=57213f19-00e6-49fa-8e07-898ea01ecbd2 parent=IUnknown
   [ 0] QueryInterface
   [ 1] AddRef
@@ -438,4 +446,3 @@ ICoreWebView2Deferral IID=c10e7f7b-b585-46f0-a623-8befbf3e4ee0 parent=IUnknown
   [ 1] AddRef
   [ 2] Release
   [ 3] Complete
-

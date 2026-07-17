@@ -2,6 +2,7 @@ package dev.jdesk.platform.linux;
 
 import dev.jdesk.api.ErrorCode;
 import dev.jdesk.api.JDeskException;
+import dev.jdesk.api.WebViewSessionConfig;
 import dev.jdesk.api.UiDispatcher;
 import dev.jdesk.ffm.NativeCallbackRegistry;
 import dev.jdesk.ffm.NativeHandle;
@@ -24,6 +25,7 @@ import java.lang.invoke.MethodType;
 import java.net.URI;
 import dev.jdesk.api.MessageDialog;
 import dev.jdesk.api.MessageDialogResult;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -45,12 +47,12 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
     private static final FunctionDescriptor SCHEME_CALLBACK_DESC =
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS);
 
-    private static final Object SCHEME_LOCK = new Object();
-    /** The default WebKitWebContext accepts one registration per scheme per process. */
-    private static boolean schemeRegistered;
     /** The application currently serving {@code jdesk://} requests. */
     private static final AtomicReference<LinuxPlatformApplication> SCHEME_TARGET =
             new AtomicReference<>();
+    private static final Object DEFAULT_SCHEME_LOCK = new Object();
+    /** The process-wide default context accepts one registration per scheme. */
+    private static boolean defaultSchemeRegistered;
 
     private final PlatformApplicationConfig config;
     private final LinuxUiDispatcher dispatcher;
@@ -59,6 +61,11 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
     private volatile boolean stopRequested;
     private volatile boolean loopRunning;
     private volatile LinuxPtyBackend ptyBackend;
+    /** Session id -> immutable config and owned WebKitWebContext. UI-thread only. */
+    private final Map<String, SessionContext> webContexts = new HashMap<>();
+
+    private record SessionContext(WebViewSessionConfig config, MemorySegment context) {
+    }
 
     LinuxPlatformApplication(PlatformApplicationConfig config) {
         super("LinuxPlatformApplication");
@@ -78,7 +85,6 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
         }
         this.dispatcher = new LinuxUiDispatcher(config.devMode());
         this.registry = new NativeCallbackRegistry("linux-app", Arena.ofShared());
-        registerJdeskScheme();
         LinuxPlatformApplication previous = SCHEME_TARGET.getAndSet(this);
         if (previous != null) {
             LOG.log(Level.WARNING,
@@ -113,31 +119,81 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
         return stub;
     }
 
-    private static void registerJdeskScheme() {
-        synchronized (SCHEME_LOCK) {
-            if (schemeRegistered) {
-                return;
+    private static void registerJdeskScheme(MemorySegment context) {
+        try (Arena confined = Arena.ofConfined()) {
+            MemorySegment scheme = confined.allocateFrom("jdesk");
+            Gtk.WEBKIT_WEB_CONTEXT_REGISTER_URI_SCHEME.invokeExact(context, scheme,
+                    schemeCallbackStub(), MemorySegment.NULL, MemorySegment.NULL);
+            MemorySegment securityManager = (MemorySegment)
+                    Gtk.WEBKIT_WEB_CONTEXT_GET_SECURITY_MANAGER.invokeExact(context);
+            Gtk.WEBKIT_SECURITY_MANAGER_REGISTER_URI_SCHEME_AS_SECURE.invokeExact(
+                    securityManager, scheme);
+            Gtk.WEBKIT_SECURITY_MANAGER_REGISTER_URI_SCHEME_AS_CORS_ENABLED.invokeExact(
+                    securityManager, scheme);
+        } catch (Throwable t) {
+            throw Gtk.rethrow(t);
+        }
+    }
+
+    /** Returns an owned application-lifetime context for an isolated browser session. */
+    MemorySegment webContext(WebViewSessionConfig session) {
+        SessionContext existing = webContexts.get(session.id());
+        if (existing != null) {
+            if (!existing.config().equals(session)) {
+                throw new JDeskException(ErrorCode.INVALID_REQUEST,
+                        "WebView session '" + session.id()
+                                + "' was already opened with different settings");
             }
-            try (Arena confined = Arena.ofConfined()) {
-                MemorySegment scheme = confined.allocateFrom("jdesk");
-                MemorySegment context =
-                        (MemorySegment) Gtk.WEBKIT_WEB_CONTEXT_GET_DEFAULT.invokeExact();
-                Gtk.WEBKIT_WEB_CONTEXT_REGISTER_URI_SCHEME.invokeExact(context, scheme,
-                        schemeCallbackStub(), MemorySegment.NULL, MemorySegment.NULL);
-                MemorySegment securityManager = (MemorySegment)
-                        Gtk.WEBKIT_WEB_CONTEXT_GET_SECURITY_MANAGER.invokeExact(context);
-                // Secure classification and CORS enablement so page fetch() works from
-                // jdesk://app documents — public WebKitSecurityManager APIs (ADR-004).
-                Gtk.WEBKIT_SECURITY_MANAGER_REGISTER_URI_SCHEME_AS_SECURE.invokeExact(
-                        securityManager, scheme);
-                Gtk.WEBKIT_SECURITY_MANAGER_REGISTER_URI_SCHEME_AS_CORS_ENABLED.invokeExact(
-                        securityManager, scheme);
-            } catch (Throwable t) {
-                throw Gtk.rethrow(t);
+            return existing.context();
+        }
+        MemorySegment context = createWebContext(session);
+        if (context.equals(MemorySegment.NULL)) {
+            throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                    "WebKit returned no context for session '" + session.id() + "'");
+        }
+        try {
+            if (session.storage() == WebViewSessionConfig.Storage.PERSISTENT) {
+                registerDefaultJdeskScheme(context);
+            } else {
+                registerJdeskScheme(context);
             }
-            schemeRegistered = true;
-            LOG.log(Level.INFO, "Registered jdesk:// scheme (secure, CORS-enabled) "
-                    + "on the default WebKitWebContext");
+        } catch (RuntimeException e) {
+            Gtk.gObjectUnref(context);
+            throw e;
+        }
+        webContexts.put(session.id(), new SessionContext(session, context));
+        LOG.log(Level.INFO, "Created {0} WebView session {1}",
+                session.storage(), session.id());
+        return context;
+    }
+
+    private MemorySegment createWebContext(WebViewSessionConfig session) {
+        try {
+            if (session.storage() == WebViewSessionConfig.Storage.PRIVATE) {
+                return (MemorySegment) Gtk.WEBKIT_WEB_CONTEXT_NEW_EPHEMERAL.invokeExact();
+            }
+            if (!session.id().equals(WebViewSessionConfig.DEFAULT.id())) {
+                throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                        "Named persistent WebView sessions are not supported on Linux; "
+                                + "use the 'default' session or a private session");
+            }
+            MemorySegment defaultContext = (MemorySegment)
+                    Gtk.WEBKIT_WEB_CONTEXT_GET_DEFAULT.invokeExact();
+            return Gtk.gObjectRef(defaultContext);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Throwable t) {
+            throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                    "Cannot create isolated WebKit session '" + session.id() + "'", t);
+        }
+    }
+
+    private static void registerDefaultJdeskScheme(MemorySegment context) {
+        synchronized (DEFAULT_SCHEME_LOCK) {
+            if (!defaultSchemeRegistered) {
+                registerJdeskScheme(context);
+                defaultSchemeRegistered = true;
+            }
         }
     }
 
@@ -606,9 +662,13 @@ final class LinuxPlatformApplication extends NativeHandle implements PlatformApp
     @Override
     protected void releaseNative() {
         dispatcher.assertUiThread();
-        // Detaches the scheme routing target and closes the app gate; the scheme itself
-        // stays registered on the default context (WebKitGTK has no unregister API) —
-        // requests arriving with no target fail deterministically.
+        // Detaches the scheme routing target and closes the app gate. Each session context
+        // owns its scheme registration and is released below; requests racing teardown see
+        // no target and fail deterministically.
         registry.close();
+        for (SessionContext session : webContexts.values()) {
+            Gtk.gObjectUnref(session.context());
+        }
+        webContexts.clear();
     }
 }

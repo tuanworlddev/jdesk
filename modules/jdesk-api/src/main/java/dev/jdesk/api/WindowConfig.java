@@ -14,6 +14,7 @@ import java.util.Optional;
  *        window id, under {@code ~/.jdesk/window-state/}) and restore them on open
  * @param position initial top-left position; empty lets the OS place/center the window.
  *        Remembered bounds, when present, take precedence over this.
+ * @param webViewSession browser storage/network identity used by this window
  */
 public record WindowConfig(
         WindowId id,
@@ -26,7 +27,8 @@ public record WindowConfig(
         int minHeight,
         boolean startMaximized,
         boolean rememberBounds,
-        Optional<Position> position) {
+        Optional<Position> position,
+        WebViewSessionConfig webViewSession) {
 
     /** Top-left window position in logical screen coordinates. */
     public record Position(int x, int y) {
@@ -37,6 +39,7 @@ public record WindowConfig(
         Objects.requireNonNull(title, "title");
         Objects.requireNonNull(entry, "entry");
         Objects.requireNonNull(position, "position");
+        Objects.requireNonNull(webViewSession, "webViewSession");
         if (width < 1 || height < 1 || width > 32767 || height > 32767) {
             throw new JDeskException(ErrorCode.INVALID_REQUEST, "Window size out of range");
         }
@@ -51,14 +54,23 @@ public record WindowConfig(
 
     public WindowConfig(WindowId id, String title, int width, int height,
             boolean resizable, URI entry) {
-        this(id, title, width, height, resizable, entry, 0, 0, false, false, Optional.empty());
+        this(id, title, width, height, resizable, entry, 0, 0, false, false,
+                Optional.empty(), WebViewSessionConfig.DEFAULT);
     }
 
     public WindowConfig(WindowId id, String title, int width, int height,
             boolean resizable, URI entry, int minWidth, int minHeight,
             boolean startMaximized, boolean rememberBounds) {
         this(id, title, width, height, resizable, entry, minWidth, minHeight,
-                startMaximized, rememberBounds, Optional.empty());
+                startMaximized, rememberBounds, Optional.empty(), WebViewSessionConfig.DEFAULT);
+    }
+
+    /** Compatibility constructor using the default persistent WebView session. */
+    public WindowConfig(WindowId id, String title, int width, int height,
+            boolean resizable, URI entry, int minWidth, int minHeight,
+            boolean startMaximized, boolean rememberBounds, Optional<Position> position) {
+        this(id, title, width, height, resizable, entry, minWidth, minHeight,
+                startMaximized, rememberBounds, position, WebViewSessionConfig.DEFAULT);
     }
 
     public static Builder builder() {
@@ -77,6 +89,7 @@ public record WindowConfig(
         private boolean startMaximized;
         private boolean rememberBounds;
         private Optional<Position> position = Optional.empty();
+        private WebViewSessionConfig webViewSession = WebViewSessionConfig.DEFAULT;
 
         private Builder() {
         }
@@ -139,6 +152,12 @@ public record WindowConfig(
             return this;
         }
 
+        /** Selects the isolated browser session used by this window. */
+        public Builder webViewSession(WebViewSessionConfig webViewSession) {
+            this.webViewSession = Objects.requireNonNull(webViewSession, "webViewSession");
+            return this;
+        }
+
         public WindowConfig build() {
             if (id == null) {
                 throw new JDeskException(ErrorCode.INVALID_REQUEST, "Window id is required");
@@ -147,7 +166,8 @@ public record WindowConfig(
                 throw new JDeskException(ErrorCode.INVALID_REQUEST, "Window entry is required");
             }
             return new WindowConfig(id, title, width, height, resizable, entry,
-                    minWidth, minHeight, startMaximized, rememberBounds, position);
+                    minWidth, minHeight, startMaximized, rememberBounds, position,
+                    webViewSession);
         }
     }
 }

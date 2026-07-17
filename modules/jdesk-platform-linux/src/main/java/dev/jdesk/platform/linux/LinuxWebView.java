@@ -163,11 +163,12 @@ final class LinuxWebView implements PlatformWebView {
 
     LinuxWebView(LinuxPlatformApplication app, LinuxWindow window, NativeWindowConfig config) {
         this.registry = window.callbackRegistry();
-        this.devToolsEnabled=config.devToolsEnabled();
         final MemorySegment view;
         final MemorySegment manager;
+        final boolean actualDevToolsEnabled;
         try (Arena confined = Arena.ofConfined()) {
-            MemorySegment created = (MemorySegment) Gtk.WEBKIT_WEB_VIEW_NEW.invokeExact();
+            MemorySegment created = (MemorySegment) Gtk.WEBKIT_WEB_VIEW_NEW_WITH_CONTEXT
+                    .invokeExact(app.webContext(config.webViewSession()));
             if (created.equals(MemorySegment.NULL)) {
                 throw new IllegalStateException("webkit_web_view_new failed");
             }
@@ -202,11 +203,22 @@ final class LinuxWebView implements PlatformWebView {
                         Gtk.WEBKIT_WEB_VIEW_GET_SETTINGS.invokeExact(view);
                 Gtk.WEBKIT_SETTINGS_SET_ENABLE_DEVELOPER_EXTRAS.invokeExact(settings, 1);
             }
+            if (config.webViewSession().userAgent().isPresent()) {
+                MemorySegment settings = (MemorySegment)
+                        Gtk.WEBKIT_WEB_VIEW_GET_SETTINGS.invokeExact(view);
+                Gtk.WEBKIT_SETTINGS_SET_USER_AGENT.invokeExact(settings,
+                        confined.allocateFrom(config.webViewSession().userAgent().orElseThrow()));
+            }
+            MemorySegment settings = (MemorySegment)
+                    Gtk.WEBKIT_WEB_VIEW_GET_SETTINGS.invokeExact(view);
+            actualDevToolsEnabled = (int) Gtk.WEBKIT_SETTINGS_GET_ENABLE_DEVELOPER_EXTRAS
+                    .invokeExact(settings) != 0;
         } catch (Throwable t) {
             throw Gtk.rethrow(t);
         }
         this.webView = view;
         this.userContentManager = manager;
+        this.devToolsEnabled = actualDevToolsEnabled;
 
         PEERS.put(view.address(), this);
         PEERS.put(manager.address(), this);

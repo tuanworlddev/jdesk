@@ -157,7 +157,8 @@ Provided by `dev.jdesk.runtime`; applications never implement or call it directl
 ```java
 record WindowConfig(
     WindowId id, String title, int width, int height, boolean resizable, URI entry,
-    int minWidth, int minHeight, boolean startMaximized, boolean rememberBounds)
+    int minWidth, int minHeight, boolean startMaximized, boolean rememberBounds,
+    Optional<Position> position, WebViewSessionConfig webViewSession)
 ```
 
 Construction throws `INVALID_REQUEST` if `width` or `height` is outside `1..32767`, if a
@@ -180,10 +181,24 @@ persistence).
 | `Builder startMaximized(boolean startMaximized)` | Opens the window maximized. | `false` |
 | `Builder rememberBounds(boolean rememberBounds)` | Persists size/position across runs (per app id and window id, under `~/.jdesk/window-state/`, overridable via `-Djdesk.state.dir=`) and restores them on open. | `false` |
 | `Builder entry(String entry)` | Sets the entry URL; parsed with `URI.create`. | required |
+| `Builder webViewSession(WebViewSessionConfig session)` | Selects the named persistent/private browser session. | `WebViewSessionConfig.DEFAULT` |
 | `WindowConfig build()` | Builds the config. Throws `INVALID_REQUEST` if `id` or `entry` is unset. | — |
 
 Bounds: `width`/`height` must be in `1..32767`; violations throw `INVALID_REQUEST` from
 the `WindowConfig` constructor.
+
+### `WebViewSessionConfig`
+
+`dev.jdesk.api.WebViewSessionConfig` identifies browser state shared by windows in one application.
+Use `persistent(id)` to request reuse of site data on later launches or `privateSession(id)` to
+discard it at application shutdown. The builder optionally accepts a complete user-agent override.
+Session ids follow `[a-zA-Z0-9._-]{1,64}`; unsafe ids and control characters in user agents throw
+`INVALID_REQUEST`.
+
+Windows supports named persistent profiles. WKWebView and WebKitGTK reject persistent DOM storage
+for the custom `jdesk://` origin, so macOS/Linux named persistent sessions fail before creating a
+window; private sessions support in-process DOM storage. Cookie/cache/proxy and download lifecycle
+methods are not public yet; see the roadmap rather than depending on adapter internals.
 
 ### `WindowId`
 

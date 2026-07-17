@@ -11,9 +11,9 @@ under `docs/verification/` preserve them.
 - Stability: **pre-alpha**; public API compatibility is checked, but breaking changes remain
   possible before 1.0 under the documented support policy.
 - Primary targets: Windows x64, macOS ARM64, Linux x64.
-- Latest verified main commit: `0887e62`.
-- Main CI: [run 29548403210](https://github.com/tuanworlddev/jdesk/actions/runs/29548403210).
-- CodeQL: [run 29548403136](https://github.com/tuanworlddev/jdesk/actions/runs/29548403136).
+- Latest verified main commit: `20ebb07`.
+- Main CI: [run 29549789193](https://github.com/tuanworlddev/jdesk/actions/runs/29549789193).
+- CodeQL: [run 29549789253](https://github.com/tuanworlddev/jdesk/actions/runs/29549789253).
 
 ## Distribution
 
@@ -46,6 +46,15 @@ The current primary-platform CI covers:
 - native dialogs, clipboard, notifications, tray/menu, shortcuts, deep links and file drops;
 - OS secret stores, PTY backends, single-instance handoff and native packaging;
 - unit, property, architecture, Gradle TestKit, CodeQL and dependency review gates.
+
+The current codebase also contains the first `WebViewSession` slice: stable session ids,
+private storage isolation and native user-agent overrides on all three adapters, plus named
+persistent profiles on Windows. A real WKWebView run proves same-session `localStorage`
+sharing, isolation between private sessions, the exact user-agent override and fail-fast handling
+for unsupported named persistence; CI repeats the contract probes on WebView2 and WebKitGTK.
+Durable `jdesk://` DOM storage on WKWebView/WebKitGTK and
+cookie/cache/proxy/download/permission controls are still incomplete, so the roadmap item remains
+open.
 
 The detailed reproducible test design lives in
 [`docs/verification/native-testing-and-evidence.md`](docs/verification/native-testing-and-evidence.md).

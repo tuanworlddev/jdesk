@@ -272,6 +272,8 @@ final class Gtk {
     // ---- WebKitGTK 4.1 ----
     static final MethodHandle WEBKIT_WEB_CONTEXT_GET_DEFAULT = dl(
             "webkit_web_context_get_default", FunctionDescriptor.of(ADDRESS));
+    static final MethodHandle WEBKIT_WEB_CONTEXT_NEW_EPHEMERAL = dl(
+            "webkit_web_context_new_ephemeral", FunctionDescriptor.of(ADDRESS));
     static final MethodHandle WEBKIT_WEB_CONTEXT_REGISTER_URI_SCHEME = dl(
             "webkit_web_context_register_uri_scheme",
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS));
@@ -285,6 +287,8 @@ final class Gtk {
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
     static final MethodHandle WEBKIT_WEB_VIEW_NEW = dl("webkit_web_view_new",
             FunctionDescriptor.of(ADDRESS));
+    static final MethodHandle WEBKIT_WEB_VIEW_NEW_WITH_CONTEXT = dl(
+            "webkit_web_view_new_with_context", FunctionDescriptor.of(ADDRESS, ADDRESS));
     static final MethodHandle WEBKIT_WEB_VIEW_LOAD_URI = dl("webkit_web_view_load_uri",
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
     static final MethodHandle WEBKIT_WEB_VIEW_GET_URI = dl("webkit_web_view_get_uri",
@@ -298,6 +302,11 @@ final class Gtk {
     static final MethodHandle WEBKIT_SETTINGS_SET_ENABLE_DEVELOPER_EXTRAS = dl(
             "webkit_settings_set_enable_developer_extras",
             FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT));
+    static final MethodHandle WEBKIT_SETTINGS_GET_ENABLE_DEVELOPER_EXTRAS = dl(
+            "webkit_settings_get_enable_developer_extras",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS));
+    static final MethodHandle WEBKIT_SETTINGS_SET_USER_AGENT = dl(
+            "webkit_settings_set_user_agent", FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
     static final MethodHandle WEBKIT_SETTINGS_GET_USER_AGENT = dl("webkit_settings_get_user_agent",
             FunctionDescriptor.of(ADDRESS, ADDRESS));
     // void webkit_web_view_evaluate_javascript(WebKitWebView*, const char* script,

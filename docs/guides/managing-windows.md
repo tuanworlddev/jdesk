@@ -32,6 +32,7 @@ WindowConfig main = WindowConfig.builder()
 | `resizable` | `true` | whether the user can resize the window |
 | `startMaximized` | `false` | open the window maximized |
 | `rememberBounds` | `false` | persist size/position across runs (per app id + window id, under `~/.jdesk/window-state/`) and restore them on open; restored bounds win over `size(...)` |
+| `webViewSession(session)` | default session | share or isolate supported browser state and optionally override the native user agent; see [WebView sessions](webview-sessions.md) for platform limits |
 | `entry` | required | the initial URL, over [the app origin](serving-assets.md) `jdesk://app/...` |
 
 The entry points at your production assets served over `jdesk://app/`. See

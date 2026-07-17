@@ -76,4 +76,14 @@ final class ComRuntime {
         }
         return (int) invoke(comObject, RELEASE, ADDREF_RELEASE_DESC);
     }
+
+    /** Queries another COM interface and returns an owned pointer. */
+    static MemorySegment queryInterface(MemorySegment comObject, String iid) {
+        try (java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofConfined()) {
+            MemorySegment out = arena.allocate(ValueLayout.ADDRESS);
+            invokeChecked(comObject, QUERY_INTERFACE, "QueryInterface(" + iid + ")",
+                    QUERY_INTERFACE_DESC, Guids.alloc(arena, iid), out);
+            return out.get(ValueLayout.ADDRESS, 0);
+        }
+    }
 }
