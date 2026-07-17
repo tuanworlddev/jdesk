@@ -74,7 +74,8 @@ probes through the actual bridge, including: protocol handshake; JS→Java typed
 Java→JS event; async command on a non-UI thread; cancellation of a real sleeping command;
 unknown-command rejection; capability denial *before* handler execution; oversize-payload
 rejection; 100 concurrent invokes with correct ids; remote-navigation blocked; asset
-200/404/traversal-rejected; secondary-window create/close/recreate cycles; clean shutdown
+200/404/traversal-rejected; same-session Web storage sharing, cross-session isolation and native
+user-agent override; secondary-window create/close/recreate cycles; clean shutdown
 with zero pending invocations. The page renders `PASS <run-id>` only after all Java and JS
 assertions pass. A **stress** profile (`-PjdeskStress=true`) adds ≥ 10,000 IPC round trips
 and ≥ 25 window cycles (section 17.5), recording an RSS baseline (no threshold until a

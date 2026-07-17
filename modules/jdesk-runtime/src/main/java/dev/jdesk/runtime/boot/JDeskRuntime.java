@@ -321,7 +321,7 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
                 launchConfig.id(), launchConfig.title(), launchConfig.width(), launchConfig.height(),
                 launchConfig.resizable(), launchConfig.entry(), developerToolsEnabled(),
                 launchConfig.minWidth(), launchConfig.minHeight(),
-                logConsole || automation));
+                logConsole || automation, launchConfig.webViewSession()));
         try {
             CommandDispatcher dispatcher = new CommandDispatcher(
                     launchConfig.id(), spec.commands(), spec.frontendEvents(), capabilityEngine,
@@ -437,7 +437,7 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
         return new WindowConfig(config.id(), config.title(), config.width(), config.height(),
                 config.resizable(), java.net.URI.create(spec.devServerUrl().get()),
                 config.minWidth(), config.minHeight(), config.startMaximized(),
-                config.rememberBounds(), config.position());
+                config.rememberBounds(), config.position(), config.webViewSession());
     }
 
     /** Best-effort bounds persistence; never lets state I/O affect closing. */

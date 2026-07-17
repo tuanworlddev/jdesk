@@ -512,13 +512,37 @@ type public abstract interface dev.jdesk.api.UiDispatcher
   method public abstract void dev.jdesk.api.UiDispatcher.assertUiThread()
   method public abstract void dev.jdesk.api.UiDispatcher.execute(java.lang.Runnable)
 
+type public final record dev.jdesk.api.WebViewSessionConfig
+  field public static final dev.jdesk.api.WebViewSessionConfig dev.jdesk.api.WebViewSessionConfig.DEFAULT
+  constructor public dev.jdesk.api.WebViewSessionConfig(java.lang.String,dev.jdesk.api.WebViewSessionConfig$Storage,java.util.Optional<java.lang.String>)
+  method public dev.jdesk.api.WebViewSessionConfig$Storage dev.jdesk.api.WebViewSessionConfig.storage()
+  method public final boolean dev.jdesk.api.WebViewSessionConfig.equals(java.lang.Object)
+  method public final int dev.jdesk.api.WebViewSessionConfig.hashCode()
+  method public final java.lang.String dev.jdesk.api.WebViewSessionConfig.toString()
+  method public java.lang.String dev.jdesk.api.WebViewSessionConfig.id()
+  method public java.util.Optional<java.lang.String> dev.jdesk.api.WebViewSessionConfig.userAgent()
+  method public static dev.jdesk.api.WebViewSessionConfig$Builder dev.jdesk.api.WebViewSessionConfig.persistent(java.lang.String)
+  method public static dev.jdesk.api.WebViewSessionConfig$Builder dev.jdesk.api.WebViewSessionConfig.privateSession(java.lang.String)
+
+type public static final class dev.jdesk.api.WebViewSessionConfig$Builder
+  method public dev.jdesk.api.WebViewSessionConfig dev.jdesk.api.WebViewSessionConfig$Builder.build()
+  method public dev.jdesk.api.WebViewSessionConfig$Builder dev.jdesk.api.WebViewSessionConfig$Builder.userAgent(java.lang.String)
+
+type public static final enum dev.jdesk.api.WebViewSessionConfig$Storage
+  field public static final dev.jdesk.api.WebViewSessionConfig$Storage dev.jdesk.api.WebViewSessionConfig$Storage.PERSISTENT
+  field public static final dev.jdesk.api.WebViewSessionConfig$Storage dev.jdesk.api.WebViewSessionConfig$Storage.PRIVATE
+  method public static dev.jdesk.api.WebViewSessionConfig$Storage dev.jdesk.api.WebViewSessionConfig$Storage.valueOf(java.lang.String)
+  method public static dev.jdesk.api.WebViewSessionConfig$Storage[] dev.jdesk.api.WebViewSessionConfig$Storage.values()
+
 type public final record dev.jdesk.api.WindowConfig
   constructor public dev.jdesk.api.WindowConfig(dev.jdesk.api.WindowId,java.lang.String,int,int,boolean,java.net.URI)
   constructor public dev.jdesk.api.WindowConfig(dev.jdesk.api.WindowId,java.lang.String,int,int,boolean,java.net.URI,int,int,boolean,boolean)
   constructor public dev.jdesk.api.WindowConfig(dev.jdesk.api.WindowId,java.lang.String,int,int,boolean,java.net.URI,int,int,boolean,boolean,java.util.Optional<dev.jdesk.api.WindowConfig$Position>)
+  constructor public dev.jdesk.api.WindowConfig(dev.jdesk.api.WindowId,java.lang.String,int,int,boolean,java.net.URI,int,int,boolean,boolean,java.util.Optional<dev.jdesk.api.WindowConfig$Position>,dev.jdesk.api.WebViewSessionConfig)
   method public boolean dev.jdesk.api.WindowConfig.rememberBounds()
   method public boolean dev.jdesk.api.WindowConfig.resizable()
   method public boolean dev.jdesk.api.WindowConfig.startMaximized()
+  method public dev.jdesk.api.WebViewSessionConfig dev.jdesk.api.WindowConfig.webViewSession()
   method public dev.jdesk.api.WindowId dev.jdesk.api.WindowConfig.id()
   method public final boolean dev.jdesk.api.WindowConfig.equals(java.lang.Object)
   method public final int dev.jdesk.api.WindowConfig.hashCode()
@@ -543,6 +567,7 @@ type public static final class dev.jdesk.api.WindowConfig$Builder
   method public dev.jdesk.api.WindowConfig$Builder dev.jdesk.api.WindowConfig$Builder.size(int,int)
   method public dev.jdesk.api.WindowConfig$Builder dev.jdesk.api.WindowConfig$Builder.startMaximized(boolean)
   method public dev.jdesk.api.WindowConfig$Builder dev.jdesk.api.WindowConfig$Builder.title(java.lang.String)
+  method public dev.jdesk.api.WindowConfig$Builder dev.jdesk.api.WindowConfig$Builder.webViewSession(dev.jdesk.api.WebViewSessionConfig)
 
 type public static final record dev.jdesk.api.WindowConfig$Position
   constructor public dev.jdesk.api.WindowConfig$Position(int,int)

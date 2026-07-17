@@ -8,6 +8,7 @@ import dev.jdesk.api.CommandDefinition;
 import dev.jdesk.api.CommandRegistry;
 import dev.jdesk.api.WindowConfig;
 import dev.jdesk.api.WindowId;
+import dev.jdesk.api.WebViewSessionConfig;
 import dev.jdesk.runtime.assets.ClasspathAssetSource;
 import dev.jdesk.runtime.assets.CspValidator;
 import dev.jdesk.runtime.boot.JDeskRuntime;
@@ -375,9 +376,15 @@ public final class Main {
             boolean secretsPassed = true;
             boolean automationPassed = true;
             boolean windowStatePassed = true;
+            boolean sessionIsolationPassed = true;
+            boolean persistentSessionPassed = true;
             if (FULL_PROBES) {
             // Secret storage: real Keychain round trip (macOS) via the public API.
             secretsPassed = false;
+            sessionIsolationPassed = false;
+            WindowId sharedA = new WindowId("session-shared-a");
+            WindowId sharedB = new WindowId("session-shared-b");
+            WindowId isolated = new WindowId("session-isolated");
             try {
                 dev.jdesk.api.SecretStore secrets = runtime.secrets();
                 String key = "smoke-probe-" + evidence.runId();
@@ -603,6 +610,123 @@ public final class Main {
                 evidence.addCase("java:window-minsize-remembered-bounds", false,
                         String.valueOf(e));
             }
+
+            // Real browser-storage isolation, sharing and UA override. This exercises
+            // WKWebsiteDataStore / WebView2 UDF / WebKitWebContext rather than a fake store.
+            try {
+                String userAgent = "JDesk-Session-Probe/1.0";
+                WebViewSessionConfig sharedSession = WebViewSessionConfig
+                        .privateSession("smoke-shared")
+                        .userAgent(userAgent).build();
+                WebViewSessionConfig isolatedSession = WebViewSessionConfig
+                        .privateSession("smoke-isolated").build();
+                runtime.openWindow(WindowConfig.builder().id(sharedA.value())
+                        .title("session shared A").entry("jdesk://app/index-secondary.html")
+                        .webViewSession(sharedSession).build())
+                        .toCompletableFuture().get(15, TimeUnit.SECONDS);
+                runtime.openWindow(WindowConfig.builder().id(sharedB.value())
+                        .title("session shared B").entry("jdesk://app/index-secondary.html")
+                        .webViewSession(sharedSession).build())
+                        .toCompletableFuture().get(15, TimeUnit.SECONDS);
+                runtime.openWindow(WindowConfig.builder().id(isolated.value())
+                        .title("session isolated").entry("jdesk://app/index-secondary.html")
+                        .webViewSession(isolatedSession).build())
+                        .toCompletableFuture().get(15, TimeUnit.SECONDS);
+                awaitJavascriptValue(runtime, sharedA, "document.readyState", "complete",
+                        Duration.ofSeconds(10));
+                awaitJavascriptValue(runtime, sharedB, "document.readyState", "complete",
+                        Duration.ofSeconds(10));
+                awaitJavascriptValue(runtime, isolated, "document.readyState", "complete",
+                        Duration.ofSeconds(10));
+                String key = "jdesk-session-isolation";
+                runtime.evaluate(sharedA, "localStorage.setItem('" + key
+                        + "','shared-value'); 'ok'").toCompletableFuture()
+                        .get(5, TimeUnit.SECONDS);
+                String sharedValue = runtime.evaluate(sharedB,
+                        "localStorage.getItem('" + key + "')")
+                        .toCompletableFuture().get(5, TimeUnit.SECONDS);
+                String isolatedValue = runtime.evaluate(isolated,
+                        "String(localStorage.getItem('" + key + "'))")
+                        .toCompletableFuture().get(5, TimeUnit.SECONDS);
+                String actualUserAgent = runtime.evaluate(sharedA, "navigator.userAgent")
+                        .toCompletableFuture().get(5, TimeUnit.SECONDS);
+                boolean passed = "shared-value".equals(sharedValue)
+                        && "null".equals(isolatedValue)
+                        && userAgent.equals(actualUserAgent);
+                evidence.addCase("java:webview-session-isolation", passed,
+                        "shared=" + sharedValue + " isolated=" + isolatedValue
+                                + " ua=" + actualUserAgent);
+                sessionIsolationPassed = passed;
+            } catch (Exception e) {
+                evidence.addCase("java:webview-session-isolation", false, String.valueOf(e));
+            } finally {
+                closeQuietly(runtime, sharedA);
+                closeQuietly(runtime, sharedB);
+                closeQuietly(runtime, isolated);
+            }
+            persistentSessionPassed = false;
+            WindowId first = new WindowId("session-persistent-a");
+            WindowId reopened = new WindowId("session-persistent-b");
+            try {
+                WebViewSessionConfig persistentSession = WebViewSessionConfig
+                        .persistent("smoke-persistent").build();
+                boolean macOs = System.getProperty("os.name", "")
+                        .toLowerCase(java.util.Locale.ROOT).contains("mac");
+                if (macOs) {
+                    try {
+                        runtime.openWindow(WindowConfig.builder().id(first.value())
+                                .title("unsupported persistent session")
+                                .entry("jdesk://app/index-secondary.html")
+                                .webViewSession(persistentSession).build())
+                                .toCompletableFuture().get(15, TimeUnit.SECONDS);
+                        evidence.addCase("java:webview-persistent-session-contract", false,
+                                "macOS accepted a named persistent jdesk:// session");
+                    } catch (Exception expected) {
+                        String detail = String.valueOf(expected);
+                        persistentSessionPassed = detail.contains(
+                                "Named persistent WebView sessions are not supported on macOS");
+                        evidence.addCase("java:webview-persistent-session-contract",
+                                persistentSessionPassed,
+                                persistentSessionPassed
+                                        ? "macOS rejected unsupported named persistence"
+                                        : detail);
+                    }
+                } else {
+                    runtime.openWindow(WindowConfig.builder().id(first.value())
+                            .title("persistent session A")
+                            .entry("jdesk://app/index-secondary.html")
+                            .webViewSession(persistentSession).build())
+                            .toCompletableFuture().get(15, TimeUnit.SECONDS);
+                    awaitJavascriptValue(runtime, first, "document.readyState", "complete",
+                            Duration.ofSeconds(10));
+                    String write = runtime.evaluate(first,
+                            "(function(){try{localStorage.setItem('jdesk-persistent-probe',"
+                                    + "'persisted');return 'ok';}catch(e){return 'ERROR:'"
+                                    + "+e.name+':'+e.message;}})()")
+                            .toCompletableFuture().get(5, TimeUnit.SECONDS);
+                    runtime.closeWindow(first).toCompletableFuture()
+                            .get(10, TimeUnit.SECONDS);
+                    runtime.openWindow(WindowConfig.builder().id(reopened.value())
+                            .title("persistent session B")
+                            .entry("jdesk://app/index-secondary.html")
+                            .webViewSession(persistentSession).build())
+                            .toCompletableFuture().get(15, TimeUnit.SECONDS);
+                    awaitJavascriptValue(runtime, reopened, "document.readyState", "complete",
+                            Duration.ofSeconds(10));
+                    String value = runtime.evaluate(reopened,
+                            "localStorage.getItem('jdesk-persistent-probe')")
+                            .toCompletableFuture().get(5, TimeUnit.SECONDS);
+                    persistentSessionPassed = "ok".equals(write) && "persisted".equals(value);
+                    evidence.addCase("java:webview-persistent-session-contract",
+                            persistentSessionPassed, "write=" + write + " value=" + value);
+                }
+            } catch (Exception e) {
+                evidence.addCase("java:webview-persistent-session-contract", false,
+                        String.valueOf(e));
+            } finally {
+                closeQuietly(runtime, first);
+                closeQuietly(runtime, reopened);
+            }
             } // end FULL_PROBES
 
             // Real engine snapshot of the PASS page.
@@ -632,6 +756,7 @@ public final class Main {
             verdict.set(report.allPassed() && !deniedRan.get() && png.valid()
                     && pending == 0 && consoleSeen && secretsPassed && automationPassed
                     && windowStatePassed && startupBudgetPassed.get()
+                    && sessionIsolationPassed && persistentSessionPassed
                     && rssAfter > 0 && rssAfter <= MAX_RSS_BYTES);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -640,6 +765,14 @@ public final class Main {
             evidence.addCase("orchestrator", false, String.valueOf(e));
         } finally {
             runtime.closeWindow(MAIN_WINDOW);
+        }
+    }
+
+    private static void closeQuietly(JDeskRuntime runtime, WindowId windowId) {
+        try {
+            runtime.closeWindow(windowId).toCompletableFuture().get(10, TimeUnit.SECONDS);
+        } catch (Exception ignored) {
+            // Cleanup path: the window may already be closed or may never have opened.
         }
     }
 

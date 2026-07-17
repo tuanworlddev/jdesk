@@ -18,6 +18,9 @@ import java.lang.foreign.MemorySegment;
 import java.net.URI;
 import dev.jdesk.api.MessageDialog;
 import dev.jdesk.api.MessageDialogResult;
+import dev.jdesk.api.WebViewSessionConfig;
+import java.util.HashMap;
+import java.util.Map;
 
 import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
@@ -56,6 +59,11 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
     /** Lazily created so apps that never watch files never load CoreServices. */
     private volatile MacFsEventsBackend fileWatchBackend;
     private volatile MacPtyBackend ptyBackend;
+    /** Session id -> config and an app-owned WKWebsiteDataStore reference. */
+    private final Map<String, SessionDataStore> webDataStores = new HashMap<>();
+
+    private record SessionDataStore(WebViewSessionConfig config, MemorySegment dataStore) {
+    }
 
     MacPlatformApplication(PlatformApplicationConfig config) {
         super("MacPlatformApplication");
@@ -200,6 +208,37 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
 
     PlatformApplicationConfig config() {
         return config;
+    }
+
+    MemorySegment websiteDataStore(WebViewSessionConfig session) {
+        SessionDataStore existing = webDataStores.get(session.id());
+        if (existing != null) {
+            if (!existing.config().equals(session)) {
+                throw new JDeskException(ErrorCode.INVALID_REQUEST,
+                        "WebView session '" + session.id()
+                                + "' was already opened with different settings");
+            }
+            return existing.dataStore();
+        }
+        MemorySegment dataStoreClass = ObjC.cls("WKWebsiteDataStore");
+        MemorySegment dataStore;
+        if (session.storage() == WebViewSessionConfig.Storage.PRIVATE) {
+            dataStore = ObjC.send(dataStoreClass, "nonPersistentDataStore");
+        } else if (session.id().equals(WebViewSessionConfig.DEFAULT.id())) {
+            dataStore = ObjC.send(dataStoreClass, "defaultDataStore");
+        } else {
+            // WKWebsiteDataStore.dataStoreForIdentifier: accepts a custom store on macOS 14+,
+            // but WebKit does not expose persistent DOM storage to JDesk's custom jdesk:// origin
+            // (localStorage raises SecurityError). Reject named persistent profiles instead of
+            // opening one whose advertised persistence silently fails. The default store remains
+            // the compatibility default; private stores provide working per-session DOM storage.
+            throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                    "Named persistent WebView sessions are not supported on macOS; "
+                            + "use the 'default' persistent session or a private session");
+        }
+        MemorySegment owned = ObjC.retain(dataStore);
+        webDataStores.put(session.id(), new SessionDataStore(session, owned));
+        return owned;
     }
 
     NativeCallbackRegistry blockRegistry() {
@@ -601,6 +640,10 @@ final class MacPlatformApplication extends NativeHandle implements PlatformAppli
     protected void releaseNative() {
         dispatcher.assertUiThread();
         blockRegistry.close();
+        for (SessionDataStore session : webDataStores.values()) {
+            ObjC.release(session.dataStore());
+        }
+        webDataStores.clear();
         ObjC.autoreleasePoolPop(constructionPool);
         // NSApplication is a process singleton and is not released.
     }

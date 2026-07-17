@@ -20,9 +20,19 @@ not complete.
   launch, uninstall and verify bounded residue on Windows, macOS and Linux.
 - [ ] `WebViewSession` supports cookies, cache clearing, proxy, user agent, downloads and persistent
   versus private storage on all primary targets.
+  - [ ] Stable session ids, persistent/private storage isolation and native user-agent overrides are
+    wired through WebView2, WKWebView and WebKitGTK.
+    - [x] Private isolation and native user-agent overrides are wired through all three engines;
+      Windows/Linux also support named persistent profiles.
+    - [ ] Persistent DOM storage for the custom `jdesk://` origin remains unavailable on WKWebView;
+      named profiles are rejected instead of silently sharing or losing state.
+  - [ ] Cookie CRUD, selective cache/site-data clearing, proxy policy and controlled downloads remain.
 - [ ] Permission requests for camera, microphone, geolocation, notifications and clipboard are
   capability-gated, origin-aware and deny by default.
 - [ ] Session isolation and download paths have traversal, symlink, overwrite and cancellation tests.
+  - [x] A real WKWebView probe proves same-session sharing, cross-session isolation and the native
+    user-agent override; API tests reject traversal-like ids and control characters.
+  - [ ] Equivalent Windows/Linux live evidence and download symlink/overwrite/cancellation probes remain.
 
 ## 0.3 — integrated updater, desktop polish and observability
 

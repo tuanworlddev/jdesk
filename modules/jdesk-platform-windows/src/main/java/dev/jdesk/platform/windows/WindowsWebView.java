@@ -84,6 +84,7 @@ final class WindowsWebView implements PlatformWebView {
     private final NativeCallbackRegistry registry;
     private final MemorySegment controller; // owned
     private final MemorySegment webView;    // owned
+    private final WebView2Environment environment;
     private final boolean devToolsEnabled;
     private final List<Consumer<String>> messageListeners = new CopyOnWriteArrayList<>();
     private final List<NavigationListener> navigationListeners = new CopyOnWriteArrayList<>();
@@ -96,6 +97,7 @@ final class WindowsWebView implements PlatformWebView {
         this.app = app;
         this.window = window;
         this.registry = window.callbackRegistry();
+        this.environment = app.environment(config.webViewSession());
 
         // --- controller (async) ---
         AtomicReference<MemorySegment> controllerRef = new AtomicReference<>();
@@ -110,7 +112,7 @@ final class WindowsWebView implements PlatformWebView {
                     completionHr.set(hr);
                     return Hresult.S_OK;
                 });
-        ComRuntime.invokeChecked(app.environment().comPointer(),
+        ComRuntime.invokeChecked(environment.comPointer(),
                 WebView2.ENV_CREATE_CONTROLLER, "CreateCoreWebView2Controller",
                 THIS_PTR_PTR, window.hwnd(), controllerHandler);
         app.pumpUntil(() -> completionHr.get() != 1, 60_000, "WebView2 controller");
@@ -127,8 +129,8 @@ final class WindowsWebView implements PlatformWebView {
             this.webView = wv;
         }
 
-        this.devToolsEnabled=config.devToolsEnabled();
-        configureSettings(devToolsEnabled);
+        this.devToolsEnabled = configureSettings(config.devToolsEnabled(),
+                config.webViewSession().userAgent());
         installInitScript(config.consoleCapture());
         registerEventHandlers();
         registerResourceInterception();
@@ -137,15 +139,34 @@ final class WindowsWebView implements PlatformWebView {
                 "put_IsVisible", THIS_INT, 1);
     }
 
-    private void configureSettings(boolean devTools) {
+    private boolean configureSettings(boolean devTools, java.util.Optional<String> userAgent) {
         try (Arena confined = Arena.ofConfined()) {
             MemorySegment out = confined.allocate(ADDRESS);
             ComRuntime.invokeChecked(webView, WebView2.WV_GET_SETTINGS, "get_Settings",
                     THIS_PTR, out);
             MemorySegment settings = out.get(ADDRESS, 0);
-            ComRuntime.invokeChecked(settings, WebView2.SETTINGS_PUT_ARE_DEV_TOOLS_ENABLED,
-                    "put_AreDevToolsEnabled", THIS_INT, devTools ? 1 : 0);
-            ComRuntime.release(settings);
+            try {
+                ComRuntime.invokeChecked(settings, WebView2.SETTINGS_PUT_ARE_DEV_TOOLS_ENABLED,
+                        "put_AreDevToolsEnabled", THIS_INT, devTools ? 1 : 0);
+                if (userAgent.isPresent()) {
+                    MemorySegment settings2 = ComRuntime.queryInterface(settings,
+                            WebView2.IID_SETTINGS2);
+                    try {
+                        ComRuntime.invokeChecked(settings2, WebView2.SETTINGS2_PUT_USER_AGENT,
+                                "put_UserAgent", THIS_PTR,
+                                WideStrings.alloc(confined, userAgent.orElseThrow()));
+                    } finally {
+                        ComRuntime.release(settings2);
+                    }
+                }
+                MemorySegment actual = confined.allocate(JAVA_INT);
+                ComRuntime.invokeChecked(settings,
+                        WebView2.SETTINGS_GET_ARE_DEV_TOOLS_ENABLED,
+                        "get_AreDevToolsEnabled", THIS_PTR, actual);
+                return actual.get(JAVA_INT, 0) != 0;
+            } finally {
+                ComRuntime.release(settings);
+            }
         }
     }
 
@@ -353,7 +374,7 @@ final class WindowsWebView implements PlatformWebView {
                         .append("\r\n");
             }
             MemorySegment responseOut = confined.allocate(ADDRESS);
-            ComRuntime.invokeChecked(app.environment().comPointer(),
+            ComRuntime.invokeChecked(environment.comPointer(),
                     WebView2.ENV_CREATE_WEB_RESOURCE_RESPONSE, "CreateWebResourceResponse",
                     FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, JAVA_INT, ADDRESS,
                             ADDRESS, ADDRESS),
@@ -703,7 +724,7 @@ final class WindowsWebView implements PlatformWebView {
             LOG.log(Level.DEBUG, "get_BrowserProcessId failed", e);
         }
         return new WebViewDiagnostics(
-                java.util.Optional.of("WebView2 " + app.environment().browserVersion()),
+                java.util.Optional.of("WebView2 " + environment.browserVersion()),
                 java.util.Optional.empty(),
                 java.util.Optional.ofNullable(pid));
     }

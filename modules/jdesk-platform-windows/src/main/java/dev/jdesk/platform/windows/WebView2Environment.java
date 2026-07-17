@@ -4,6 +4,7 @@ import dev.jdesk.api.ErrorCode;
 import dev.jdesk.api.JDeskException;
 import dev.jdesk.ffm.NativeCallbackRegistry;
 import dev.jdesk.webview.spi.PlatformApplicationConfig;
+import dev.jdesk.api.WebViewSessionConfig;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
@@ -36,12 +37,16 @@ final class WebView2Environment implements AutoCloseable {
     private final NativeCallbackRegistry registry;
     private final MemorySegment environment; // owned: released in close()
     private final String browserVersion;
+    private final Path userDataFolder;
+    private final boolean privateSession;
 
     private WebView2Environment(NativeCallbackRegistry registry, MemorySegment environment,
-            String browserVersion) {
+            String browserVersion, Path userDataFolder, boolean privateSession) {
         this.registry = registry;
         this.environment = environment;
         this.browserVersion = browserVersion;
+        this.userDataFolder = userDataFolder;
+        this.privateSession = privateSession;
     }
 
     MemorySegment comPointer() {
@@ -53,7 +58,7 @@ final class WebView2Environment implements AutoCloseable {
     }
 
     static WebView2Environment create(PlatformApplicationConfig config,
-            BooleanSupplier pumpOnce) {
+            WebViewSessionConfig session, BooleanSupplier pumpOnce) {
         NativeCallbackRegistry registry =
                 new NativeCallbackRegistry("webview2-environment", Arena.ofShared());
         Arena arena = registry.arena();
@@ -82,8 +87,7 @@ final class WebView2Environment implements AutoCloseable {
                     return Hresult.S_OK;
                 });
 
-        Path userData = Path.of(System.getProperty("java.io.tmpdir"),
-                "jdesk-webview2", config.applicationId());
+        Path userData = userDataFolder(config, session);
         try {
             Files.createDirectories(userData);
         } catch (Exception e) {
@@ -117,7 +121,36 @@ final class WebView2Environment implements AutoCloseable {
 
         MemorySegment environment = envRef.get();
         String version = readBrowserVersion(environment);
-        return new WebView2Environment(registry, environment, version);
+        return new WebView2Environment(registry, environment, version, userData,
+                session.storage() == WebViewSessionConfig.Storage.PRIVATE);
+    }
+
+    private static Path userDataFolder(PlatformApplicationConfig config,
+            WebViewSessionConfig session) {
+        try {
+            if (session.storage() == WebViewSessionConfig.Storage.PRIVATE) {
+                return Files.createTempDirectory("jdesk-webview2-private-");
+            }
+            String override = System.getProperty("jdesk.paths.dir");
+            Path base;
+            if (override != null && !override.isBlank()) {
+                base = Path.of(override).resolve(safePathSegment(config.applicationId()));
+            } else {
+                String local = System.getenv("LOCALAPPDATA");
+                base = local == null || local.isBlank()
+                        ? Path.of(System.getProperty("user.home", "."), "AppData", "Local")
+                        : Path.of(local);
+                base = base.resolve(safePathSegment(config.applicationId()));
+            }
+            return base.resolve("webview").resolve(session.id()).toAbsolutePath().normalize();
+        } catch (Exception e) {
+            throw new JDeskException(ErrorCode.ILLEGAL_STATE,
+                    "Cannot allocate WebView2 session data folder", e);
+        }
+    }
+
+    private static String safePathSegment(String value) {
+        return value.replaceAll("[^a-zA-Z0-9._-]", "_").replace("..", "_");
     }
 
     private static SymbolLookup loadLoaderLibrary(Arena arena) {
@@ -335,5 +368,30 @@ final class WebView2Environment implements AutoCloseable {
     public void close() {
         ComRuntime.release(environment);
         registry.close();
+        if (privateSession) {
+            deletePrivateDataBestEffort();
+        }
+    }
+
+    private void deletePrivateDataBestEffort() {
+        try (var paths = Files.walk(userDataFolder)) {
+            for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        } catch (Exception e) {
+            try (var paths = Files.walk(userDataFolder)) {
+                // DeleteOnExit processes registrations in reverse order, so register
+                // parents first and children last to delete children first at exit.
+                for (Path path : paths.sorted().toList()) {
+                    path.toFile().deleteOnExit();
+                }
+            } catch (Exception ignored) {
+                userDataFolder.toFile().deleteOnExit();
+            }
+            System.getLogger(WebView2Environment.class.getName()).log(
+                    System.Logger.Level.WARNING,
+                    "Could not completely remove private WebView2 data folder "
+                            + userDataFolder, e);
+        }
     }
 }
