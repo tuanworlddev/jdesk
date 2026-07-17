@@ -17,6 +17,8 @@ import dev.jdesk.api.UiDispatcher;
 import dev.jdesk.api.WindowConfig;
 import dev.jdesk.api.WindowHandle;
 import dev.jdesk.api.WindowId;
+import dev.jdesk.api.WebViewCookie;
+import dev.jdesk.api.WebViewCookieKey;
 import dev.jdesk.api.WebViewDataType;
 import dev.jdesk.runtime.assets.MapAssetSource;
 import dev.jdesk.webview.spi.NativeWindowConfig;
@@ -130,6 +132,7 @@ class JDeskRuntimeTest {
         volatile Consumer<URI> committedListener;
         volatile Consumer<WebViewProcessFailure> failureListener;
         volatile Set<WebViewDataType> clearedData = Set.of();
+        final List<WebViewCookie> cookies = new CopyOnWriteArrayList<>();
         volatile boolean closed;
 
         @Override
@@ -198,6 +201,24 @@ class JDeskRuntimeTest {
         @Override
         public CompletionStage<Void> clearData(Set<WebViewDataType> dataTypes) {
             clearedData = Set.copyOf(dataTypes);
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletionStage<List<WebViewCookie>> cookies() {
+            return CompletableFuture.completedFuture(List.copyOf(cookies));
+        }
+
+        @Override
+        public CompletionStage<Void> setCookie(WebViewCookie cookie) {
+            cookies.removeIf(existing -> existing.key().equals(cookie.key()));
+            cookies.add(cookie);
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletionStage<Void> deleteCookie(WebViewCookieKey key) {
+            cookies.removeIf(cookie -> cookie.key().equals(key));
             return CompletableFuture.completedFuture(null);
         }
 
@@ -989,6 +1010,30 @@ class JDeskRuntimeTest {
 
             assertThat(running.provider.app.windows.getFirst().webView.clearedData)
                     .isEqualTo(selected);
+        }
+    }
+
+    @Test
+    void windowHandleDelegatesCookieCrudToItsNativeSession() throws Exception {
+        try (RunningRuntime running = new RunningRuntime(List.of(RunningRuntime.window("main")))) {
+            running.awaitReady();
+            WindowHandle handle = running.runtime.window(new WindowId("main")).orElseThrow();
+            WebViewCookie first = WebViewCookie.session(
+                    "sid", "one", "example.com", "/", true, true);
+            WebViewCookie updated = WebViewCookie.session(
+                    "sid", "two", "example.com", "/", false, false);
+
+            handle.setWebViewCookie(first).toCompletableFuture().get(5, TimeUnit.SECONDS);
+            handle.setWebViewCookie(updated).toCompletableFuture().get(5, TimeUnit.SECONDS);
+            assertThat(handle.webViewCookies().toCompletableFuture().get(5, TimeUnit.SECONDS))
+                    .containsExactly(updated);
+
+            handle.deleteWebViewCookie(updated.key()).toCompletableFuture()
+                    .get(5, TimeUnit.SECONDS);
+            handle.deleteWebViewCookie(updated.key()).toCompletableFuture()
+                    .get(5, TimeUnit.SECONDS);
+            assertThat(handle.webViewCookies().toCompletableFuture().get(5, TimeUnit.SECONDS))
+                    .isEmpty();
         }
     }
 

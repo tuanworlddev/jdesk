@@ -27,7 +27,9 @@ not complete.
     - [ ] Persistent DOM storage for the custom `jdesk://` origin remains unavailable on WKWebView
       and WebKitGTK; named profiles are rejected instead of silently sharing or losing state.
   - [x] Session-wide selective clearing covers cookies, memory/disk cache and local storage.
-  - [ ] Cookie CRUD, proxy policy and controlled downloads remain.
+  - [x] Portable cookie create/read/update/delete covers expiry, Secure and HttpOnly on all three
+    engines; deletion is idempotent and session-wide clearing remains available.
+  - [ ] SameSite/partitioned-cookie controls, proxy policy and controlled downloads remain.
 - [ ] Permission requests for camera, microphone, geolocation, notifications and clipboard are
   capability-gated, origin-aware and deny by default.
 - [ ] Session isolation and download paths have traversal, symlink, overwrite and cancellation tests.

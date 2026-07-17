@@ -11,9 +11,10 @@ under `docs/verification/` preserve them.
 - Stability: **pre-alpha**; public API compatibility is checked, but breaking changes remain
   possible before 1.0 under the documented support policy.
 - Primary targets: Windows x64, macOS ARM64, Linux x64.
-- Latest verified main commit: `4b89ceb`.
-- Main CI: [run 29551587632](https://github.com/tuanworlddev/jdesk/actions/runs/29551587632).
-- CodeQL: [run 29551587672](https://github.com/tuanworlddev/jdesk/actions/runs/29551587672).
+- Latest verified main commit: `d00aa46`.
+- Main CI: [run 29553196414](https://github.com/tuanworlddev/jdesk/actions/runs/29553196414)
+  (passed on retry after one WKWebView custom-scheme storage flake).
+- CodeQL: [run 29553196446](https://github.com/tuanworlddev/jdesk/actions/runs/29553196446).
 
 ## Distribution
 
@@ -53,8 +54,9 @@ persistent profiles on Windows. A real WKWebView run proves same-session `localS
 sharing, isolation between private sessions, the exact user-agent override and fail-fast handling
 for unsupported named persistence; CI repeats the contract probes on WebView2 and WebKitGTK. The
 current development slice adds session-wide selective clearing for cookies, cache and local
-storage through native engine APIs. Durable `jdesk://` DOM storage on WKWebView/WebKitGTK and cookie
-CRUD/proxy/download/permission controls are still incomplete, so the roadmap item remains open.
+storage plus portable cookie create/read/update/delete through native engine APIs. Durable
+`jdesk://` DOM storage on WKWebView/WebKitGTK, advanced cookie attributes,
+proxy/download/permission controls are still incomplete, so the roadmap item remains open.
 
 The detailed reproducible test design lives in
 [`docs/verification/native-testing-and-evidence.md`](docs/verification/native-testing-and-evidence.md).

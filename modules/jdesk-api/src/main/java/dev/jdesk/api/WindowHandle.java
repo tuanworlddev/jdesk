@@ -29,6 +29,15 @@ public interface WindowHandle {
      */
     CompletionStage<Void> clearWebViewData(Set<WebViewDataType> dataTypes);
 
+    /** Returns a snapshot of all HTTP cookies in this window's WebView session. */
+    CompletionStage<List<WebViewCookie>> webViewCookies();
+
+    /** Adds or updates one HTTP cookie in this window's WebView session. */
+    CompletionStage<Void> setWebViewCookie(WebViewCookie cookie);
+
+    /** Idempotently deletes one HTTP cookie from this window's WebView session. */
+    CompletionStage<Void> deleteWebViewCookie(WebViewCookieKey key);
+
     /** Opens the OS print dialog for this window's current page content. */
     CompletionStage<Void> print();
 

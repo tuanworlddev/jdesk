@@ -8,6 +8,8 @@ import dev.jdesk.api.CommandDefinition;
 import dev.jdesk.api.CommandRegistry;
 import dev.jdesk.api.WindowConfig;
 import dev.jdesk.api.WindowId;
+import dev.jdesk.api.WebViewCookie;
+import dev.jdesk.api.WebViewCookieKey;
 import dev.jdesk.api.WebViewSessionConfig;
 import dev.jdesk.api.WebViewDataType;
 import dev.jdesk.runtime.assets.ClasspathAssetSource;
@@ -691,6 +693,71 @@ public final class Main {
                 closeQuietly(runtime, sharedB);
                 closeQuietly(runtime, isolated);
             }
+
+            WindowId cookieWindow = new WindowId("session-cookie-crud");
+            try {
+                WebViewSessionConfig cookieSession = WebViewSessionConfig
+                        .privateSession("smoke-cookie-crud").build();
+                runtime.openWindow(WindowConfig.builder().id(cookieWindow.value())
+                        .title("cookie CRUD probe").entry("jdesk://app/index-secondary.html")
+                        .webViewSession(cookieSession).build())
+                        .toCompletableFuture().get(15, TimeUnit.SECONDS);
+                var handle = runtime.window(cookieWindow).orElseThrow();
+                WebViewCookieKey key = new WebViewCookieKey(
+                        "jdesk-native-probe", "example.com", "/");
+                WebViewCookieKey domainKey = new WebViewCookieKey(
+                        "jdesk-native-domain-probe", ".example.com", "/");
+                WebViewCookie first = new WebViewCookie(
+                        key.name(), "one", key.domain(), key.path(),
+                        Optional.of(java.time.Instant.now().plusSeconds(3_600)), true, true);
+                WebViewCookie updated = WebViewCookie.session(
+                        key.name(), "two", key.domain(), key.path(), false, false);
+
+                handle.setWebViewCookie(first).toCompletableFuture()
+                        .get(10, TimeUnit.SECONDS);
+                WebViewCookie readFirst = handle.webViewCookies().toCompletableFuture()
+                        .get(10, TimeUnit.SECONDS).stream()
+                        .filter(cookie -> cookie.key().equals(key)).findFirst().orElseThrow();
+                handle.setWebViewCookie(updated).toCompletableFuture()
+                        .get(10, TimeUnit.SECONDS);
+                WebViewCookie readUpdated = handle.webViewCookies().toCompletableFuture()
+                        .get(10, TimeUnit.SECONDS).stream()
+                        .filter(cookie -> cookie.key().equals(key)).findFirst().orElseThrow();
+                handle.deleteWebViewCookie(key).toCompletableFuture()
+                        .get(10, TimeUnit.SECONDS);
+                handle.deleteWebViewCookie(key).toCompletableFuture()
+                        .get(10, TimeUnit.SECONDS);
+                handle.setWebViewCookie(WebViewCookie.session(
+                        domainKey.name(), "domain", domainKey.domain(), domainKey.path(),
+                        false, true)).toCompletableFuture().get(10, TimeUnit.SECONDS);
+                boolean domainRoundTrip = handle.webViewCookies().toCompletableFuture()
+                        .get(10, TimeUnit.SECONDS).stream()
+                        .anyMatch(cookie -> cookie.key().equals(domainKey)
+                                && "domain".equals(cookie.value()) && cookie.httpOnly());
+                handle.deleteWebViewCookie(domainKey).toCompletableFuture()
+                        .get(10, TimeUnit.SECONDS);
+                boolean deleted = handle.webViewCookies().toCompletableFuture()
+                        .get(10, TimeUnit.SECONDS).stream()
+                        .noneMatch(cookie -> cookie.key().equals(key)
+                                || cookie.key().equals(domainKey));
+                boolean passed = "one".equals(readFirst.value())
+                        && readFirst.expiresAt().isPresent()
+                        && readFirst.secure() && readFirst.httpOnly()
+                        && "two".equals(readUpdated.value())
+                        && readUpdated.expiresAt().isEmpty()
+                        && !readUpdated.secure() && !readUpdated.httpOnly()
+                        && domainRoundTrip
+                        && deleted;
+                evidence.addCase("java:webview-cookie-crud", passed,
+                        "first=" + readFirst + " updated=" + readUpdated
+                                + " domainRoundTrip=" + domainRoundTrip
+                                + " deleted=" + deleted);
+            } catch (Exception e) {
+                evidence.addCase("java:webview-cookie-crud", false, String.valueOf(e));
+            } finally {
+                closeQuietly(runtime, cookieWindow);
+            }
+
             persistentSessionPassed = false;
             WindowId first = new WindowId("session-persistent-a");
             WindowId reopened = new WindowId("session-persistent-b");

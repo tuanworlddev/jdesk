@@ -133,6 +133,9 @@ mutating operations return a `CompletionStage<Void>` that completes on the UI th
 | `CompletionStage<Void> setFullscreen(boolean fullscreen)` | Enters/leaves fullscreen. |
 | `CompletionStage<Void> setAlwaysOnTop(boolean alwaysOnTop)` | Toggles always-on-top. |
 | `CompletionStage<Void> clearWebViewData(Set<WebViewDataType> types)` | Clears selected cookies, cache and/or local storage for the entire session without reloading documents. |
+| `CompletionStage<List<WebViewCookie>> webViewCookies()` | Returns a snapshot of all HTTP cookies in the session, including `HttpOnly` cookies. |
+| `CompletionStage<Void> setWebViewCookie(WebViewCookie cookie)` | Creates or replaces a cookie by name/domain/path. |
+| `CompletionStage<Void> deleteWebViewCookie(WebViewCookieKey key)` | Idempotently deletes a cookie by name/domain/path. |
 | `CompletionStage<Void> print()` | Opens the OS print dialog for this window's current page. |
 | `CompletionStage<Optional<String>> showContextMenu(MenuSpec menu)` | Pops up a native context menu (modal) and completes with the chosen action id, or empty. macOS. |
 | `CompletionStage<Subscription> onFileDrop(Consumer<List<Path>> listener)` | Delivers absolute paths of files dropped on the window (which HTML5 cannot expose); HTML5 DnD still works. macOS. |
@@ -202,8 +205,13 @@ window; private sessions support in-process DOM storage.
 
 `WindowHandle.clearWebViewData(Set<WebViewDataType>)` asynchronously clears selected cookies,
 memory/disk cache and/or local storage for the window's entire session. It does not reload existing
-documents. An empty set completes immediately without entering native code. Cookie CRUD, proxy and
-download lifecycle methods remain roadmap work.
+documents. An empty set completes immediately without entering native code.
+
+`WebViewCookie` carries name, value, domain, path, optional expiry, Secure and HttpOnly. Empty expiry
+means a session cookie. `WebViewCookieKey` is the stable name/domain/path identity used for
+idempotent deletion. A leading `.` denotes a domain cookie; otherwise the domain is host-only.
+SameSite and partitioned-cookie attributes are not yet part of the portable API. Proxy and download
+lifecycle methods remain roadmap work.
 
 ### `WindowId`
 

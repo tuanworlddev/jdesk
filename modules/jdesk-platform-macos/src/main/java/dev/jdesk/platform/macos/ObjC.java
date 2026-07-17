@@ -108,6 +108,8 @@ final class ObjC {
     private static final FunctionDescriptor D_VOID_LONG =
             FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, JAVA_LONG);
     private static final FunctionDescriptor D_LONG = FunctionDescriptor.of(JAVA_LONG, ADDRESS, ADDRESS);
+    private static final FunctionDescriptor D_DOUBLE =
+            FunctionDescriptor.of(JAVA_DOUBLE, ADDRESS, ADDRESS);
     private static final FunctionDescriptor D_BOOL = FunctionDescriptor.of(JAVA_BYTE, ADDRESS, ADDRESS);
     private static final FunctionDescriptor D_BOOL_ID =
             FunctionDescriptor.of(JAVA_BYTE, ADDRESS, ADDRESS, ADDRESS);
@@ -248,6 +250,14 @@ final class ObjC {
     static long sendLong(MemorySegment receiver, String selector) {
         try {
             return (long) msgSend(D_LONG).invokeExact(receiver, sel(selector));
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
+    }
+
+    static double sendDouble(MemorySegment receiver, String selector) {
+        try {
+            return (double) msgSend(D_DOUBLE).invokeExact(receiver, sel(selector));
         } catch (Throwable t) {
             throw rethrow(t);
         }

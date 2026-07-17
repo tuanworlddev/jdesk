@@ -16,6 +16,8 @@ import dev.jdesk.api.WindowConfig;
 import dev.jdesk.api.WindowId;
 import dev.jdesk.api.WindowHandle;
 import dev.jdesk.api.WebViewDataType;
+import dev.jdesk.api.WebViewCookie;
+import dev.jdesk.api.WebViewCookieKey;
 import dev.jdesk.runtime.assets.AssetResolver;
 import dev.jdesk.runtime.automation.AutomationHost;
 import dev.jdesk.runtime.automation.AutomationProvider;
@@ -165,6 +167,38 @@ public final class JDeskRuntime implements ApplicationHandle, AutomationHost, Au
             }
             return platformApp.ui().submit(() -> current.window.webView().clearData(copy))
                     .thenCompose(stage -> stage);
+        }
+        @Override public CompletionStage<List<WebViewCookie>> webViewCookies() {
+            WindowRuntime current = currentWindow();
+            if (current == null) {
+                return CompletableFuture.failedFuture(
+                        new JDeskException(ErrorCode.WINDOW_CLOSED, "Unknown or closed window"));
+            }
+            return platformApp.ui().submit(() -> current.window.webView().cookies())
+                    .thenCompose(stage -> stage);
+        }
+        @Override public CompletionStage<Void> setWebViewCookie(WebViewCookie cookie) {
+            WebViewCookie copy = Objects.requireNonNull(cookie, "cookie");
+            WindowRuntime current = currentWindow();
+            if (current == null) {
+                return CompletableFuture.failedFuture(
+                        new JDeskException(ErrorCode.WINDOW_CLOSED, "Unknown or closed window"));
+            }
+            return platformApp.ui().submit(() -> current.window.webView().setCookie(copy))
+                    .thenCompose(stage -> stage);
+        }
+        @Override public CompletionStage<Void> deleteWebViewCookie(WebViewCookieKey key) {
+            WebViewCookieKey copy = Objects.requireNonNull(key, "key");
+            WindowRuntime current = currentWindow();
+            if (current == null) {
+                return CompletableFuture.failedFuture(
+                        new JDeskException(ErrorCode.WINDOW_CLOSED, "Unknown or closed window"));
+            }
+            return platformApp.ui().submit(() -> current.window.webView().deleteCookie(copy))
+                    .thenCompose(stage -> stage);
+        }
+        private WindowRuntime currentWindow() {
+            return windows.get(id());
         }
         @Override public CompletionStage<Void> print() {
             return controlWindow(id(), PlatformWindow::print);

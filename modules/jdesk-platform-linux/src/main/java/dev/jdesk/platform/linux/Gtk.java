@@ -135,6 +135,14 @@ final class Gtk {
             Linker.Option.firstVariadicArg(1));
     static final MethodHandle G_FREE = dl("g_free",
             FunctionDescriptor.ofVoid(ADDRESS));
+    static final MethodHandle G_LIST_FREE = dl("g_list_free",
+            FunctionDescriptor.ofVoid(ADDRESS));
+    static final MethodHandle G_DATE_TIME_NEW_FROM_UNIX_UTC = dl("g_date_time_new_from_unix_utc",
+            FunctionDescriptor.of(ADDRESS, JAVA_LONG));
+    static final MethodHandle G_DATE_TIME_TO_UNIX = dl("g_date_time_to_unix",
+            FunctionDescriptor.of(JAVA_LONG, ADDRESS));
+    static final MethodHandle G_DATE_TIME_UNREF = dl("g_date_time_unref",
+            FunctionDescriptor.ofVoid(ADDRESS));
     static final MethodHandle G_MAIN_CONTEXT_INVOKE_FULL = dl("g_main_context_invoke_full",
             FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
     static final MethodHandle G_BYTES_NEW = dl("g_bytes_new",
@@ -338,6 +346,51 @@ final class Gtk {
     static final MethodHandle WEBKIT_WEBSITE_DATA_MANAGER_CLEAR_FINISH = dl(
             "webkit_website_data_manager_clear_finish",
             FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
+    static final MethodHandle WEBKIT_WEBSITE_DATA_MANAGER_GET_COOKIE_MANAGER = dl(
+            "webkit_website_data_manager_get_cookie_manager",
+            FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle WEBKIT_COOKIE_MANAGER_GET_ALL_COOKIES = dl(
+            "webkit_cookie_manager_get_all_cookies",
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS, ADDRESS));
+    static final MethodHandle WEBKIT_COOKIE_MANAGER_GET_ALL_COOKIES_FINISH = dl(
+            "webkit_cookie_manager_get_all_cookies_finish",
+            FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, ADDRESS));
+    static final MethodHandle WEBKIT_COOKIE_MANAGER_ADD_COOKIE = dl(
+            "webkit_cookie_manager_add_cookie",
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS));
+    static final MethodHandle WEBKIT_COOKIE_MANAGER_ADD_COOKIE_FINISH = dl(
+            "webkit_cookie_manager_add_cookie_finish",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
+    static final MethodHandle WEBKIT_COOKIE_MANAGER_DELETE_COOKIE = dl(
+            "webkit_cookie_manager_delete_cookie",
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS));
+    static final MethodHandle WEBKIT_COOKIE_MANAGER_DELETE_COOKIE_FINISH = dl(
+            "webkit_cookie_manager_delete_cookie_finish",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
+    static final MethodHandle SOUP_COOKIE_NEW = dl("soup_cookie_new",
+            FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS, JAVA_INT));
+    static final MethodHandle SOUP_COOKIE_FREE = dl("soup_cookie_free",
+            FunctionDescriptor.ofVoid(ADDRESS));
+    static final MethodHandle SOUP_COOKIE_GET_NAME = dl("soup_cookie_get_name",
+            FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle SOUP_COOKIE_GET_VALUE = dl("soup_cookie_get_value",
+            FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle SOUP_COOKIE_GET_DOMAIN = dl("soup_cookie_get_domain",
+            FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle SOUP_COOKIE_GET_PATH = dl("soup_cookie_get_path",
+            FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle SOUP_COOKIE_GET_EXPIRES = dl("soup_cookie_get_expires",
+            FunctionDescriptor.of(ADDRESS, ADDRESS));
+    static final MethodHandle SOUP_COOKIE_SET_EXPIRES = dl("soup_cookie_set_expires",
+            FunctionDescriptor.ofVoid(ADDRESS, ADDRESS));
+    static final MethodHandle SOUP_COOKIE_GET_SECURE = dl("soup_cookie_get_secure",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS));
+    static final MethodHandle SOUP_COOKIE_SET_SECURE = dl("soup_cookie_set_secure",
+            FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT));
+    static final MethodHandle SOUP_COOKIE_GET_HTTP_ONLY = dl("soup_cookie_get_http_only",
+            FunctionDescriptor.of(JAVA_INT, ADDRESS));
+    static final MethodHandle SOUP_COOKIE_SET_HTTP_ONLY = dl("soup_cookie_set_http_only",
+            FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT));
     static final MethodHandle WEBKIT_USER_CONTENT_MANAGER_REGISTER_SCRIPT_MESSAGE_HANDLER = dl(
             "webkit_user_content_manager_register_script_message_handler",
             FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
