@@ -5,7 +5,9 @@ import dev.jdesk.packager.JdkTools;
 import dev.jdesk.packager.JpackageArguments;
 import dev.jdesk.packager.JpackageInstallerArguments;
 import dev.jdesk.packager.SigningCommands;
+import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -52,6 +54,14 @@ public abstract class JDeskInstallerTask extends DefaultTask {
 
     @Input
     @org.gradle.api.tasks.Optional
+    public abstract Property<String> getWindowsCertificate();
+
+    @Input
+    @org.gradle.api.tasks.Optional
+    public abstract Property<String> getWindowsTimestampUrl();
+
+    @Input
+    @org.gradle.api.tasks.Optional
     public abstract Property<String> getMacSigningIdentity();
 
     /** macOS notarization keychain profile; when set (with a signing identity) the built
@@ -59,6 +69,14 @@ public abstract class JDeskInstallerTask extends DefaultTask {
     @Input
     @org.gradle.api.tasks.Optional
     public abstract Property<String> getMacNotarizationProfile();
+
+    @Input
+    @org.gradle.api.tasks.Optional
+    public abstract Property<String> getLinuxSigningKey();
+
+    /** Secret input is deliberately excluded from task fingerprints and command lines. */
+    @Internal
+    public abstract Property<String> getLinuxSigningPassphrase();
 
     @Internal
     public abstract Property<String> getJavaHome();
@@ -72,8 +90,28 @@ public abstract class JDeskInstallerTask extends DefaultTask {
     @TaskAction
     public void buildInstaller() {
         boolean macOs = OsSupport.isMacOs();
+        boolean windows = OsSupport.isWindows();
+        boolean linux = OsSupport.isLinux();
         String osName = System.getProperty("os.name", "");
         JpackageInstallerArguments.Type type = resolveType(osName);
+
+        boolean macSigned = macOs && getMacSigningIdentity().isPresent();
+        boolean windowsSigned = windows && getWindowsCertificate().isPresent();
+        boolean linuxSigned = linux && getLinuxSigningKey().isPresent();
+        if (macOs && getMacNotarizationProfile().isPresent()
+                && !getMacSigningIdentity().isPresent()) {
+            throw new GradleException("jdeskInstaller: macNotarizationProfile requires"
+                    + " macSigningIdentity; refusing to produce an unnotarizable artifact.");
+        }
+        if (windowsSigned && !getWindowsTimestampUrl().isPresent()) {
+            throw new GradleException("jdeskInstaller: windowsCertificate requires"
+                    + " windowsTimestampUrl so the Authenticode signature remains valid"
+                    + " after certificate expiry.");
+        }
+        if (linux && getLinuxSigningPassphrase().isPresent() && !linuxSigned) {
+            throw new GradleException("jdeskInstaller: linuxSigningPassphrase requires"
+                    + " linuxSigningKey; refusing an unused secret configuration.");
+        }
 
         String rawImageName = getImageName().get();
         File appImageRoot = new File(getAppImageDirectory().get().getAsFile(),
@@ -106,7 +144,7 @@ public abstract class JDeskInstallerTask extends DefaultTask {
         List<String> commandLine = new ArrayList<>();
         commandLine.add(jpackage.toString());
         commandLine.addAll(args);
-        boolean signed = macOs && getMacSigningIdentity().isPresent();
+        boolean signed = macSigned || windowsSigned || linuxSigned;
         getLogger().lifecycle("jdeskInstaller: {} {}", String.join(" ", commandLine),
                 signed ? "(signed)" : "(UNSIGNED)");
         try {
@@ -119,15 +157,43 @@ public abstract class JDeskInstallerTask extends DefaultTask {
         getLogger().lifecycle("jdeskInstaller: {} installer written to {}{}",
                 type.jpackageType(), destination, signed ? "" : " (UNSIGNED)");
 
+        Path installer = locateInstaller(destination, type);
+
+        if (windowsSigned) {
+            getLogger().lifecycle("jdeskInstaller: Authenticode-signing {}", installer);
+            runToolchain(SigningCommands.windowsSigntool(installer,
+                            getWindowsCertificate().get(), getWindowsTimestampUrl().get()),
+                    "signtool sign", "Verify the certificate is installed in the runner's"
+                            + " certificate store and the timestamp service is reachable.");
+            runToolchain(SigningCommands.windowsVerify(installer), "signtool verify",
+                    "The produced installer did not pass Authenticode policy verification.");
+        }
+
+        if (linuxSigned) {
+            getLogger().lifecycle("jdeskInstaller: detached-signing {}", installer);
+            String passphrase = getLinuxSigningPassphrase().getOrNull();
+            List<String> signCommand = passphrase == null
+                    ? SigningCommands.linuxGpgDetachSign(installer, getLinuxSigningKey().get())
+                    : SigningCommands.linuxGpgDetachSignHeadless(
+                            installer, getLinuxSigningKey().get());
+            runToolchain(signCommand, "gpg detach-sign",
+                    "Verify the configured Linux signing key is available to gpg.", passphrase);
+            runToolchain(SigningCommands.linuxGpgVerify(installer), "gpg verify",
+                    "The produced detached package signature did not verify.");
+        }
+
         // Notarize + staple: Gatekeeper requires an outside-App-Store macOS installer to be
         // notarized. jpackage already code-signed the image (Hardened Runtime); here we submit
         // the built installer to Apple and staple the ticket so it launches offline.
-        if (macOs && signed && getMacNotarizationProfile().isPresent()) {
+        if (macSigned && getMacNotarizationProfile().isPresent()) {
             String profile = getMacNotarizationProfile().get();
-            Path installer = locateInstaller(destination, type);
             getLogger().lifecycle("jdeskInstaller: notarizing {} (profile {})", installer, profile);
-            runToolchain(SigningCommands.macNotarize(installer, profile), "notarytool submit");
-            runToolchain(SigningCommands.macStaple(installer), "stapler staple");
+            runToolchain(SigningCommands.macNotarize(installer, profile), "notarytool submit",
+                    "Verify the notarization keychain profile and Apple credentials.");
+            runToolchain(SigningCommands.macStaple(installer), "stapler staple",
+                    "Apple accepted the artifact but its notarization ticket could not be stapled.");
+            runToolchain(SigningCommands.macStapleValidate(installer), "stapler validate",
+                    "The stapled notarization ticket did not validate.");
             getLogger().lifecycle("jdeskInstaller: notarized and stapled {}", installer);
         }
     }
@@ -143,12 +209,23 @@ public abstract class JDeskInstallerTask extends DefaultTask {
         return matches[0].toPath();
     }
 
-    private void runToolchain(List<String> commandLine, String label) {
+    private void runToolchain(List<String> commandLine, String label, String remediation) {
+        runToolchain(commandLine, label, remediation, null);
+    }
+
+    private void runToolchain(List<String> commandLine, String label, String remediation,
+            String standardInput) {
         try {
-            getExecOperations().exec(spec -> spec.setCommandLine(commandLine));
+            getExecOperations().exec(spec -> {
+                spec.setCommandLine(commandLine);
+                if (standardInput != null) {
+                    spec.setStandardInput(new ByteArrayInputStream(
+                            (standardInput + System.lineSeparator())
+                                    .getBytes(StandardCharsets.UTF_8)));
+                }
+            });
         } catch (Exception e) {
-            throw new GradleException("jdeskInstaller: " + label + " failed. Verify the"
-                    + " notarization keychain profile and Apple credentials.", e);
+            throw new GradleException("jdeskInstaller: " + label + " failed. " + remediation, e);
         }
     }
 

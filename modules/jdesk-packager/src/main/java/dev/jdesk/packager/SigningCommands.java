@@ -1,8 +1,8 @@
 package dev.jdesk.packager;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 /**
  * Pure builders for the platform signing/notarization command lines, mirroring
@@ -36,6 +36,11 @@ public final class SigningCommands {
         return List.of("xcrun", "stapler", "staple", artifact.toString());
     }
 
+    /** Validates that a stapled ticket is present and accepted. */
+    public static List<String> macStapleValidate(Path artifact) {
+        return List.of("xcrun", "stapler", "validate", artifact.toString());
+    }
+
     /**
      * Windows Authenticode via {@code signtool}, SHA-256 with an RFC-3161 timestamp. The
      * certificate reference selects the cert (e.g. a subject-name substring in the user store);
@@ -45,15 +50,43 @@ public final class SigningCommands {
             String timestampUrl) {
         require(certificateSubject, "certificateSubject");
         require(timestampUrl, "timestampUrl");
-        return List.of("signtool", "sign", "/fd", "SHA256", "/tr", timestampUrl,
-                "/td", "SHA256", "/n", certificateSubject, artifact.toString());
+        List<String> command = new ArrayList<>(List.of("signtool", "sign", "/fd", "SHA256",
+                "/tr", timestampUrl, "/td", "SHA256"));
+        String compact = certificateSubject.replaceAll("\\s+", "");
+        if (compact.matches("(?i)[0-9a-f]{40}")) {
+            command.add("/sha1");
+            command.add(compact);
+        } else {
+            command.add("/n");
+            command.add(certificateSubject);
+        }
+        command.add(artifact.toString());
+        return List.copyOf(command);
+    }
+
+    /** Authenticode policy verification after signing. */
+    public static List<String> windowsVerify(Path artifact) {
+        return List.of("signtool", "verify", "/pa", "/all", "/v", artifact.toString());
     }
 
     /** Detached GPG signature (`.asc`) for a Linux artifact under the given key id. */
     public static List<String> linuxGpgDetachSign(Path artifact, String keyId) {
         require(keyId, "keyId");
-        return List.of("gpg", "--batch", "--yes", "--armor", "--detach-sign",
+        return List.of("gpg", "--yes", "--armor", "--detach-sign",
                 "--local-user", keyId, artifact.toString());
+    }
+
+    /** Headless variant: the caller must provide the passphrase on stdin. */
+    public static List<String> linuxGpgDetachSignHeadless(Path artifact, String keyId) {
+        require(keyId, "keyId");
+        return List.of("gpg", "--batch", "--yes", "--pinentry-mode", "loopback",
+                "--passphrase-fd", "0", "--armor", "--detach-sign", "--local-user", keyId,
+                artifact.toString());
+    }
+
+    /** Verifies the conventional armored detached signature emitted beside an artifact. */
+    public static List<String> linuxGpgVerify(Path artifact) {
+        return List.of("gpg", "--batch", "--verify", artifact + ".asc", artifact.toString());
     }
 
     private static void require(String value, String what) {

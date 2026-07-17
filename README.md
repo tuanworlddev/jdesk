@@ -244,10 +244,11 @@ See [packaging and signing](docs/packaging/packaging-and-signing.md).
 ## Project Status
 
 JDesk is pre-alpha and under active development. The core runtime and primary platform
-adapters are implemented and tested. `dev.jdesk:*` is public on Maven Central; the current
-development release work is synchronizing Maven Central, the Gradle Plugin Portal, npm, and
-GitHub from one verified tag. Signed/notarized installers and secondary CPU architectures remain
-pending. CI includes Windows, Linux, and macOS ARM64 native/security/package gates.
+adapters are implemented and tested. Version 0.1.3 was published from one verified tag to Maven
+Central, npm and GitHub Releases. Its first Gradle Plugin Portal submission is awaiting Gradle's
+manual approval, so Gradle's public marker is the only remaining 0.1.3 registry gate.
+Signed/notarized installers and secondary CPU architectures remain pending. CI includes Windows,
+Linux, and macOS ARM64 native/security/package gates.
 
 The repository also includes a reviewed public-API baseline, signed-manifest update
 coordination with health rollback, enterprise managed runtime policy, bounded redacted

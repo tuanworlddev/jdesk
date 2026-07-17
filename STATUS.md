@@ -7,28 +7,33 @@ under `docs/verification/` preserve them.
 
 ## Current line
 
-- Source version: **0.1.3 (development)**.
+- Source version: **0.1.3 (released pre-alpha)**.
 - Stability: **pre-alpha**; public API compatibility is checked, but breaking changes remain
   possible before 1.0 under the documented support policy.
 - Primary targets: Windows x64, macOS ARM64, Linux x64.
-- Latest verified main commit: `f3f1cb5`.
-- Main CI: [run 29547854377](https://github.com/tuanworlddev/jdesk/actions/runs/29547854377).
-- CodeQL: [run 29547854369](https://github.com/tuanworlddev/jdesk/actions/runs/29547854369).
+- Latest verified main commit: `0887e62`.
+- Main CI: [run 29548403210](https://github.com/tuanworlddev/jdesk/actions/runs/29548403210).
+- CodeQL: [run 29548403136](https://github.com/tuanworlddev/jdesk/actions/runs/29548403136).
 
 ## Distribution
 
 | Surface | Current public state | Next release gate |
 | --- | --- | --- |
-| Maven Central | `dev.jdesk:*` 0.1.2 is public | publish every 0.1.3 module, including `jdesk-plugin` |
-| Gradle Plugin Portal | 0.1.2 is not listed | `publishPlugins` must succeed and its marker POM must resolve publicly |
-| npm `create-jdesk-app` | registry `latest` is 0.1.0 | publish 0.1.3 with the matching bundled CLI |
-| npm `jdesk-client` | registry `latest` is 0.1.0 | publish 0.1.3 with OIDC provenance |
-| GitHub Releases | latest release is 0.1.1 | create a 0.1.3 pre-release from the exact verified tag SHA |
+| Maven Central | every `dev.jdesk:*` 0.1.3 module is public, including `jdesk-plugin` | public canary build |
+| Gradle Plugin Portal | 0.1.3 submitted successfully; first-plugin manual approval is pending | marker POM must resolve publicly after Gradle approval |
+| npm `create-jdesk-app` | `latest` is 0.1.3 with provenance; live default scaffold passed | public Gradle builds after Plugin Portal approval |
+| npm `jdesk-client` | `latest` is 0.1.3 with GitHub OIDC provenance | public canary build |
+| GitHub Releases | [0.1.3 pre-release](https://github.com/tuanworlddev/jdesk/releases/tag/v0.1.3) with JARs/checksums | enable optional attestations when repository policy is ready |
 | Native installers | unsigned MSI, DMG and DEB are CI-verified | real signing/notarization plus clean install/update/uninstall tests |
 
 The release workflow rejects version drift among Gradle, both npm packages, the Java generator,
 frontend templates and the release tag. `.github/workflows/public-canary.yml` is the release-consumer
 proof: it resolves only public registries and builds clean Gradle basic, Gradle React and Maven apps.
+Release [run 29548770955](https://github.com/tuanworlddev/jdesk/actions/runs/29548770955)
+published Maven, Plugin Portal submission, npm and GitHub from `v0.1.3`. Public-canary
+[run 29548931570](https://github.com/tuanworlddev/jdesk/actions/runs/29548931570) proved npm was
+immediate and Maven propagated, then failed honestly because Gradle reports the new plugin is still
+awaiting first-submission approval. Rerun it unchanged after the marker becomes public.
 
 ## Verified framework baseline
 

@@ -301,9 +301,14 @@ public class JDeskApplicationPlugin implements Plugin<Project> {
             t.getAppVersion().convention(projectVersion);
             t.getInstallerType().set(
                     project.getProviders().gradleProperty("jdeskInstallerType"));
+            t.getWindowsCertificate().set(extension.getSigning().getWindowsCertificate());
+            t.getWindowsTimestampUrl().set(extension.getSigning().getWindowsTimestampUrl());
             t.getMacSigningIdentity().set(extension.getSigning().getMacSigningIdentity());
             t.getMacNotarizationProfile().set(
                     extension.getSigning().getMacNotarizationProfile());
+            t.getLinuxSigningKey().set(extension.getSigning().getLinuxSigningKey());
+            t.getLinuxSigningPassphrase().set(extension.getSigning().getLinuxSigningPassphrase()
+                    .orElse(project.getProviders().environmentVariable("JDESK_GPG_PASSPHRASE")));
             t.getJavaHome().set(javaHome);
             t.getDestination().convention(
                     layout.getBuildDirectory().dir("jdesk/installer"));
