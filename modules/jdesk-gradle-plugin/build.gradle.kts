@@ -10,7 +10,7 @@ plugins {
 }
 description = "JDesk Gradle application plugin (dev.jdesk.application)."
 gradlePlugin {
-    website = "https://github.com/tuanworlddev/jdesk"
+    website = "https://jdesk.dev"
     vcsUrl = "https://github.com/tuanworlddev/jdesk.git"
     plugins {
         create("jdeskApplication") {

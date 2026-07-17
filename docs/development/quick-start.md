@@ -5,10 +5,10 @@ This gets a real JDesk application talking between JavaScript and Java. It mirro
 concrete, runnable version of everything below is
 [`examples/hello-vanilla`](../../examples/hello-vanilla) — read it alongside this page.
 
-> **Status.** JDesk is pre-alpha (see [../../IMPLEMENTATION_STATUS.md](../../IMPLEMENTATION_STATUS.md)
-> and [../../VERIFICATION.md](../../VERIFICATION.md)). The framework is not yet published to
-> Maven, so today apps consume it as project/`includeBuild` dependencies rather than
-> `dev.jdesk:jdesk-api:<version>` coordinates. The APIs shown here are stable.
+> **Status.** JDesk is pre-alpha (see [../../STATUS.md](../../STATUS.md),
+> [../../ROADMAP.md](../../ROADMAP.md), and [../../VERIFICATION.md](../../VERIFICATION.md)).
+> Public applications resolve `dev.jdesk:*` from Maven Central; `includeBuild` is reserved for
+> framework development.
 
 ## Prerequisites
 

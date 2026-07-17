@@ -1,0 +1,87 @@
+name: public-canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact published version; empty uses create-jdesk-app latest
+        required: false
+        type: string
+  schedule:
+    - cron: '41 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  public-consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+      - name: Resolve and wait for the public version
+        id: release
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          version="$REQUESTED_VERSION"
+          if [[ -z "$version" ]]; then
+            version="$(npm view create-jdesk-app version)"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          for attempt in {1..30}; do
+            create="$(npm view "create-jdesk-app@$version" version 2>/dev/null || true)"
+            client="$(npm view "jdesk-client@$version" version 2>/dev/null || true)"
+            central="https://repo.maven.apache.org/maven2/dev/jdesk/jdesk-api/$version/jdesk-api-$version.pom"
+            portal="https://plugins.gradle.org/m2/dev/jdesk/application/dev.jdesk.application.gradle.plugin/$version/dev.jdesk.application.gradle.plugin-$version.pom"
+            if [[ "$create" == "$version" && "$client" == "$version" ]] \
+                && curl --fail --silent --head "$central" >/dev/null \
+                && curl --fail --silent --head "$portal" >/dev/null; then
+              echo "All public registries expose JDesk $version"
+              exit 0
+            fi
+            echo "Attempt $attempt/30: npm create=$create client=$client; waiting for Central/Plugin Portal propagation"
+            sleep 20
+          done
+          echo "JDesk $version did not become available from every public registry" >&2
+          exit 1
+      - name: Scaffold and build the public Gradle basic template
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          root="$(mktemp -d)"
+          cd "$root"
+          npx --yes "create-jdesk-app@$VERSION" basic-app --yes
+          grep -F "version \"$VERSION\"" basic-app/build.gradle.kts
+          basic-app/gradlew -p basic-app classes --stacktrace
+      - name: Scaffold and build the public React template
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          root="$(mktemp -d)"
+          cd "$root"
+          npx --yes "create-jdesk-app@$VERSION" react-app --yes --template react
+          npm install --prefix react-app/ui
+          react-app/gradlew -p react-app build --stacktrace
+      - name: Scaffold and build the public Maven template
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          root="$(mktemp -d)"
+          cd "$root"
+          npx --yes "create-jdesk-app@$VERSION" maven-app --yes --maven
+          grep -F "<jdesk.version>$VERSION</jdesk.version>" maven-app/pom.xml
+          (cd maven-app/ui && java Build.java)
+          mvn -B -ntp -f maven-app/pom.xml compile

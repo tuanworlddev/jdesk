@@ -31,6 +31,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y cups-client
       - name: Build and unit test
         run: ./gradlew build --stacktrace
+      - name: Verify synchronized release metadata
+        run: python3 scripts/verify_release_versions.py
       - name: Generate and build real CLI templates
         shell: bash
         run: |
@@ -43,6 +45,14 @@ jobs:
           "$tmp/structured/gradlew" -p "$tmp/structured" classes --no-configuration-cache
       - name: TypeScript client build and tests
         run: npm ci --prefix js/jdesk-client && npm test --prefix js/jdesk-client
+      - name: npm scaffolder build and tests
+        run: |
+          npm ci --prefix js/create-jdesk-app
+          ./gradlew :modules:jdesk-cli:jar --stacktrace
+          npm run bundle --prefix js/create-jdesk-app
+          npm test --prefix js/create-jdesk-app
+          (cd js/create-jdesk-app && npm pack --dry-run)
+          (cd js/jdesk-client && npm pack --dry-run)
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

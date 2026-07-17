@@ -12,9 +12,9 @@ build. If you are new, read **Getting Started** top to bottom. If you know the b
 to a **Guide** for the task at hand, a **Concept** to understand how something works, or the
 **Reference** for exact details.
 
-> **Status.** JDesk is pre-alpha. See the [status](../IMPLEMENTATION_STATUS.md) and the
-> [verification matrix](../VERIFICATION.md) for exactly what is implemented and verified on
-> which platforms. The docs mark anything unfinished.
+> **Status.** JDesk is pre-alpha. See the authoritative [status](../STATUS.md),
+> [roadmap](../ROADMAP.md), and [verification evidence](../VERIFICATION.md). The docs mark
+> anything unfinished.
 
 ## Getting started
 

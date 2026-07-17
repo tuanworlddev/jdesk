@@ -1,180 +1,37 @@
-# JDesk Verification Status
+# JDesk verification
 
-This file is updated **only from machine-generated reports** (spec sections 18, 23). A cell may claim a pass only if evidence exists under `build/evidence/<run-id>/` (local) or as a CI artifact, produced by the same commit being tested. Statuses: `NOT STARTED`, `IN PROGRESS`, `PASS (evidence: <run-id or CI link>)`, `FAIL`, `UNVERIFIED`, `BLOCKED`.
+The authoritative product state is [STATUS.md](STATUS.md), and release completion criteria are in
+[ROADMAP.md](ROADMAP.md). This file defines where current proof is found.
 
-> **Evidence is not committed** (`.gitignore` excludes `/evidence/`; spec 18: "never
-> commit; rerun to produce"). So the run-ids below are **provenance stamps, not files in
-> the repo**. The durable, per-commit record is **CI**, which regenerates the full suite
-> on Windows/Linux/macOS and uploads the evidence as run artifacts. Local macOS run-ids are
-> reproducible with the commands in each section (they were produced on a dirty feature
-> worktree, so they stamp behavior, not a committed SHA).
->
-> **Authoritative current state — CI run [29187403208](https://github.com/tuanworlddev/jdesk/actions/runs/29187403208)
-> on remediation commit `cd962ff`: all 11 required jobs plus `release-gate` green.**
-> This covers unit/coverage, Gradle plugin functional tests, and native, security, and
-> package execution on Windows x64, Linux x64, and macOS ARM64.
+## Current proof
 
-**Local Windows verification — 2026-07-12 (real Windows 11 x64, WebView2 150.0.4078.65).**
-First run of the suite on a real Windows machine: `./gradlew check --continue` passed (844
-tests, 0 failures, all coverage gates green), the real-WebView2 native smoke passed 47/47
-(run `1783830500-8f2ac267604ddc64`, verifier `problems=0`), and the real-WebView2 security
-probe passed 22/22 (run `1783830661-3046008384e44aff`, verifier `problems=0`). The checkout
-surfaced five cross-platform defects that failed `check` on Windows while passing on the
-Linux/macOS CI lanes — a missing `.gitattributes` (CRLF rewrote LF golden/API-baseline
-fixtures), two POSIX-path test assertions, a Windows-only JaCoCo dip from the `lp`-only
-`CupsPrinting` branch, and a `WindowsPtyBackend` double-close — all fixed. See the
-[Windows local verification report](docs/verification/windows-local-2026-07-12.md).
+| Gate | Current evidence |
+| --- | --- |
+| Complete primary-platform CI | [run 29519572858](https://github.com/tuanworlddev/jdesk/actions/runs/29519572858), commit `af9a4c8` |
+| CodeQL Java/Kotlin and JavaScript/TypeScript | [run 29519572747](https://github.com/tuanworlddev/jdesk/actions/runs/29519572747), commit `af9a4c8` |
+| Release workflow behavior | [run 29519900523](https://github.com/tuanworlddev/jdesk/actions/runs/29519900523), commit `af9a4c8` |
 
-Enterprise-hardening commit `c27b9b8` is additionally verified locally on macOS ARM64:
-clean `check`, TypeScript tests, generated-consumer jlink/jpackage/native smoke, mounted
-DMG, 122/122 package checksums, CycloneDX 1.7 parsing, and native stress evidence
-`1783851900-c0b1eb7b955c39e1` (startup 251 ms, 10,000 IPC with 0 mismatch, p95 7 ms,
-p99 9 ms, RSS 293,568,512 bytes). Its new cross-platform CI/CodeQL runs remain pending
-because GitHub rejected the push until the owner account verifies its email. See the
-[enterprise readiness report](docs/verification/enterprise-readiness-2026-07-12.md).
+The CI workflow uploads machine-generated evidence separately for real WebView native, security and
+package jobs on Windows x64, macOS ARM64 and Linux x64. Evidence includes environment/provider facts,
+case results, snapshots, checksums and verifier output. No fake provider may satisfy a native gate.
 
-## Native smoke
+## Reproducing checks
 
-| Platform | Status | Evidence | WebView version |
-| --- | --- | --- | --- |
-| Windows x64 | PASS | CI run 29187403208 job `windows-x64-native`, artifact `windows-x64-native-evidence`, provider `windows-webview2`, verifier green | WebView2 Evergreen on Windows Server 2025 |
-| macOS ARM64 | PASS | CI run 29187403208 job `macos-arm64-native`, artifact `macos-arm64-native-evidence`, plus local remediation run 1783846302-deb600a45fd34b54; provider `macos-wkwebview`, verifier green | WKWebView (system WebKit) |
-| Linux x64 | PASS | CI run 29187403208 job `linux-x64-native`, artifact `linux-x64-native-evidence`, provider `linux-webkitgtk`, verifier green | WebKitGTK 4.1 (libwebkit2gtk-4.1) |
+```bash
+./gradlew build --stacktrace
+npm ci --prefix js/jdesk-client
+npm test --prefix js/jdesk-client
+python3 scripts/verify_release_versions.py
+```
 
-## Package smoke
+Native evidence commands and anti-fake rules are documented in
+[`docs/verification/native-testing-and-evidence.md`](docs/verification/native-testing-and-evidence.md).
+Public release consumption is tested by `.github/workflows/public-canary.yml`; unlike repository CI,
+that workflow may resolve only Maven Central, the Gradle Plugin Portal and npm.
 
-| Platform | Status | Evidence | Package checksum |
-| --- | --- | --- | --- |
-| Windows x64 | PASS | CI run 29187403208 (`package-windows-x64`); app-image launched without Gradle and MSI created, verifier green | UNSIGNED |
-| macOS ARM64 | PASS | CI run 29187403208 (`package-macos-arm64`); app-image launched without Gradle and DMG created, verifier green | UNSIGNED |
-| Linux x64 | PASS | CI run 29187403208 (`package-linux-x64`); app-image launched without Gradle under Xvfb and DEB created, verifier green | UNSIGNED |
+## Historical reports
 
-## Security probes (section 17.6)
-
-| Platform | Status | Evidence |
-| --- | --- | --- |
-| Windows x64 | PASS | CI run 29187403208 job `security-windows-x64`, provider `windows-webview2`, verifier green |
-| macOS ARM64 | PASS | CI run 29187403208 job `security-macos-arm64`, plus local remediation run 1783846340-4e4d073ef0fe9923; provider `macos-wkwebview`, verifier green |
-| Linux x64 | PASS | CI run 29187403208 job `security-linux-x64`, provider `linux-webkitgtk`, verifier green |
-
-## Stress / leak (section 17.5)
-
-| Platform | Status | Evidence | RSS baseline |
-| --- | --- | --- | --- |
-| Windows x64 | PASS (10,000 IPC round trips 0 mismatch in 5152 ms; 25/25 window cycles; pending counters zero) | CI run 29137919391 | 77,111,296 -> 181,665,792 bytes (recorded, no threshold yet) |
-| macOS ARM64 | PASS (10,000 IPC round trips 0 mismatch in 509 ms; 25/25 window cycles; pending counters zero) | Local run 1783741637-3a7dffd9377a2d6b | recorded in evidence environment.json (baseline only) |
-| Linux x64 | PASS (10,000 IPC round trips 0 mismatch in 6208 ms; 25/25 window cycles; pending counters zero) | CI run 29139086672 | 80.9 MB -> 373.6 MB (recorded, no threshold yet) |
-
-## Feature evidence — 2026-07-11 (macOS ARM64, local real hardware)
-
-New capabilities verified live in native-smoke runs 1783786098-4d5f87f18232b697 (default) and
-1783786141-cbdefa21a3dd2e5c (stress + stream). Windows/Linux carry the same code paths but are
-compile-verified only until the next CI/hardware runs — not marked PASS here.
-
-| Capability | Status (macOS) | Evidence case |
-| --- | --- | --- |
-| HTTP Range 206 partial content (`Content-Range`, sliced body, `Accept-Ranges`) | PASS | `js:asset-range-206` — `status 206 content-range=bytes 2-5/15 body="esk-"` |
-| HTTP Range 416 unsatisfiable (`Content-Range: bytes */<size>`) | PASS | `js:asset-range-416` |
-| Custom CSP from runtime configuration emitted on native scheme responses | PASS | `js:custom-csp-header` (DEFAULT_CSP + `media-src 'self'`) |
-| Page console -> Java logging bridge (injected capture, nonce-gated) | PASS | `js:console-probe-emitted` + `java:console-bridge` |
-| Window controls: focus/hide/show/minimize/maximize/fullscreen/always-on-top | PASS | `js:window-controls` |
-| IPC binary streaming, 2 GiB, pull backpressure (256 KiB chunks) | PASS | `js:stream-2gb-backpressure` — 2,147,483,648 bytes / 8192 pulls / 151.6 MiB/s |
-| Stream cancellation closes the token | PASS | `js:stream-cancellation` |
-| Static-frontend dev loop (no Node): edit -> rebuild -> in-app reload | PASS (manual live session) | scaffolded `basic` app, `jdeskDev` log: `frontend change detected; rebuilding UI` -> `Asset change detected; reloading 1 window(s)` |
-
-Known limits recorded honestly: the Range proof exercises `fetch` through the real WKWebView
-scheme handler; a large-file `<video>` seek test with a real media fixture is still recommended.
-`ClasspathAssetSource` buffers whole resources (fine for bundled UI, not for giant packaged
-media — use `DirectoryAssetSource`-backed files for large media). Linux scheme responses still
-buffer the requested window fully (bounded by the Range slice now, but not chunk-streamed).
-
-## Feature evidence — 2026-07-11 batch 2 (macOS ARM64, local real hardware)
-
-Runs 1783791506-d5c10bf0667a4010 (41/41) and 1783791575-09e1e6d35ee29915 (stress+stream,
-43/43), security-probe 1783788948-01ce5170829275d3 (22/22); verifier green; local
-build/evidence (not committed — see the evidence note above; the native-smoke run-ids are
-provenance stamps that have since been pruned, the security-probe run is still on disk).
-The same native-smoke suite also runs on the Windows and Linux CI
-lanes (real WebView2 / WebKitGTK): the SecretStore probe exercises DPAPI on Windows and a
-provisioned gnome-keyring on Linux, and the async-serving assertion is macOS-only (both
-other platforms still serve scheme requests synchronously — documented in
-`docs/guides/serving-assets.md`). The packaging lanes launch the jpackage image with
-`-Djdesk.smoke.fullProbes=false`, verifying the image runs the core + console + asset
-suite without provisioning a keyring/HTTP endpoint.
-
-| Capability | Status (macOS) | Evidence case |
-| --- | --- | --- |
-| App-defined asset routes (`jdesk://app/proxy/...` served by Java) with 404/Range | PASS | `js:asset-route`, `js:asset-route-404`, `js:asset-route-range` |
-| Async scheme serving: slow route never blocks IPC/main thread | PASS | `js:asset-route-nonblocking` — 5 IPC round trips in 5.0 ms while a 400 ms route was in flight |
-| Structured command errors (`error.data`) reach the page | PASS | `js:structured-error-data` — `{"httpStatus":429,"retryAfterSeconds":30}` |
-| SecretStore: real Keychain store/read/rotate/delete | PASS | `java:secret-store` |
-| Automation endpoint: token-gated loopback HTTP windows/evaluate/snapshot/console | PASS | `java:automation-endpoint` — 401 without token, real PNG snapshot (442 KB), console marker retrieved |
-| Window minSize clamp (user + programmatic) and remembered bounds restore | PASS | `java:window-minsize-remembered-bounds` — clamped to 400, reopened at saved 555 |
-
-**Cross-platform CI (2026-07-11, run 29162068874): all 8 jobs green.** Both feature
-batches now run on real Windows (WebView2) and Linux (WebKitGTK) CI, not macOS only:
-`windows-x64-native`, `linux-x64-native`, `security-{windows,linux}-x64`,
-`package-{windows,linux}-x64`, `core-unit-jdk25`, `gradle-plugin-functional` all pass.
-SecretStore exercises DPAPI on Windows and a provisioned gnome-keyring on Linux; the
-Range/206, min-size (WM_GETMINMAXINFO / gtk size hints), getBounds, and console-bridge
-paths are therefore verified on all three platforms — no longer compile-only.
-
-## Feature evidence — 2026-07-12 batch 3 (macOS ARM64, local real hardware)
-
-Runs 1783794868-9b2701ced93788b0 (45/45) and 1783794305-fa5b6399e5527fdd (stress+stream,
-47/47); verifier green; local build/evidence (not committed — see the evidence note above). Interactive native panels were driven
-by a `System Events` driver against a packaged `.app` (guarded to only send keystrokes
-when JDeskSmoke is frontmost, so nothing leaks to other apps).
-
-| Capability | Status (macOS) | Evidence |
-| --- | --- | --- |
-| File save dialog (NSSavePanel) round trip | PASS | `java:file-save-dialog` — returned the typed path `/private/tmp/jdesk-live-saved.txt` (driver-typed name + Save) |
-| Window print dialog (NSPrintOperation) | PASS (behavioral) | print panel shown and dismissable, no exception; driver pressed Escape |
-| printFile → CUPS lp reaches the spooler | PASS | `java:print-file-plumbing` — missing file rejected; job to a bogus printer rejected by lp |
-| `/evaluate` returns parsed JSON under `result` | PASS | `java:automation-evaluate-json` — `{"result":{"a":1,"b":[2,3],"c":"x"}}` |
-| `/input` synthesizes a real DOM click | PASS | `java:automation-input` — page recorded `window.__inputProbeClicked` |
-| Earliest module/parse-load error reaches `/console` | PASS | `java:early-error-capture` — `Failed to load jdesk://app/does-not-exist-module.js (script)` from a window whose module never loaded |
-
-Platform status: file dialogs are live-verified on macOS and, as of 2026-07-12, on **real
-Windows 11** too — driven end-to-end by the `examples/jdesk-notes` app (Save As/Open through
-comdlg32 `IFileDialog`, byte-for-byte file round trip; see the
-[Windows local verification report](docs/verification/windows-local-2026-07-12.md)). Linux
-(GtkFileChooser) is implemented and compile-verified (a modal dialog can't be driven on
-headless CI). `WindowHandle.print()` is macOS (NSPrintOperation, live) + Linux
-(webkit_print_operation, compile); Windows WebView2 print UI is a documented gap.
-`printFile` is CUPS `lp` on macOS/Linux and ShellExecute print on Windows.
-
-## Feature evidence — 2026-07-12 batch 4 (DX from the Dragon7 friction report)
-
-Runs 1783809395-75b906d28a0f9f3e (46/46) and 1783809410-0e37e6d9c1cedfbe (stress+stream,
-48/48); verifier green; local build/evidence (not committed — see the evidence note above). These address the DX/API findings from
-building a real-time multiplayer game on JDesk.
-
-| Capability | Status (macOS) | Evidence |
-| --- | --- | --- |
-| Per-directive CSP builder (`Csp.defaults().connectSrc(...)`) | PASS | unit `CspTest`; widens one directive without retyping the strict default |
-| Window `position(x, y)` places the native window | PASS | runtime unit `configuredPositionAppliesBoundsAfterShow`; AppKit ground-truth read via System Events showed the window at exactly `170,140` (WKWebView `window.screenX/screenY` is unreliable, so the smoke only asserts the positioned window opens: `java:window-position-opens`) |
-| Codegen always emits `JDeskCommands` (even for one service) | PASS | codegen `HappyPathTest.aggregatorIsGeneratedEvenForSingleService` |
-| `frontend { staticCopy() }` mirrors ui/ → dist (no Build.java) | PASS | plugin functional `staticCopyMirrorsFrontendTreeIntoDist`; scaffolded app served `/src/main.js` + `/src/style.css` live with no bundler |
-| Dev app identity: standard app menu with `Quit <Name>` + ⌘Q | PASS | `installApplicationMenu` in MacPlatformApplication; live System Events read of the app-menu dropdown showed `Quit Nativesmoke` (run 1783818805, 46/46) — the framework's controllable identity surface |
-| Dev app identity: bold menu-bar name on raw-JVM launch | **NOT FIXABLE at runtime** (documented, not a PASS) | Live-tested 2026-07-12 (Homebrew OpenJDK 25): the bold bar name stays "java" with `setProcessName:`, with `setMainMenu:` (menu bar item 2 = "java" while the dropdown = "Quit Nativesmoke"), and with `-Xdock:name` (AWT-only). AppKit forces the executable name for a bundle-less process; only a packaged `.app` with `CFBundleName` changes it (jpackage path already correct). Earlier "PASS" claim retracted. |
-| `-Djdesk.*` flags forwarded by `./gradlew run` | PASS | plugin run-task doFirst forwards console.forward/automation to the forked app JVM |
-
-## Unit / functional gates
-
-| Gate | Status | Evidence |
-| --- | --- | --- |
-| Core unit tests (JDK 25) | PASS (523 tests, 0 failures) | CI run 29136815933 (`core-unit-jdk25`, ubuntu, Temurin 25) + local Gradle reports |
-| Coverage (line >= 80%, branch >= 70%) | PASS | JaCoCo verification in `check`; api 89.7/89.6, runtime 89.4/84.6, ffm 97.0/100, spi 86.7/100 |
-| Gradle plugin TestKit functional | IN PROGRESS (plugin is a Phase 3 stub; job runs, no functional tests yet) | CI run 29136815933 (`gradle-plugin-functional`) |
-| Deterministic codegen (golden, double-run) | NOT STARTED | — |
-| Configuration-cache compatibility | PASS (all local builds run with configuration cache on) | gradle.properties + CI logs |
-| Dependency verification | PASS (sha256 metadata, 97 components; locks per project) | gradle/verification-metadata.xml; CI resolves with verification active |
-
-## Secondary architectures
-
-| Platform | Status | Note |
-| --- | --- | --- |
-| Windows ARM64 | NOT STARTED | Only after Windows x64 gate |
-| macOS Intel | NOT STARTED | Only after macOS ARM64 gate |
-| Linux ARM64 | NOT STARTED | Only after Linux x64 gate |
+Dated investigations under [`docs/verification/`](docs/verification/) describe the commit and
+environment they tested. They are useful engineering records but do not override current CI or
+prove later commits. Superseded root-level audit snapshots were removed to prevent stale
+`NOT_IMPLEMENTED` rows from being mistaken for current state; they remain available in Git history.

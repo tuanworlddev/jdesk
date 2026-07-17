@@ -22,7 +22,7 @@ const CLI_JAR = resolve(HERE, "jdesk-cli.jar");
 const CLI_MODULE = "dev.jdesk.cli";
 const MIN_JDK = 25;
 
-const TEMPLATES = ["basic", "structured", "vanilla", "react", "vue", "svelte", "maven"];
+const TEMPLATES = ["basic", "structured", "vanilla", "react", "vue", "svelte", "solid", "maven"];
 const BUILD_CHOICES = [
   { value: "gradle", label: "Gradle", hint: "recommended — full tooling (run, dev/HMR, package, installer)" },
   { value: "maven", label: "Maven", hint: "pom.xml; build + run only (no packaging yet)" },
@@ -33,6 +33,7 @@ const TEMPLATE_CHOICES = [
   { value: "react", label: "React + Vite", hint: "single module, Vite + React" },
   { value: "vue", label: "Vue + Vite", hint: "single module, Vite + Vue" },
   { value: "svelte", label: "Svelte + Vite", hint: "single module, Vite + Svelte" },
+  { value: "solid", label: "Solid + Vite", hint: "single module, Vite + Solid" },
   { value: "structured", label: "Structured", hint: "multi-module: domain / application / infrastructure / desktop" },
 ];
 
@@ -84,7 +85,8 @@ prompt is skipped.
 ${color.bold("Options")}
   -b, --build <system>    gradle | maven  (default: gradle)
       --maven             Shorthand for --build maven
-  -t, --template <name>   basic | structured | vanilla | react | vue | svelte  (Gradle only; default: basic)
+  -t, --template <name>   basic | structured | vanilla | react | vue | svelte | solid
+                          (Gradle only; default: basic)
   -p, --package <id>      Reverse-DNS Java package / application id (default: com.example.<name>)
       --jdesk-version <v> Framework version to depend on
       --jdesk-source <d>  Use a local JDesk checkout (composite build) — for framework development
@@ -240,10 +242,8 @@ async function main() {
   process.stdout.write(`\n${color.green("Done!")} Next steps:\n\n`);
   process.stdout.write(`  ${color.cyan(`cd ${projectName}`)}\n`);
   if (template === "maven") {
-    process.stdout.write(`  ${color.dim("# Pre-alpha: install the framework locally first, from a JDesk checkout:")}\n`);
-    process.stdout.write(`  ${color.dim("#   ./gradlew publishToMavenLocal")}\n`);
     process.stdout.write(`  ${color.cyan("(cd ui && java Build.java)")}   ${color.dim("# build the UI")}\n`);
-    process.stdout.write(`  ${color.cyan("mvn compile")}                 ${color.dim("# resolve deps, generate bindings")}\n`);
+    process.stdout.write(`  ${color.cyan("mvn compile")}                 ${color.dim("# resolve JDesk from Maven Central")}\n`);
     process.stdout.write(`  ${color.cyan("mvn exec:exec")}               ${color.dim("# run the app")}\n\n`);
   } else {
     const needsNode = template !== "basic" && template !== "structured";

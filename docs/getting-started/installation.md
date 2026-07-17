@@ -114,33 +114,17 @@ npx create-jdesk-app@latest my-app --template react --package com.acme.myapp
 | `--force` | Overwrite files in a non-empty directory. |
 | `-h, --help` | Show usage and exit. |
 
-## Pre-alpha: consuming the framework today
+## Consuming the framework
 
-JDesk is **pre-alpha**. The `create-jdesk-app` CLI is on npm, and the `dev.jdesk:*` libraries
-and the `dev.jdesk.application` Gradle plugin are published to **GitHub Packages** (v0.1.1) —
-but **not yet to Maven Central**. GitHub Packages requires authentication to consume, so a
-project scaffolded in the default "published" mode cannot resolve the artifacts anonymously
-yet. Three ways to build today:
+JDesk is **pre-alpha**, but its Java artifacts are public on Maven Central. A normally
+scaffolded Gradle or Maven project resolves them anonymously; no GitHub token, local Maven
+publication, or framework checkout is required.
 
-1. **Local checkout (simplest).** Point the scaffolder at a JDesk checkout with
-   `--jdesk-source`, which wires it in as a Gradle
-   [composite build](https://docs.gradle.org/current/userguide/composite_builds.html):
-
-   ```bash
-   npx create-jdesk-app@latest my-app --jdesk-source /path/to/JDesk
-   ```
-
-2. **GitHub Packages.** Add the repository and a `read:packages` token to the generated
-   `settings.gradle.kts` (see [Scaffolding and publishing](../development/scaffolding-and-publishing.md)).
-
-3. **Local Maven repository.** Run `./gradlew publishToMavenLocal` in a JDesk checkout and
-   consume the artifacts from `mavenLocal`.
-
-Anonymous `npx create-jdesk-app && ./gradlew run` becomes fully turnkey once the artifacts
-reach Maven Central.
-The details and the exact publish/consume chain are in
-[Scaffolding and publishing](../development/scaffolding-and-publishing.md). For what is
-proven on which platform, see the [verification matrix](../../VERIFICATION.md).
+Framework contributors may pass `--jdesk-source /path/to/JDesk` to use a local Gradle
+[composite build](https://docs.gradle.org/current/userguide/composite_builds.html). This is a
+development override, not part of the normal quick start. The exact publish/consume chain is in
+[Scaffolding and publishing](../development/scaffolding-and-publishing.md). See the current
+[status](../../STATUS.md) and [verification evidence](../../VERIFICATION.md) for release caveats.
 
 ## Run the app
 

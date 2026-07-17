@@ -109,7 +109,7 @@ On Windows the wrapper is invoked via `cmd.exe /c`.
 | `--template <name>` | `basic`, `structured`, `vanilla`, `react`, `vue`, `svelte`, or `maven`. | `basic` |
 | `--package <java.package>` | Reverse-DNS package / application id; must match `[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)+`. | derived from name |
 | `--name <display-name>` | Application and Gradle project name. | target directory's file name |
-| `--jdesk-version <version>` | Framework version. Must not be blank. | `0.1.0-SNAPSHOT` |
+| `--jdesk-version <version>` | Framework version. Must not be blank. | Version embedded in the generator release |
 | `--jdesk-source <directory>` | Use a local JDesk composite build. Must contain `settings.gradle.kts`. | — |
 | `--force` | Overwrite generated files in a non-empty target. | off |
 

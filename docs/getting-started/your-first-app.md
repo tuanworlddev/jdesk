@@ -17,20 +17,16 @@ WebView. Verify the JDK:
 java -version
 ```
 
-Because JDesk is pre-alpha and its artifacts are not on Maven Central yet, this tutorial
-builds against a local JDesk checkout. Clone it somewhere and note the path — you will pass
-it as `--jdesk-source`. See [the pre-alpha note](installation.md#pre-alpha-consuming-the-framework-today)
-for background.
+JDesk is pre-alpha, but the artifacts used by this tutorial are public on Maven Central. You do
+not need a framework checkout or repository credentials.
 
 ## 1. Scaffold the project
 
-Create the app from the default `basic` template. Replace `/path/to/JDesk` with your
-checkout:
+Create the app from the default `basic` template:
 
 ```bash
 npx create-jdesk-app@latest my-first-app \
-  --package com.example.firstapp \
-  --jdesk-source /path/to/JDesk
+  --package com.example.firstapp
 ```
 
 Move into it:
