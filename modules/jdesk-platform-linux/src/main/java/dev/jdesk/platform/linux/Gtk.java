@@ -369,6 +369,8 @@ final class Gtk {
             FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
     static final MethodHandle SOUP_COOKIE_NEW = dl("soup_cookie_new",
             FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, ADDRESS, ADDRESS, JAVA_INT));
+    static final MethodHandle SOUP_COOKIE_COPY = dl("soup_cookie_copy",
+            FunctionDescriptor.of(ADDRESS, ADDRESS));
     static final MethodHandle SOUP_COOKIE_FREE = dl("soup_cookie_free",
             FunctionDescriptor.ofVoid(ADDRESS));
     static final MethodHandle SOUP_COOKIE_GET_NAME = dl("soup_cookie_get_name",

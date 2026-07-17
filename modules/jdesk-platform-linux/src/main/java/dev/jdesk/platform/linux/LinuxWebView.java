@@ -721,14 +721,67 @@ final class LinuxWebView implements PlatformWebView {
 
     @Override
     public CompletionStage<Void> deleteCookie(WebViewCookieKey key) {
-        MemorySegment nativeCookie;
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        long token = TOKENS.getAndIncrement();
+        ASYNC.put(token, (source, result) -> {
+            MemorySegment copy = MemorySegment.NULL;
+            try (Arena confined = Arena.ofConfined()) {
+                MemorySegment errorSlot = confined.allocate(ADDRESS);
+                errorSlot.set(ADDRESS, 0, MemorySegment.NULL);
+                MemorySegment list = (MemorySegment)
+                        Gtk.WEBKIT_COOKIE_MANAGER_GET_ALL_COOKIES_FINISH.invokeExact(
+                                source, result, errorSlot);
+                if (list.equals(MemorySegment.NULL)) {
+                    MemorySegment error = errorSlot.get(ADDRESS, 0);
+                    if (!error.equals(MemorySegment.NULL)) {
+                        future.completeExceptionally(new IllegalStateException(
+                                "locate cookie for delete failed: "
+                                        + Gtk.takeErrorMessage(errorSlot)));
+                    } else {
+                        future.complete(null);
+                    }
+                    return;
+                }
+                try {
+                    for (MemorySegment node = list; !node.equals(MemorySegment.NULL);
+                            node = node.reinterpret(16).get(ADDRESS, 8)) {
+                        MemorySegment candidate = node.reinterpret(16).get(ADDRESS, 0);
+                        if (matchesCookieKey(candidate, key)) {
+                            copy = (MemorySegment) Gtk.SOUP_COOKIE_COPY.invokeExact(candidate);
+                            break;
+                        }
+                    }
+                } finally {
+                    freeCookieList(list);
+                }
+                if (copy.equals(MemorySegment.NULL)) {
+                    future.complete(null); // Missing keys are intentionally idempotent.
+                } else {
+                    MemorySegment cookieToDelete = copy;
+                    copy = MemorySegment.NULL; // mutateCookie now owns and frees it.
+                    mutateCookie(cookieToDelete, false).whenComplete((ignored, error) -> {
+                        if (error == null) {
+                            future.complete(null);
+                        } else {
+                            future.completeExceptionally(error);
+                        }
+                    });
+                }
+            } catch (Throwable t) {
+                if (!copy.equals(MemorySegment.NULL)) {
+                    freeCookie(copy);
+                }
+                future.completeExceptionally(Gtk.rethrow(t));
+            }
+        });
         try {
-            nativeCookie = nativeCookie(WebViewCookie.session(
-                    key.name(), "", key.domain(), key.path(), false, false));
-        } catch (RuntimeException e) {
-            return CompletableFuture.failedFuture(e);
+            Gtk.WEBKIT_COOKIE_MANAGER_GET_ALL_COOKIES.invokeExact(cookieManager(),
+                    MemorySegment.NULL, ASYNC_READY_STUB, MemorySegment.ofAddress(token));
+        } catch (Throwable t) {
+            ASYNC.remove(token);
+            future.completeExceptionally(Gtk.rethrow(t));
         }
-        return mutateCookie(nativeCookie, false);
+        return future;
     }
 
     private CompletionStage<Void> mutateCookie(MemorySegment cookie, boolean add) {
@@ -794,6 +847,15 @@ final class LinuxWebView implements PlatformWebView {
                 expiresAt,
                 (int) Gtk.SOUP_COOKIE_GET_SECURE.invokeExact(cookie) != 0,
                 (int) Gtk.SOUP_COOKIE_GET_HTTP_ONLY.invokeExact(cookie) != 0);
+    }
+
+    private boolean matchesCookieKey(MemorySegment cookie, WebViewCookieKey key) throws Throwable {
+        return key.name().equals(Gtk.javaString(
+                (MemorySegment) Gtk.SOUP_COOKIE_GET_NAME.invokeExact(cookie)))
+                && key.domain().equals(Gtk.javaString(
+                        (MemorySegment) Gtk.SOUP_COOKIE_GET_DOMAIN.invokeExact(cookie)))
+                && key.path().equals(Gtk.javaString(
+                        (MemorySegment) Gtk.SOUP_COOKIE_GET_PATH.invokeExact(cookie)));
     }
 
     private MemorySegment nativeCookie(WebViewCookie cookie) {
