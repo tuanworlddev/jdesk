@@ -11,7 +11,7 @@ plugins {
     // Uploads the existing maven-publish publications to the Maven Central Portal.
     // Auto-applies com.gradleup.nmcp to every project and aggregates their publications;
     // run `./gradlew publishAggregationToCentralPortal` to push a staged deployment.
-    id("com.gradleup.nmcp.settings") version "1.6.1"
+    id("com.gradleup.nmcp.settings") version "1.6.2"
 }
 
 // Central Portal credentials — supplied at publish time, never checked in:
