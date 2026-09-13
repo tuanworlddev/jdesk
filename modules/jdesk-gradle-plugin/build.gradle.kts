@@ -6,7 +6,7 @@ plugins {
     // `./gradlew :modules:jdesk-gradle-plugin:publishPlugins`. Credentials come from
     // ~/.gradle/gradle.properties (gradle.publish.key / gradle.publish.secret) or the
     // GRADLE_PUBLISH_KEY / GRADLE_PUBLISH_SECRET environment variables.
-    id("com.gradle.plugin-publish") version "2.1.1"
+    id("com.gradle.plugin-publish") version "2.2.1"
 }
 description = "JDesk Gradle application plugin (dev.jdesk.application)."
 gradlePlugin {
